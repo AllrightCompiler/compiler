@@ -15,18 +15,18 @@ ConstDef : IDENTIFIER ( '[' ConstExp ']' ) '=' ConstInitVal;
 ConstInitVal : ConstExp
             | '{' ( ConstInitVal ( ',' ConstInitVal ) ) '}';
 
-VarDecl : BType VarDef { ',' VarDef } ';';
+VarDecl : BType VarDef ( ',' VarDef ) ';';
 
-VarDef : IDENTIFIER { '[' ConstExp ']' }
-| IDENTIFIER { '[' ConstExp ']' } '=' InitVal;
+VarDef : IDENTIFIER ( '[' ConstExp ']' )
+| IDENTIFIER ( '[' ConstExp ']' ) '=' InitVal;
 
-InitVal : Exp | '{' ( InitVal { ',' InitVal } ) '}';
+InitVal : Exp | '{' ( InitVal ( ',' InitVal ) ) '}';
 
 FuncDef : FuncType IDENTIFIER '(' (FuncFParams) ')' Block;
 
 FuncType : VOID | INT | FLOAT;
 
-FuncFParams : FuncFParam { ',' FuncFParam };
+FuncFParams : FuncFParam ( ',' FuncFParam );
 
 FuncFParam : BType IDENTIFIER ('[' ']' ( '[' Exp ']' ));
 
@@ -58,7 +58,7 @@ UnaryExp : PrimaryExp | IDENTIFIER '(' (FuncRParams) ')'
 
 UnaryOp : '+' | '-' | '!';
 
-FuncRParams : Exp { ',' Exp };
+FuncRParams : Exp ( ',' Exp );
 
 
 MulExp

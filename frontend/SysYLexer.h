@@ -1,5 +1,5 @@
 
-// Generated from D:/Documents/Code/C++/compiler/frontend\SysY.g4 by ANTLR 4.10.1
+// Generated from SysY.g4 by ANTLR 4.10.1
 
 #pragma once
 
@@ -47,8 +47,6 @@ public:
 
   const antlr4::atn::ATN& getATN() const override;
 
-  void action(antlr4::RuleContext *context, size_t ruleIndex, size_t actionIndex) override;
-
   // By default the static state used to implement the lexer is lazily initialized during the first
   // call to the constructor. You can call this function if you wish to initialize the static state
   // ahead of time.
@@ -57,11 +55,6 @@ public:
 private:
 
   // Individual action functions triggered by action() above.
-  void VarDeclAction(antlr4::RuleContext *context, size_t actionIndex);
-  void VarDefAction(antlr4::RuleContext *context, size_t actionIndex);
-  void InitValAction(antlr4::RuleContext *context, size_t actionIndex);
-  void FuncFParamsAction(antlr4::RuleContext *context, size_t actionIndex);
-  void FuncRParamsAction(antlr4::RuleContext *context, size_t actionIndex);
 
   // Individual semantic predicate functions triggered by sempred() above.
 
