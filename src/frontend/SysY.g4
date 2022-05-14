@@ -2,7 +2,11 @@ grammar SysY;
 
 import tokens;
 
-compUnit : (decl | funcDef)* EOF;
+compUnit : compUnitItem* EOF;
+compUnitItem
+    : decl
+    | funcDef
+    ;
 
 decl
     : constDecl
@@ -12,39 +16,36 @@ decl
 constDecl : Const bType constDef (Comma constDef)* Semicolon;
 
 bType
-    : Int
-    | Float
+    : Int  # int
+    | Float  # float
     ;
 
-constDef : Ident (Lbracket constExp Rbracket)* Assign constInitVal;
-
-constInitVal
-    : constExp
-    | Lbrace (constInitVal (Comma constInitVal)*)? Rbrace
-    ;
+constDef : Ident (Lbracket exp Rbracket)* Assign initVal;
 
 varDecl : bType varDef (Comma varDef)* Semicolon;
 
-varDef : Ident (Lbracket constExp Rbracket)* (Assign initVal)?;
+varDef : Ident (Lbracket exp Rbracket)* (Assign initVal)?;
 
 initVal
-    : exp
-    | Lbrace (initVal (Comma initVal)*)? Rbrace
+    : exp  # init
+    | Lbrace (initVal (Comma initVal)*)? Rbrace  # initList
     ;
 
 funcDef : funcType Ident Lparen funcFParams? Rparen block;
 
 funcType
-    : Void
-    | Int
-    | Float
+    : bType  # funcType_
+    | Void  # void
     ;
 
 funcFParams : funcFParam (Comma funcFParam)*;
 
-funcFParam : bType Ident (Lbracket Rbracket (Lbracket exp Rbracket)*)?;
+funcFParam
+    : bType Ident  # scalarParam
+    | bType Ident Lbracket Rbracket (Lbracket exp Rbracket)*  # arrayParam
+    ;
 
-block : Lbrace (blockItem)* Rbrace;
+block : Lbrace blockItem* Rbrace;
 
 blockItem
     : decl
@@ -52,14 +53,14 @@ blockItem
     ;
 
 stmt
-    : lVal Assign exp Semicolon
-    | exp? Semicolon
-    | block
-    | If Lparen cond Rparen stmt (Else stmt)?
-    | While Lparen cond Rparen stmt
-    | Break Semicolon
-    | Continue Semicolon
-    | Return exp? Semicolon
+    : lVal Assign exp Semicolon  # assign
+    | exp? Semicolon  # exprStmt
+    | block  # blockStmt
+    | If Lparen cond Rparen stmt (Else stmt)?  # ifElse
+    | While Lparen cond Rparen stmt  # while
+    | Break Semicolon  # break
+    | Continue Semicolon  # continue
+    | Return exp? Semicolon  # return
     ;
 
 exp : addExp;
@@ -69,19 +70,19 @@ cond : lOrExp;
 lVal : Ident (Lbracket exp Rbracket)*;
 
 primaryExp
-    : Lparen exp Rparen
-    | lVal
-    | number
+    : Lparen exp Rparen  # primaryExp_
+    | lVal  # lValExpr
+    | number  # primaryExp_
     ;
 
 intConst
-    : DecIntConst
-    | OctIntConst
-    | HexIntConst
+    : DecIntConst  # decIntConst
+    | OctIntConst  # octIntConst
+    | HexIntConst  # hexIntConst
     ;
 floatConst
-    : DecFloatConst
-    | HexFloatConst
+    : DecFloatConst  # decFloatConst
+    | HexFloatConst  # hexFloatConst
     ;
 number
     : intConst
@@ -89,51 +90,53 @@ number
     ;
 
 unaryExp
-    : primaryExp
-    | Ident Lparen funcRParams? Rparen
-    | unaryOp unaryExp
+    : primaryExp  # unaryExp_
+    | Ident Lparen funcRParams? Rparen  # call
+    | Add unaryExp  # unaryAdd
+    | Sub unaryExp  # unarySub
+    | Not unaryExp  # not
     ;
 
-unaryOp
-    : Add
-    | Sub
-    | Not
-    ;
-
+stringConst : StringConst;
 funcRParam
     : exp
-    | StringConst
+    | stringConst
     ;
 funcRParams : funcRParam (Comma funcRParam)*;
 
 mulExp
-    : unaryExp
-    | mulExp (Mul | Div | Mod) unaryExp
+    : unaryExp  # mulExp_
+    | mulExp Mul unaryExp  # mul
+    | mulExp Div unaryExp  # div
+    | mulExp Mod unaryExp  # mod
     ;
 
 addExp
-    : mulExp
-    | addExp (Add | Sub) mulExp
+    : mulExp  # addExp_
+    | addExp Add mulExp  # add
+    | addExp Sub mulExp  # sub
     ;
 
 relExp
-    : addExp
-    | relExp (Lt | Gt | Leq | Geq) addExp
+    : addExp  # relExp_
+    | relExp Lt addExp  # lt
+    | relExp Gt addExp  # gt
+    | relExp Leq addExp  # leq
+    | relExp Geq addExp  # geq
     ;
 
 eqExp
-    : relExp
-    | eqExp (Eq | Neq) relExp
+    : relExp  # eqExp_
+    | eqExp Eq relExp  # eq
+    | eqExp Neq relExp  # neq
     ;
 
 lAndExp
-    : eqExp
-    | lAndExp And eqExp
+    : eqExp  # lAndExp_
+    | lAndExp And eqExp  # and
     ;
 
 lOrExp
-    : lAndExp
-    | lOrExp Or lAndExp
+    : lAndExp  # lOrExp_
+    | lOrExp Or lAndExp  # or
     ;
-
-constExp : addExp;
