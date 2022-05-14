@@ -1,8 +1,8 @@
-lexer grammar SysY;
+grammar SysY;
 
 import tokens;
 
-CompUnit : ( Decl | FuncDef )* EOF;
+start : ( Decl | FuncDef )* EOF;
 
 Decl : ConstDecl | VarDecl;
 
@@ -12,7 +12,7 @@ BType : INT | FLOAT;
 
 ConstDef : IDENTIFIER ( '[' ConstExp ']' ) '=' ConstInitVal;
 
-ConstInitVal : ConstExp 
+ConstInitVal : ConstExp
             | '{' ( ConstInitVal ( ',' ConstInitVal ) ) '}';
 
 VarDecl : BType VarDef { ',' VarDef } ';';
@@ -34,8 +34,8 @@ Block : '{' ( BlockItem )* '}';
 
 BlockItem : Decl | Stmt;
 
-Stmt : LVal '=' Exp ';' 
-    | (Exp) ';' 
+Stmt : LVal '=' Exp ';'
+    | (Exp) ';'
     | Block
     | 'if' '(' Cond ')' Stmt ( 'else' Stmt )
     | 'while' '(' Cond ')' Stmt
@@ -53,7 +53,7 @@ PrimaryExp : '(' Exp ')' | LVal | Number;
 
 Number : INTEGER | FLOATNUM;
 
-UnaryExp : PrimaryExp | IDENTIFIER '(' (FuncRParams) ')' 
+UnaryExp : PrimaryExp | IDENTIFIER '(' (FuncRParams) ')'
 | UnaryOp UnaryExp;
 
 UnaryOp : '+' | '-' | '!';
@@ -67,29 +67,29 @@ MulExp
     ;
 
 
-AddExp 
-    : MulExp 
+AddExp
+    : MulExp
     | MulExp ('+' | '-') AddExp
     ;
 
 
-RelExp 
-    : AddExp 
-    | AddExp ('<' | '>' | '<=' | '>=') RelExp 
+RelExp
+    : AddExp
+    | AddExp ('<' | '>' | '<=' | '>=') RelExp
     ;
 
-EqExp 
-    : RelExp 
-    | RelExp ('==' | '!=') EqExp 
+EqExp
+    : RelExp
+    | RelExp ('==' | '!=') EqExp
     ;
 
-LAndExp 
-    : EqExp 
+LAndExp
+    : EqExp
     | EqExp '&&' LAndExp
     ;
 
-LOrExp 
-    : LAndExp 
+LOrExp
+    : LAndExp
     | LAndExp '||' LOrExp;
 
 ConstExp : AddExp;
