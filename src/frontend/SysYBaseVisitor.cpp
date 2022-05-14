@@ -5,3 +5,5 @@
 #include "SysYBaseVisitor.h"
 
 
+using namespace frontend;
+

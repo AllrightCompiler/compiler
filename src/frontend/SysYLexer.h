@@ -7,25 +7,20 @@
 #include "antlr4-runtime.h"
 
 
+namespace frontend {
 
 
 class  SysYLexer : public antlr4::Lexer {
 public:
   enum {
-    Decl = 1, ConstDecl = 2, BType = 3, ConstDef = 4, ConstInitVal = 5, 
-    VarDecl = 6, VarDef = 7, InitVal = 8, FuncDef = 9, FuncType = 10, FuncFParams = 11, 
-    FuncFParam = 12, Block = 13, BlockItem = 14, Stmt = 15, Exp = 16, Cond = 17, 
-    LVal = 18, PrimaryExp = 19, Number = 20, UnaryExp = 21, UnaryOp = 22, 
-    FuncRParams = 23, MulExp = 24, AddExp = 25, RelExp = 26, EqExp = 27, 
-    LAndExp = 28, LOrExp = 29, ConstExp = 30, INT = 31, FLOAT = 32, VOID = 33, 
-    RETURN = 34, IF = 35, ELSE = 36, DO = 37, WHILE = 38, FOR = 39, BREAK = 40, 
-    CONTINUE = 41, CONST = 42, EQU = 43, NEQ = 44, AND = 45, OR = 46, LEQ = 47, 
-    GEQ = 48, PLUS = 49, MINUS = 50, TIMES = 51, SLASH = 52, MOD = 53, LT = 54, 
-    GT = 55, COLON = 56, SEMICOLON = 57, LNOT = 58, BNOT = 59, COMMA = 60, 
-    DOT = 61, ASSIGN = 62, QUESTION = 63, LPAREN = 64, RPAREN = 65, LBRACK = 66, 
-    RBRACK = 67, LBRACE = 68, RBRACE = 69, FLOATNUM = 70, INTEGER = 71, 
-    IDENTIFIER = 72, STRING = 73, ESC = 74, WS = 75, LINE_COMMENT = 76, 
-    COMMENT = 77
+    Int = 1, Float = 2, Void = 3, Const = 4, If = 5, Else = 6, While = 7, 
+    Break = 8, Continue = 9, Return = 10, Assign = 11, Add = 12, Sub = 13, 
+    Mul = 14, Div = 15, Mod = 16, Eq = 17, Neq = 18, Lt = 19, Gt = 20, Leq = 21, 
+    Geq = 22, Not = 23, And = 24, Or = 25, Comma = 26, Semicolon = 27, Lparen = 28, 
+    Rparen = 29, Lbracket = 30, Rbracket = 31, Lbrace = 32, Rbrace = 33, 
+    Ident = 34, Whitespace = 35, LineComment = 36, BlockComment = 37, DecIntConst = 38, 
+    OctIntConst = 39, HexIntConst = 40, DecFloatConst = 41, HexFloatConst = 42, 
+    StringConst = 43
   };
 
   explicit SysYLexer(antlr4::CharStream *input);
@@ -60,3 +55,4 @@ private:
 
 };
 
+}  // namespace frontend

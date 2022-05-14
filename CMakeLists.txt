@@ -1,12 +1,14 @@
+cmake_minimum_required(VERSION 3.14)
+
 project(compiler CXX)
-cmake_minimum_required(VERSION 3.16)
 
-file(GLOB_RECURSE SRC "frontend/*.cpp" "main.cpp")
-file(GLOB_RECURSE LIB_SRC "3rd_party/*.cpp")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG")
 
-add_compile_options(-g -std=c++17 -O2)
-include_directories(frontend)
+file(GLOB_RECURSE SRC "src/*.cpp")
+file(GLOB_RECURSE ANTLR4_SRC "3rd_party/antlr4-runtime/*.cpp")
+
+include_directories(src)
 include_directories(3rd_party/antlr4-runtime)
 
-
-add_executable(compiler ${SRC} ${LIB_SRC})
+add_executable(compiler ${SRC} ${ANTLR4_SRC})
