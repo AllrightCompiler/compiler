@@ -1,0 +1,4 @@
+-xc++
+-std=c++17
+-Isrc
+-I3rd_party/antlr4-runtime

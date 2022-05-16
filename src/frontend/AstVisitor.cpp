@@ -160,7 +160,7 @@ std::any AstVisitor::visitBlock(SysYParser::BlockContext *const ctx) {
 std::any AstVisitor::visitAssign(SysYParser::AssignContext *const ctx) {
   auto const lhs_ = std::any_cast<LValue *>(ctx->lVal()->accept(this));
   std::unique_ptr<LValue> lhs(lhs_);
-  auto const rhs_ = std::any_cast<Expression *>(ctx->exp()->accept());
+  auto const rhs_ = std::any_cast<Expression *>(ctx->exp()->accept(this));
   std::unique_ptr<Expression> rhs(rhs_);
   auto const ret = new Assignment(std::move(lhs), std::move(rhs));
   return static_cast<Statement *>(ret);
@@ -260,6 +260,16 @@ AstVisitor::visitDecFloatConst(SysYParser::DecFloatConstContext *const ctx) {
 std::any
 AstVisitor::visitHexFloatConst(SysYParser::HexFloatConstContext *const ctx) {
   // TODO
+}
+
+// 未使用
+std::any AstVisitor::visitFuncRParam(SysYParser::FuncRParamContext *const ctx) {
+  return nullptr;
+}
+
+// 未使用
+std::any AstVisitor::visitFuncRParams(SysYParser::FuncRParamsContext *const ctx) {
+  return nullptr;
 }
 
 std::any AstVisitor::visitCall(SysYParser::CallContext *const ctx) {
