@@ -1,6 +1,7 @@
 #pragma once
 
 #include "frontend/SysYBaseVisitor.h"
+#include "frontend/SysYParser.h"
 #include "frontend/ast.hpp"
 
 namespace frontend {
@@ -105,9 +106,11 @@ public:
 
   std::any visitOr(SysYParser::OrContext *const ctx) override;
 
+  std::any visitNumber(SysYParser::NumberContext *const ctx) override;
+
 private:
-  std::vector<unsigned>
-  visitDimensions(std::vector<SysYParser::ExpContext *> ctx);
+  std::vector<std::unique_ptr<Expression>>
+    visitDimensions(const std::vector<SysYParser::ExpContext *> &ctxs);
 
   std::unique_ptr<CompileUnit> m_compile_unit;
 };

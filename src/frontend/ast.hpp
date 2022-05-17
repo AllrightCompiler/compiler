@@ -24,7 +24,8 @@ enum class BinaryOp {
   Leq,
   Geq,
   And,
-  Or
+  Or,
+  NR_OPS
 };
 
 class SysYType : public Display {
@@ -48,9 +49,13 @@ private:
   Type m_type;
 };
 
+class Expression;
+
 class ArrayType : public SysYType {
 public:
-  ArrayType(ScalarType type, std::vector<unsigned> dimensions,
+  using Dimension = std::unique_ptr<Expression>;
+
+  ArrayType(ScalarType type, std::vector<Dimension> dimensions,
             bool omit_first_dimension)
       : m_type{type}, m_dimensions{std::move(dimensions)},
         m_omit_first_dimension{omit_first_dimension} {}
@@ -59,11 +64,12 @@ public:
   void print(std::ostream &out, unsigned indent) const override;
 
   ScalarType::Type base_type() const { return m_type.type(); }
-  const std::vector<unsigned> &dimensions() const { return m_dimensions; }
+  const std::vector<Dimension> &dimensions() const { return m_dimensions; }
+  bool first_dimension_omitted() const { return m_omit_first_dimension; }
 
 private:
   ScalarType m_type;
-  std::vector<unsigned> m_dimensions;
+  std::vector<Dimension> m_dimensions;
   bool m_omit_first_dimension;
 };
 
@@ -73,6 +79,8 @@ public:
   virtual ~Identifier() = default;
 
   void print(std::ostream &out, unsigned indent) const override;
+
+  std::string name() const { return m_name; }
 
 private:
   std::string m_name;
@@ -85,6 +93,9 @@ public:
   virtual ~Parameter() = default;
 
   void print(std::ostream &out, unsigned indent) const override;
+
+  const std::unique_ptr<SysYType> &type() const { return m_type; }
+  const Identifier &ident() const { return m_ident; }
 
 private:
   std::unique_ptr<SysYType> m_type;
@@ -273,9 +284,9 @@ private:
 class Declaration : public AstNode {
 public:
   Declaration(std::unique_ptr<SysYType> type, Identifier ident,
-              std::unique_ptr<Initializer> init)
-      : m_type{std::move(type)}, m_ident{std::move(ident)}, m_init{std::move(
-                                                                init)} {}
+              std::unique_ptr<Initializer> init, bool const_qualified)
+      : m_type{std::move(type)}, m_ident{std::move(ident)},
+        m_init{std::move(init)}, m_const_qualified{const_qualified} {}
   virtual ~Declaration() = default;
 
   void print(std::ostream &out, unsigned indent) const override;
@@ -284,6 +295,7 @@ private:
   std::unique_ptr<SysYType> m_type;
   Identifier m_ident;
   std::unique_ptr<Initializer> m_init;
+  bool m_const_qualified;
 };
 
 class Block : public Statement {

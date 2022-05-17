@@ -1,6 +1,8 @@
 #include <cassert>
+#include <string>
 
 #include "frontend/AstVisitor.hpp"
+#include "frontend/ast.hpp"
 
 using namespace frontend;
 
@@ -24,7 +26,9 @@ std::any AstVisitor::visitCompUnit(SysYParser::CompUnitContext *const ctx) {
       assert(false);
     }
   }
-  return new CompileUnit(std::move(children));
+  auto compile_unit = new CompileUnit(std::move(children));
+  m_compile_unit.reset(compile_unit);
+  return compile_unit;
 }
 
 std::any AstVisitor::visitConstDecl(SysYParser::ConstDeclContext *const ctx) {
@@ -45,8 +49,9 @@ std::any AstVisitor::visitConstDecl(SysYParser::ConstDeclContext *const ctx) {
         std::any_cast<Initializer *>(def->initVal()->accept(this));
     std::unique_ptr<Initializer> init(init_);
     // TODO 检查 constexpr
-    ret.push_back(
-        new Declaration(std::move(type), std::move(ident), std::move(init)));
+    // 编译期常量不在这里检查
+    ret.push_back(new Declaration(std::move(type), std::move(ident),
+                                  std::move(init), true));
   }
   return std::move(ret);
 }
@@ -77,8 +82,8 @@ std::any AstVisitor::visitVarDecl(SysYParser::VarDeclContext *const ctx) {
     if (auto init_val = def->initVal()) {
       init.reset(std::any_cast<Initializer *>(init_val->accept(this)));
     }
-    ret.push_back(
-        new Declaration(std::move(type), std::move(ident), std::move(init)));
+    ret.push_back(new Declaration(std::move(type), std::move(ident),
+                                  std::move(init), false));
   }
   return std::move(ret);
 }
@@ -239,27 +244,27 @@ std::any AstVisitor::visitLValExpr(SysYParser::LValExprContext *const ctx) {
 
 std::any
 AstVisitor::visitDecIntConst(SysYParser::DecIntConstContext *const ctx) {
-  // TODO
+  return std::stoi(ctx->getText(), nullptr, 10);
 }
 
 std::any
 AstVisitor::visitOctIntConst(SysYParser::OctIntConstContext *const ctx) {
-  // TODO
+  return std::stoi(ctx->getText(), nullptr, 8);
 }
 
 std::any
 AstVisitor::visitHexIntConst(SysYParser::HexIntConstContext *const ctx) {
-  // TODO
+  return std::stoi(ctx->getText(), nullptr, 16);
 }
 
 std::any
 AstVisitor::visitDecFloatConst(SysYParser::DecFloatConstContext *const ctx) {
-  // TODO
+  return std::stof(ctx->getText());
 }
 
 std::any
 AstVisitor::visitHexFloatConst(SysYParser::HexFloatConstContext *const ctx) {
-  // TODO
+  return std::stof(ctx->getText());
 }
 
 // 未使用
@@ -268,22 +273,26 @@ std::any AstVisitor::visitFuncRParam(SysYParser::FuncRParamContext *const ctx) {
 }
 
 // 未使用
-std::any AstVisitor::visitFuncRParams(SysYParser::FuncRParamsContext *const ctx) {
+std::any
+AstVisitor::visitFuncRParams(SysYParser::FuncRParamsContext *const ctx) {
   return nullptr;
 }
 
 std::any AstVisitor::visitCall(SysYParser::CallContext *const ctx) {
   Identifier const ident(ctx->Ident()->getText());
   std::vector<Call::Argument> args;
-  for (auto arg_ : ctx->funcRParams()->funcRParam()) {
-    if (auto exp = arg_->exp()) {
-      auto const arg = std::any_cast<Expression *>(exp->accept(this));
-      args.emplace_back(std::unique_ptr<Expression>(arg));
-    } else if (auto str = arg_->stringConst()) {
-      auto const arg = std::any_cast<StringLiteral>(str->accept(this));
-      args.emplace_back(std::move(arg));
-    } else {
-      assert(false);
+  auto args_ctx = ctx->funcRParams();
+  if (args_ctx) {
+    for (auto arg_ : args_ctx->funcRParam()) {
+      if (auto exp = arg_->exp()) {
+        auto const arg = std::any_cast<Expression *>(exp->accept(this));
+        args.emplace_back(std::unique_ptr<Expression>(arg));
+      } else if (auto str = arg_->stringConst()) {
+        auto const arg = std::any_cast<std::string>(str->accept(this));
+        args.emplace_back(std::move(arg));
+      } else {
+        assert(false);
+      }
     }
   }
   auto const ret = new Call(std::move(ident), std::move(args));
@@ -316,7 +325,7 @@ std::any AstVisitor::visitNot(SysYParser::NotContext *const ctx) {
 
 std::any
 AstVisitor::visitStringConst(SysYParser::StringConstContext *const ctx) {
-  // TODO
+  return ctx->getText();
 }
 
 std::any AstVisitor::visitMul(SysYParser::MulContext *const ctx) {
@@ -436,21 +445,28 @@ std::any AstVisitor::visitOr(SysYParser::OrContext *const ctx) {
   return static_cast<Expression *>(ret);
 }
 
-std::vector<unsigned>
-AstVisitor::visitDimensions(std::vector<SysYParser::ExpContext *> const ctx) {
-  std::vector<unsigned> ret;
-  for (auto dim : ctx) {
-    auto const expr_ = std::any_cast<Expression *>(dim->accept(this));
-    std::unique_ptr<Expression> const expr(expr_);
-    if (expr->value() == nullptr) {
-      // TODO
-    }
-    if (auto const const_expr =
-            dynamic_cast<IntLiteral const *>(expr->value())) {
-      ret.push_back(const_expr->value());
-    } else {
-      // TODO
-    }
+std::any AstVisitor::visitNumber(SysYParser::NumberContext *const ctx) {
+  if (ctx->intConst()) {
+    auto val = std::any_cast<IntLiteral::Value>(ctx->intConst()->accept(this));
+    auto literal = new IntLiteral{val};
+    return static_cast<Expression *>(literal);
+  }
+  if (ctx->floatConst()) {
+    auto val =
+        std::any_cast<FloatLiteral::Value>(ctx->floatConst()->accept(this));
+    auto literal = new FloatLiteral{val};
+    return static_cast<Expression *>(literal);
+  }
+  assert(false);
+  return static_cast<Expression *>(nullptr);
+}
+
+std::vector<std::unique_ptr<Expression>>
+AstVisitor::visitDimensions(const std::vector<SysYParser::ExpContext *> &ctxs) {
+  std::vector<std::unique_ptr<Expression>> ret;
+  for (auto expr_ctx : ctxs) {
+    auto expr_ = std::any_cast<Expression *>(expr_ctx->accept(this));
+    ret.emplace_back(expr_);
   }
   return ret;
 }
