@@ -1,32 +1,15 @@
 #pragma once
 
-#include <cstdint>
-#include <memory>
 #include <variant>
-#include <vector>
 
 #include "common/Display.hpp"
+#include "common/common.hpp"
 
 namespace frontend {
+namespace ast {
 
-enum class UnaryOp { Add, Sub, Not };
-
-enum class BinaryOp {
-  Add,
-  Sub,
-  Mul,
-  Div,
-  Mod,
-  Eq,
-  Neq,
-  Lt,
-  Gt,
-  Leq,
-  Geq,
-  And,
-  Or,
-  NR_OPS
-};
+using UnaryOp = ::UnaryOp;
+using BinaryOp = ::BinaryOp;
 
 class SysYType : public Display {
 public:
@@ -35,8 +18,7 @@ public:
 
 class ScalarType : public SysYType {
 public:
-  // String特殊处理
-  enum Type { Int, Float, String };
+  using Type = ::ScalarType;
 
   explicit ScalarType(Type type) : m_type{type} {}
   virtual ~ScalarType() = default;
@@ -132,6 +114,12 @@ public:
 
   void print(std::ostream &out, unsigned indent) const override;
 
+  const Identifier &ident() const { return m_ident; }
+  const std::vector<std::unique_ptr<Expression>> &indices() const { return m_indices; }
+
+public:
+  mutable std::shared_ptr<Var> var;
+
 private:
   Identifier m_ident;
   std::vector<std::unique_ptr<Expression>> m_indices;
@@ -144,6 +132,9 @@ public:
   virtual ~UnaryExpr() = default;
 
   void print(std::ostream &out, unsigned indent) const override;
+
+  UnaryOp op() const { return m_op; }
+  const std::unique_ptr<Expression> &operand() const { return m_operand; }
 
 private:
   UnaryOp m_op;
@@ -158,6 +149,10 @@ public:
   virtual ~BinaryExpr() = default;
 
   void print(std::ostream &out, unsigned indent) const override;
+
+  BinaryOp op() const { return m_op; }
+  const std::unique_ptr<Expression> &lhs() const { return m_lhs; }
+  const std::unique_ptr<Expression> &rhs() const { return m_rhs; }
 
 private:
   BinaryOp m_op;
@@ -277,6 +272,8 @@ public:
 
   void print(std::ostream &out, unsigned indent) const override;
 
+  const Value &value() const { return m_value; }
+
 private:
   Value m_value;
 };
@@ -290,6 +287,11 @@ public:
   virtual ~Declaration() = default;
 
   void print(std::ostream &out, unsigned indent) const override;
+
+  const std::unique_ptr<SysYType> &type() const { return m_type; }
+  const Identifier &ident() const { return m_ident; }
+  const std::unique_ptr<Initializer> &init() const { return m_init; }
+  bool const_qualified() const { return m_const_qualified; }
 
 private:
   std::unique_ptr<SysYType> m_type;
@@ -395,8 +397,11 @@ public:
 
   void print(std::ostream &out, unsigned indent) const override;
 
+  const std::vector<Child> &children() const { return m_children; }
+
 private:
   std::vector<Child> m_children;
 };
 
+} // namespace ast
 } // namespace frontend

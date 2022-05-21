@@ -3,7 +3,9 @@
 #include "frontend/AstVisitor.hpp"
 #include "frontend/SysYLexer.h"
 #include "frontend/SysYParser.h"
+#include "frontend/Typer.hpp"
 
+#include "common/errors.hpp"
 #include "common/utils.hpp"
 
 #include <exception>
@@ -22,7 +24,10 @@ struct ThrowingErrorListner : public antlr4::BaseErrorListener {
 };
 
 int main(int argc, char *argv[]) {
-  ifstream ifs{"input.sy"};
+  string source = "input.sy";
+  if (argc > 1)
+    source = argv[1];
+  ifstream ifs{source};
 
   ThrowingErrorListner error_listener;
   ANTLRInputStream input{ifs};
@@ -42,7 +47,12 @@ int main(int argc, char *argv[]) {
     visitor.visitCompUnit(root);
     auto &ast = visitor.compileUnit();
     ast.print(cout, 0);
+
+    frontend::Typer typer;
+    typer.visit_compile_unit(ast);
   } catch (const ParseCancellationException &e) {
+    error(cerr) << e.what() << endl;
+  } catch (const CompileError &e) {
     error(cerr) << e.what() << endl;
   }
   return 0;

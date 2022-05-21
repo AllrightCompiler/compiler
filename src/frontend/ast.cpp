@@ -5,8 +5,10 @@
 #include <ostream>
 #include <string_view>
 
-using namespace frontend;
+using namespace frontend::ast;
 using std::ostream;
+
+using AstScalarType = frontend::ast::ScalarType;
 
 std::string_view op_string(UnaryOp op) {
   switch (op) {
@@ -30,12 +32,11 @@ std::string_view op_string(BinaryOp op) {
   return op_strs[i];
 }
 
-std::string_view type_string(ScalarType::Type type) {
-  using Type = ScalarType::Type;
+std::string_view type_string(::ScalarType type) {
   switch (type) {
-  case Type::Int:
+  case Int:
     return "int";
-  case Type::Float:
+  case Float:
     return "float";
   default:
     break;
@@ -43,13 +44,13 @@ std::string_view type_string(ScalarType::Type type) {
   return "<unknown_scalar_type>";
 }
 
-std::string_view type_string(const ScalarType *type) {
+std::string_view type_string(const AstScalarType *type) {
   if (!type)
     return "void";
   return type_string(type->type());
 }
 
-ostream &operator<<(ostream &os, const std::unique_ptr<ScalarType> &type) {
+ostream &operator<<(ostream &os, const std::unique_ptr<AstScalarType> &type) {
   os << type_string(type.get());
   return os;
 }
@@ -77,7 +78,7 @@ ostream &operator<<(ostream &os, const std::unique_ptr<SysYType> &type) {
   }
 
   auto raw = type.get();
-  if (auto scalar_type = dynamic_cast<ScalarType *>(raw)) {
+  if (auto scalar_type = dynamic_cast<AstScalarType *>(raw)) {
     os << type_string(scalar_type);
   } else if (auto array_type = dynamic_cast<ArrayType *>(raw)) {
     os << *array_type;
@@ -92,7 +93,7 @@ ostream &operator<<(ostream &os, const Parameter &param) {
   return os;
 }
 
-void ScalarType::print(std::ostream &out, unsigned int indent) const {
+void AstScalarType::print(std::ostream &out, unsigned int indent) const {
   print_indent(out, indent);
   out << type_string(this) << '\n';
 }

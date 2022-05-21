@@ -57,11 +57,11 @@ std::any AstVisitor::visitConstDecl(SysYParser::ConstDeclContext *const ctx) {
 }
 
 std::any AstVisitor::visitInt(SysYParser::IntContext *const ctx) {
-  return new ScalarType(ScalarType::Int);
+  return new ScalarType(Int);
 }
 
 std::any AstVisitor::visitFloat(SysYParser::FloatContext *const ctx) {
-  return new ScalarType(ScalarType::Float);
+  return new ScalarType(Float);
 }
 
 std::any AstVisitor::visitVarDecl(SysYParser::VarDeclContext *const ctx) {

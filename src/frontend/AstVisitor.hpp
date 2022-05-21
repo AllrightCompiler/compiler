@@ -6,6 +6,8 @@
 
 namespace frontend {
 
+using namespace ast;
+
 class AstVisitor : public SysYBaseVisitor {
 public:
   CompileUnit const &compileUnit() const;
