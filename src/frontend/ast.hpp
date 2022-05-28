@@ -379,6 +379,11 @@ public:
 
   void print(std::ostream &out, unsigned indent) const override;
 
+  const std::unique_ptr<ScalarType> &type() const { return m_type; }
+  const Identifier &ident() const { return m_ident; }
+  const std::vector<std::unique_ptr<Parameter>> &params() const { return m_params; }
+  const std::unique_ptr<Block> &body() const { return m_body; }
+
 private:
   std::unique_ptr<ScalarType> m_type;
   Identifier m_ident;

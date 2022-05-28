@@ -20,51 +20,71 @@ inline const std::shared_ptr<Var> &get_var(const VarTable &table, const string& 
   return it != table.end() ? it->second : null_var();
 }
 
-struct ScopedVarTable {
-  std::vector<VarTable> vars;
+struct Scope {
+  VarTable vars;
+  bool is_loop;
 
-  ScopedVarTable() { open(); }
+  Scope(bool is_loop = false) : is_loop{is_loop} {}
+
+  Var *lookup_var(const string &name) const { return ::lookup_var(vars, name); }
+  const std::shared_ptr<Var> &get_var(const string &name) const { return ::get_var(vars, name); }
+};
+
+class ScopeStack {
+  std::vector<Scope> scopes;
+
+public:
+  ScopeStack() { open(); }
 
   void open() {
-    vars.emplace_back();
+    scopes.emplace_back();
   }
 
   void close() {
-    vars.pop_back();
+    scopes.pop_back();
   }
 
-  VarTable &current() {
-    return vars.back();
+  Scope &current() {
+    return scopes.back();
   }
 
   Var *lookup(const string &name) const {
-    for (auto it = vars.rbegin(); it != vars.rend(); ++it) {
-      auto var = lookup_var(*it, name);
+    for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+      auto var = it->lookup_var(name);
       if (var) return var;
     }
     return nullptr;
   }
 
   const std::shared_ptr<Var> &get(const string &name) const {
-    for (auto it = vars.rbegin(); it != vars.rend(); ++it) {
-      auto &var = get_var(*it, name);
+    for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+      auto &var = it->get_var(name);
       if (var) return var;
     }
     return null_var();
   }
 
   void add(const string &name, std::shared_ptr<Var> &&var) {
-    current()[name] = var;
+    current().vars[name] = var;
   }
 
   void add(const string &name, const std::shared_ptr<Var> &var) {
-    current()[name] = var;
+    current().vars[name] = var;
+  }
+
+  const Scope *nearest_loop() const {
+    for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
+      if (it->is_loop)
+        return &(*it);
+    }
+    return nullptr;
   }
 };
 
 struct Function {
   ScalarType ret_type;
-  ScopedVarTable scopes;
+  VarTable params;
+  ScopeStack scopes;
 };
 
 struct SymbolTable {

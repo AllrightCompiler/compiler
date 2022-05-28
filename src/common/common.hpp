@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -41,7 +42,8 @@ struct Type {
 
   Type() {}
   Type(ScalarType btype) : base_type{btype} {}
-  Type(ScalarType btype, bool const_qualified) : base_type{btype}, is_const{const_qualified} {}
+  Type(ScalarType btype, bool const_qualified)
+      : base_type{btype}, is_const{const_qualified} {}
 };
 
 // std::variant过于难用，这里直接用union
@@ -62,7 +64,7 @@ struct ConstValue {
 struct Var {
   Type type;
   ConstValue val;
-  std::vector<ConstValue> arr_val;
+  std::unique_ptr<std::map<int, ConstValue>> arr_val; // index -> value，未记录的项全部初始化为0
 
   Var() {}
   Var(Type &&type_) : type{type_} {}
