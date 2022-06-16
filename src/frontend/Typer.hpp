@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/symbol_table.hpp"
+#include "frontend/symbol_table.hpp"
 #include "frontend/ast.hpp"
 
 #include <optional>

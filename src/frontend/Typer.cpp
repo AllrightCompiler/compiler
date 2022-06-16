@@ -7,11 +7,6 @@
 #include <cassert>
 // #include <cstdio>
 
-const std::shared_ptr<Var> &null_var() {
-  static std::shared_ptr<Var> null = nullptr;
-  return null;
-}
-
 namespace frontend {
 
 void Typer::visit_compile_unit(const ast::CompileUnit &node) {

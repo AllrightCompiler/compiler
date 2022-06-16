@@ -5,17 +5,20 @@
 
 #include "common/common.hpp"
 
+namespace frontend {
+
 using std::string;
 using VarTable = std::unordered_map<string, std::shared_ptr<Var>>;
 
-inline Var *lookup_var(const VarTable &table, const string& name) {
+inline Var *lookup_var(const VarTable &table, const string &name) {
   auto it = table.find(name);
   return it != table.end() ? it->second.get() : nullptr;
 }
 
 const std::shared_ptr<Var> &null_var();
 
-inline const std::shared_ptr<Var> &get_var(const VarTable &table, const string& name) {
+inline const std::shared_ptr<Var> &get_var(const VarTable &table,
+                                           const string &name) {
   auto it = table.find(name);
   return it != table.end() ? it->second : null_var();
 }
@@ -26,8 +29,12 @@ struct Scope {
 
   Scope(bool is_loop = false) : is_loop{is_loop} {}
 
-  Var *lookup_var(const string &name) const { return ::lookup_var(vars, name); }
-  const std::shared_ptr<Var> &get_var(const string &name) const { return ::get_var(vars, name); }
+  Var *lookup_var(const string &name) const {
+    return frontend::lookup_var(vars, name);
+  }
+  const std::shared_ptr<Var> &get_var(const string &name) const {
+    return frontend::get_var(vars, name);
+  }
 };
 
 class ScopeStack {
@@ -36,22 +43,17 @@ class ScopeStack {
 public:
   ScopeStack() { open(); }
 
-  void open() {
-    scopes.emplace_back();
-  }
+  void open() { scopes.emplace_back(); }
 
-  void close() {
-    scopes.pop_back();
-  }
+  void close() { scopes.pop_back(); }
 
-  Scope &current() {
-    return scopes.back();
-  }
+  Scope &current() { return scopes.back(); }
 
   Var *lookup(const string &name) const {
     for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
       auto var = it->lookup_var(name);
-      if (var) return var;
+      if (var)
+        return var;
     }
     return nullptr;
   }
@@ -59,7 +61,8 @@ public:
   const std::shared_ptr<Var> &get(const string &name) const {
     for (auto it = scopes.rbegin(); it != scopes.rend(); ++it) {
       auto &var = it->get_var(name);
-      if (var) return var;
+      if (var)
+        return var;
     }
     return null_var();
   }
@@ -81,13 +84,13 @@ public:
   }
 };
 
-struct Function {
-  ScalarType ret_type;
-  VarTable params;
-  ScopeStack scopes;
-};
-
 struct SymbolTable {
+  struct Function {
+    ScalarType ret_type;
+    VarTable params;
+    ScopeStack scopes;
+  };
+
   VarTable global_vars;
   std::unordered_map<string, Function> functions;
   Function *cur_func;
@@ -103,20 +106,24 @@ struct SymbolTable {
       global_vars[name] = var;
     }
   }
-  
+
   Var *lookup_var(const string &name) {
     if (cur_func) {
       auto var = cur_func->scopes.lookup(name);
-      if (var) return var;
+      if (var)
+        return var;
     }
-    return ::lookup_var(global_vars, name);
+    return frontend::lookup_var(global_vars, name);
   }
 
   const std::shared_ptr<Var> &get_var(const string &name) {
     if (cur_func) {
       auto &var = cur_func->scopes.get(name);
-      if (var) return var;
+      if (var)
+        return var;
     }
-    return ::get_var(global_vars, name);
+    return frontend::get_var(global_vars, name);
   }
 };
+
+} // namespace frontend

@@ -6,6 +6,7 @@
 
 using namespace frontend;
 
+
 CompileUnit const &AstVisitor::compileUnit() const {
   return *this->m_compile_unit;
 }
