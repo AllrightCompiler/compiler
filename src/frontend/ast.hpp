@@ -222,6 +222,9 @@ public:
       : m_func{std::move(func)}, m_args{std::move(args)} {}
   virtual ~Call() = default;
 
+  const Identifier &func() const { return m_func; }
+  const std::vector<Argument> &args() const { return m_args; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -240,6 +243,8 @@ public:
       : m_expr{std::move(expr)} {}
   virtual ~ExprStmt() = default;
 
+  const std::unique_ptr<Expression> &expr() const { return m_expr; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -251,6 +256,9 @@ public:
   Assignment(std::unique_ptr<LValue> lhs, std::unique_ptr<Expression> rhs)
       : m_lhs{std::move(lhs)}, m_rhs{std::move(rhs)} {}
   virtual ~Assignment() = default;
+
+  const std::unique_ptr<LValue> &lhs() const { return m_lhs; }
+  const std::unique_ptr<Expression> &rhs() const { return m_rhs; }
 
   void print(std::ostream &out, unsigned indent) const override;
 
@@ -309,6 +317,8 @@ public:
       : m_children{std::move(children)} {}
   virtual ~Block() = default;
 
+  const std::vector<Child> &children() const { return m_children; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -323,6 +333,10 @@ public:
                                                               else_)} {}
   virtual ~IfElse() = default;
 
+  const std::unique_ptr<Expression> &cond() const { return m_cond; }
+  const std::unique_ptr<Statement> &then() const { return m_then; }
+  const std::unique_ptr<Statement> &otherwise() const { return m_else; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -335,6 +349,9 @@ public:
   While(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> body)
       : m_cond{std::move(cond)}, m_body{std::move(body)} {}
   virtual ~While() = default;
+
+  const std::unique_ptr<Expression> &cond() const { return m_cond; }
+  const std::unique_ptr<Statement> &body() const { return m_body; }
 
   void print(std::ostream &out, unsigned indent) const override;
 
@@ -361,6 +378,8 @@ class Return : public Statement {
 public:
   explicit Return(std::unique_ptr<Expression> res) : m_res{std::move(res)} {}
   virtual ~Return() = default;
+
+  const std::unique_ptr<Expression> &res() const { return m_res; }
 
   void print(std::ostream &out, unsigned indent) const override;
 

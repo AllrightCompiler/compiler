@@ -9,6 +9,37 @@
 
 namespace frontend {
 
+Typer::Typer() {
+  auto &funcs = sym_tab.lib_funcs;
+  funcs["getint"] = {.ret_type = Int, .param_types = {}, .variadic = false};
+  funcs["getch"] = {.ret_type = Int, .param_types = {}, .variadic = false};
+  funcs["getfloat"] = {.ret_type = Float, .param_types = {}, .variadic = false};
+  funcs["getarray"] = {.ret_type = Int,
+                       .param_types = {Type{Int, std::vector<int>{0}}},
+                       .variadic = false};
+  funcs["getfarray"] = {.ret_type = Int,
+                        .param_types = {Type{Float, std::vector<int>{0}}},
+                        .variadic = false};
+  funcs["putint"] = {
+      .ret_type = std::nullopt, .param_types = {Type{Int}}, .variadic = false};
+  funcs["putch"] = {
+      .ret_type = std::nullopt, .param_types = {Type{Int}}, .variadic = false};
+  funcs["putfloat"] = {.ret_type = std::nullopt,
+                       .param_types = {Type{Float}},
+                       .variadic = false};
+  funcs["putarray"] = {
+      .ret_type = std::nullopt,
+      .param_types = {Type{Int}, Type{Int, std::vector<int>{0}}},
+      .variadic = false};
+  funcs["putfarray"] = {
+      .ret_type = std::nullopt,
+      .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}},
+      .variadic = false};
+  funcs["putf"] = {.ret_type = std::nullopt,
+                   .param_types = {Type{String}, Type{Int}},
+                   .variadic = true};
+}
+
 void Typer::visit_compile_unit(const ast::CompileUnit &node) {
   for (auto &child : node.children()) {
     if (child.index() == 0) {
@@ -22,31 +53,14 @@ void Typer::visit_compile_unit(const ast::CompileUnit &node) {
 }
 
 void Typer::visit_declaration(const ast::Declaration &node) {
-  Type tp;
-  tp.is_const = node.const_qualified();
-  auto ptr = node.type().get();
-  // TODO: refactor -> parse_type
-  if (TypeCase(scalar_type, ast::ScalarType *, ptr)) {
-    tp.base_type = scalar_type->type();
-  } else if (TypeCase(array_type, ast::ArrayType *, ptr)) {
-    tp.base_type = array_type->base_type();
-    if (array_type->first_dimension_omitted())
-      tp.dims.push_back(0);
-    for (auto &dim : array_type->dimensions()) {
-      auto val = eval(dim);
-      if (!val)
-        throw CompileError{"array dimensions should be compile-time constants"};
-      if (val->type == Float)
-        throw CompileError{"array dimensions must be integers"};
-      if (val->iv < 0)
-        throw CompileError{"array dimensions must be non-negative"};
-      tp.dims.push_back(val->iv);
-    }
-  } else {
-    throw CompileError{"bad type"};
-  }
+  auto name = node.ident().name();
+  if (frontend::lookup_var(sym_tab.current_vars(), name) != nullptr)
+    throw CompileError{"identifier already defined"};
 
-  ConstValue init_val;
+  Type tp = parse_type(node.type());
+  tp.is_const = node.const_qualified();
+
+  std::optional<ConstValue> init_val;
   std::map<int, ConstValue> *arr_val = nullptr;
   auto &initializer = node.init();
   if (initializer) {
@@ -54,7 +68,7 @@ void Typer::visit_declaration(const ast::Declaration &node) {
     if (value.index() == 0) {
       // scalar initializer
       auto &expr = std::get<std::unique_ptr<ast::Expression>>(value);
-      parse_scalar_init(expr, tp, init_val);
+      init_val = parse_scalar_init(expr, tp);
     } else {
       // array initializer
       auto &init_list =
@@ -67,10 +81,9 @@ void Typer::visit_declaration(const ast::Declaration &node) {
         if (init_list.size() == 0) {
           init_val = implicit_cast(tp.base_type, ConstValue{0});
         } else { // init_list.size() == 1
-          // TODO: type check
           auto &expr =
               std::get<std::unique_ptr<ast::Expression>>(init_list[0]->value());
-          parse_scalar_init(expr, tp, init_val);
+          init_val = parse_scalar_init(expr, tp);
         }
       } else {         // real array case
         int index = 0; // index of array
@@ -81,10 +94,10 @@ void Typer::visit_declaration(const ast::Declaration &node) {
   }
 
   // if (initializer)
-  //   printf("var name: %s value: %d\n", node.ident().name().c_str(),
+  //   printf("var name: %s value: %d\n", name.c_str(),
   //   init_val.iv);
   // if (arr_val) {
-  //   printf("array var: %s\n", node.ident().name().c_str());
+  //   printf("array var: %s\n", name.c_str());
   //   for (auto &[i, v] : *arr_val) {
   //     printf("    [%d] = %d\n", i, v.iv);
   //   }
@@ -92,7 +105,7 @@ void Typer::visit_declaration(const ast::Declaration &node) {
   auto var = std::make_shared<Var>(std::move(tp), std::move(init_val));
   if (arr_val)
     var->arr_val.reset(arr_val);
-  sym_tab.add(node.ident().name(), std::move(var));
+  sym_tab.add(name, std::move(var));
 }
 
 void Typer::visit_initializer(
@@ -112,9 +125,8 @@ void Typer::visit_initializer(
     if (value.index() == 0) {
       // new scalar entry
       auto &expr = std::get<std::unique_ptr<ast::Expression>>(value);
-      ConstValue val;
-      if (parse_scalar_init(expr, type, val))
-        arr_val[index] = val;
+      if (auto val = parse_scalar_init(expr, type))
+        arr_val[index] = val.value();
       ++index;
     } else {
       auto &sub_list =
@@ -126,9 +138,118 @@ void Typer::visit_initializer(
     index = padded;
 }
 
-void Typer::visit_function(const ast::Function &func) {}
+void Typer::visit_function(const ast::Function &node) {
+  auto name = node.ident().name();
+  if (sym_tab.functions.count(name) || sym_tab.lib_funcs.count(name))
+    throw CompileError{"function already defined"};
 
-void Typer::visit_lvalue(const ast::LValue &node) {
+  auto &func = sym_tab.functions[name];
+  sym_tab.cur_func = &func;
+
+  auto &ret_type = node.type();
+  if (!ret_type) { // nullptr -> void
+    func.ret_type = std::nullopt;
+  } else {
+    func.ret_type = ret_type->type();
+  }
+
+  for (auto &param : node.params()) {
+    auto param_name = param->ident().name();
+    auto param_type = parse_type(param->type());
+    func.param_names.push_back(param_name);
+    func.param_types.push_back(param_type);
+
+    auto var = std::make_shared<Var>(std::move(param_type));
+    func.scopes.add(param_name, std::move(var));
+  }
+
+  visit_statement(*node.body());
+  sym_tab.cur_func = nullptr;
+}
+
+void Typer::visit_statement(const ast::Statement &node) {
+  auto stmt = &node;
+  auto &scopes = sym_tab.cur_func->scopes;
+
+  if (TypeCase(expr_stmt, const ast::ExprStmt *, stmt)) {
+    visit_expr(expr_stmt->expr());
+    return;
+  }
+  if (TypeCase(assign, const ast::Assignment *, stmt)) {
+    auto &lhs = assign->lhs();
+    auto &rhs = assign->rhs();
+    auto t1 = visit_expr(lhs.get());
+    auto t2 = visit_expr(rhs.get());
+
+    if (lhs->var->type.is_const)
+      throw CompileError{"cannot assign a const value"};
+    if (!t1 || !t2)
+      throw CompileError{"invalid binary operation on void type"};
+    if (t1->is_array() || t2->is_array())
+      throw CompileError{"invalid binary operation on array type"};
+    // 这里假设剩下的是int或float，它们总是兼容的
+    return;
+  }
+  if (TypeCase(block, const ast::Block *, stmt)) {
+    scopes.open();
+    for (auto &child : block->children()) {
+      if (child.index() == 0) {
+        auto &decl = std::get<std::unique_ptr<ast::Declaration>>(child);
+        visit_declaration(*decl);
+      } else {
+        auto &sub_stmt = std::get<std::unique_ptr<ast::Statement>>(child);
+        visit_statement(*sub_stmt);
+      }
+    }
+    scopes.close();
+    return;
+  }
+  if (TypeCase(if_, const ast::IfElse *, stmt)) {
+    auto t = visit_expr(if_->cond());
+    if (!t || t->is_array())
+      throw CompileError{"invalid type for condition expression"};
+    visit_statement(*if_->then());
+    visit_statement(*if_->otherwise());
+    return;
+  }
+  if (TypeCase(while_, const ast::While *, stmt)) {
+    auto t = visit_expr(while_->cond());
+    if (!t || t->is_array())
+      throw CompileError{"invalid type for condition expression"};
+    visit_statement(*while_->body());
+    return;
+  }
+  if (TypeCase(break_, const ast::Break *, stmt)) {
+    if (!scopes.nearest_loop())
+      throw CompileError{"not in a loop"};
+    return;
+  }
+  if (TypeCase(continue_, const ast::Continue *, stmt)) {
+    if (!scopes.nearest_loop())
+      throw CompileError{"not in a loop"};
+    return;
+  }
+  if (TypeCase(return_, const ast::Return *, stmt)) {
+    auto &res = return_->res();
+    auto func = sym_tab.cur_func;
+    if (!res) { // 无实际返回值 (return;)
+      if (func->ret_type)
+        throw CompileError{"function should return a value"};
+      return;
+    }
+
+    auto t = visit_expr(return_->res());
+    if (!func->ret_type && t.has_value())
+      throw CompileError{"function does return a value"};
+    if (t.has_value() && t->is_array())
+      throw CompileError{"invalid return value"};
+    // 这里假设剩下的是int或float，它们总是兼容的
+    return;
+  }
+}
+
+// 注意：并没有递归挂载符号变量
+void Typer::attach_symbol(const ast::LValue &node) {
   if (node.var) // already assigned, skip
     return;
 
@@ -149,7 +270,7 @@ std::optional<ConstValue> Typer::eval(const ast::Expression *node) {
   if (TypeCase(call, const ast::Call *, node))
     return std::nullopt;
   if (TypeCase(lval, const ast::LValue *, node)) {
-    visit_lvalue(*lval);
+    attach_symbol(*lval);
     auto &var = lval->var;
     auto &type = var->type;
     if (!type.is_const)
@@ -164,12 +285,18 @@ std::optional<ConstValue> Typer::eval(const ast::Expression *node) {
       if (!opt_val)
         return std::nullopt;
       int index = implicit_cast(Int, opt_val.value()).iv;
+      if (index < 0 || index >= type.dims.back())
+        throw CompileError{"array index out of range"};
+
       int dim_size = 1;
       for (int i = subscripts.size() - 2; i >= 0; --i) {
         auto opt_val = eval(subscripts[i]);
         if (!opt_val)
           return std::nullopt;
         int v = implicit_cast(Int, opt_val.value()).iv;
+        if (v < 0 || v >= type.dims[i])
+          throw CompileError{"array index out of range"};
+
         dim_size *= type.dims[i + 1];
         index += dim_size * v;
       }
@@ -320,16 +447,168 @@ ConstValue Typer::implicit_cast(ScalarType dst_type, ConstValue val) const {
   __builtin_unreachable();
 }
 
-bool Typer::parse_scalar_init(const std::unique_ptr<ast::Expression> &expr,
-                              const Type &type, ConstValue &init_val) {
+std::optional<ConstValue>
+Typer::parse_scalar_init(const std::unique_ptr<ast::Expression> &expr,
+                         const Type &type) {
+  auto t = visit_expr(expr);
+  if (!t || t->is_array())
+    throw CompileError{"type mismatch"};
+
   auto opt_val = eval(expr);
   if (!opt_val && type.is_const)
     throw CompileError{"value cannot be evaluated at compile time"};
-  if (opt_val) {
-    init_val = implicit_cast(type.base_type, opt_val.value());
+  if (opt_val)
+    return implicit_cast(type.base_type, opt_val.value());
+  return std::nullopt;
+}
+
+std::optional<Type> Typer::visit_expr(const ast::Expression *expr) {
+  if (TypeCase(_, const ast::IntLiteral *, expr))
+    return Type{Int};
+  if (TypeCase(_, const ast::FloatLiteral *, expr))
+    return Type{Float};
+
+  if (TypeCase(lval, const ast::LValue *, expr)) {
+    attach_symbol(*lval);
+    for (auto &index_expr : lval->indices())
+      visit_expr(index_expr);
+
+    auto &tp = lval->var->type;
+    int deref_dims = lval->indices().size();
+    if (deref_dims > tp.nr_dims())
+      throw CompileError{"too many subscripts"};
+
+    std::vector<int> dims;
+    std::copy(tp.dims.begin() + deref_dims, tp.dims.end(),
+              std::back_inserter(dims));
+    return Type{tp.base_type, std::move(dims)};
+  }
+  if (TypeCase(call, const ast::Call *, expr)) {
+    auto func_name = call->func().name();
+    bool variadic = false;
+    std::optional<Type> ret_type;
+    std::vector<Type> *p_param_types = nullptr;
+
+    if (sym_tab.functions.count(func_name)) {
+      auto &func = sym_tab.functions[func_name];
+      ret_type = func.ret_type;
+      p_param_types = &func.param_types;
+    } else if (sym_tab.lib_funcs.count(func_name)) {
+      auto &lib_func = sym_tab.lib_funcs[func_name];
+      variadic = lib_func.variadic;
+      ret_type = lib_func.ret_type;
+      p_param_types = &lib_func.param_types;
+    } else
+      throw CompileError{"unresolved function call"};
+
+    auto &param_types = *p_param_types;
+    int nr_params = param_types.size();
+    int nr_args = call->args().size();
+    if ((!variadic && nr_args != nr_params) ||
+        (variadic && nr_args < nr_params))
+      throw CompileError{"wrong number of arguments"};
+
+    for (int i = 0; i < nr_args; ++i) {
+      auto &arg = call->args()[i];
+      std::optional<Type> t;
+      if (arg.index() == 0) {
+        auto &arg_expr = std::get<std::unique_ptr<ast::Expression>>(arg);
+        t = visit_expr(arg_expr);
+        if (!t.has_value())
+          throw CompileError{"void-type argument"};
+      }
+
+      if (i < nr_params) {
+        // 非可变参部分，进行类型检查
+        if (param_types[i].base_type == String) {
+          if (arg.index() != 1)
+            throw CompileError{"argument is not string literal"};
+        } else {
+          // 注: t为std::nullopt对应一个字符串字面量实参
+          if (!t.has_value() || !type_compatible(param_types[i], t.value()))
+            throw CompileError{"incompatible argument type"};
+        }
+      }
+    }
+    return ret_type;
+  }
+  if (TypeCase(unary, const ast::UnaryExpr *, expr)) {
+    auto t = visit_expr(unary->operand());
+    if (!t.has_value())
+      throw CompileError{"invalid unary operation on void type"};
+    // 一元逻辑非返回int
+    if (unary->op() == UnaryOp::Not)
+      return Type{Int};
+    else
+      return t;
+  }
+  if (TypeCase(binary, const ast::BinaryExpr *, expr)) {
+    auto t1 = visit_expr(binary->lhs());
+    auto t2 = visit_expr(binary->rhs());
+    if (!t1 || !t2)
+      throw CompileError{"invalid binary operation on void type"};
+    if (t1->is_array() || t2->is_array())
+      throw CompileError{"invalid binary operation on array type"};
+
+    // TODO: 检查具体二元操作是否合法 (如float % int)
+    // 算术操作返回提升后的类型，逻辑操作返回int
+    switch (binary->op()) {
+    case BinaryOp::Add:
+    case BinaryOp::Sub:
+    case BinaryOp::Mul:
+    case BinaryOp::Div: {
+      auto ret_type =
+          (t1->base_type == Float || t2->base_type == Float) ? Float : Int;
+      return Type{ret_type};
+    }
+    default: // Mod, Eq, Neq, Lt, Gt, Leq, Geq, And, Or
+      return Type{Int};
+    }
+  }
+  return std::nullopt;
+}
+
+Type Typer::parse_type(const std::unique_ptr<ast::SysYType> &p) {
+  Type tp;
+  auto ptr = p.get();
+  if (TypeCase(scalar_type, ast::ScalarType *, ptr)) {
+    tp.base_type = scalar_type->type();
+  } else if (TypeCase(array_type, ast::ArrayType *, ptr)) {
+    tp.base_type = array_type->base_type();
+    if (array_type->first_dimension_omitted())
+      tp.dims.push_back(0);
+    for (auto &dim : array_type->dimensions()) {
+      auto val = eval(dim);
+      if (!val)
+        throw CompileError{"array dimensions should be compile-time constants"};
+      if (val->type != Int)
+        throw CompileError{"array dimensions must be integers"};
+      if (val->iv <= 0)
+        throw CompileError{"array dimensions must be positive"};
+      tp.dims.push_back(val->iv);
+    }
+  } else {
+    throw CompileError{"unrecognized type"};
+  }
+  return tp;
+}
+
+// 如果可以隐式转换或传参，返回true
+bool type_compatible(const Type &t1, const Type &t2) {
+  bool a1 = t1.is_array(), a2 = t2.is_array();
+  if (!a1 && !a2) {
+    // 这里已经排除掉了字符串字面量，int和float是兼容的
     return true;
   }
-  return false;
+  if (t1.base_type != t2.base_type)
+    return false;
+  if (t1.nr_dims() != t2.nr_dims())
+    return false;
+  // 数组第一维维度可以不同
+  for (int i = 1; i < t1.nr_dims(); ++i)
+    if (t1.dims[i] != t2.dims[i])
+      return false;
+  return true;
 }
 
 } // namespace frontend

@@ -43,7 +43,7 @@ class ScopeStack {
 public:
   ScopeStack() { open(); }
 
-  void open() { scopes.emplace_back(); }
+  void open(bool is_loop = false) { scopes.emplace_back(is_loop); }
 
   void close() { scopes.pop_back(); }
 
@@ -86,13 +86,21 @@ public:
 
 struct SymbolTable {
   struct Function {
-    ScalarType ret_type;
-    VarTable params;
+    std::optional<ScalarType> ret_type; // std::nullopt代表void
+    std::vector<Type> param_types;
+    std::vector<string> param_names;
     ScopeStack scopes;
+  };
+
+  struct LibFunction {
+    std::optional<ScalarType> ret_type;
+    std::vector<Type> param_types;
+    bool variadic;
   };
 
   VarTable global_vars;
   std::unordered_map<string, Function> functions;
+  std::unordered_map<string, LibFunction> lib_funcs;
   Function *cur_func;
 
   SymbolTable() : cur_func{nullptr} {}
@@ -123,6 +131,14 @@ struct SymbolTable {
         return var;
     }
     return frontend::get_var(global_vars, name);
+  }
+
+  VarTable &current_vars() {
+    if (cur_func) {
+      return cur_func->scopes.current().vars;
+    } else {
+      return global_vars;
+    }
   }
 };
 
