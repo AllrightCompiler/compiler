@@ -53,7 +53,7 @@ void Typer::visit_compile_unit(const ast::CompileUnit &node) {
 }
 
 void Typer::visit_declaration(const ast::Declaration &node) {
-  auto name = node.ident().name();
+  auto &name = node.ident().name();
   if (frontend::lookup_var(sym_tab.current_vars(), name) != nullptr)
     throw CompileError{"identifier already defined"};
 
@@ -105,6 +105,7 @@ void Typer::visit_declaration(const ast::Declaration &node) {
   auto var = std::make_shared<Var>(std::move(tp), std::move(init_val));
   if (arr_val)
     var->arr_val.reset(arr_val);
+  node.var = var; // copy
   sym_tab.add(name, std::move(var));
 }
 
@@ -139,7 +140,7 @@ void Typer::visit_initializer(
 }
 
 void Typer::visit_function(const ast::Function &node) {
-  auto name = node.ident().name();
+  auto &name = node.ident().name();
   if (sym_tab.functions.count(name) || sym_tab.lib_funcs.count(name))
     throw CompileError{"function already defined"};
 
@@ -154,12 +155,13 @@ void Typer::visit_function(const ast::Function &node) {
   }
 
   for (auto &param : node.params()) {
-    auto param_name = param->ident().name();
+    auto &param_name = param->ident().name();
     auto param_type = parse_type(param->type());
     func.param_names.push_back(param_name);
     func.param_types.push_back(param_type);
 
     auto var = std::make_shared<Var>(std::move(param_type));
+    param->var = var; // copy
     func.scopes.add(param_name, std::move(var));
   }
 
@@ -216,7 +218,9 @@ void Typer::visit_statement(const ast::Statement &node) {
     auto t = visit_expr(while_->cond());
     if (!t || t->is_array())
       throw CompileError{"invalid type for condition expression"};
+    scopes.open(true);
     visit_statement(*while_->body());
+    scopes.close();
     return;
   }
   if (TypeCase(break_, const ast::Break *, stmt)) {
@@ -253,7 +257,7 @@ void Typer::attach_symbol(const ast::LValue &node) {
   if (node.var) // already assigned, skip
     return;
 
-  auto name = node.ident().name();
+  auto &name = node.ident().name();
   auto &var = sym_tab.get_var(name);
   if (!var)
     throw CompileError{"undefined symbol"};
@@ -463,6 +467,12 @@ Typer::parse_scalar_init(const std::unique_ptr<ast::Expression> &expr,
 }
 
 std::optional<Type> Typer::visit_expr(const ast::Expression *expr) {
+  auto t = visit_expr_aux(expr);
+  expr->type = t; // copy
+  return t;
+}
+
+std::optional<Type> Typer::visit_expr_aux(const ast::Expression *expr) {
   if (TypeCase(_, const ast::IntLiteral *, expr))
     return Type{Int};
   if (TypeCase(_, const ast::FloatLiteral *, expr))
@@ -550,17 +560,19 @@ std::optional<Type> Typer::visit_expr(const ast::Expression *expr) {
     if (t1->is_array() || t2->is_array())
       throw CompileError{"invalid binary operation on array type"};
 
-    // TODO: 检查具体二元操作是否合法 (如float % int)
+    auto op = binary->op();
+    auto ret_type =
+        (t1->base_type == Float || t2->base_type == Float) ? Float : Int;
+    if (op == BinaryOp::Mod && ret_type != Int)
+      throw CompileError{"invalid operands to binary % (int only)"};
+
     // 算术操作返回提升后的类型，逻辑操作返回int
-    switch (binary->op()) {
+    switch (op) {
     case BinaryOp::Add:
     case BinaryOp::Sub:
     case BinaryOp::Mul:
-    case BinaryOp::Div: {
-      auto ret_type =
-          (t1->base_type == Float || t2->base_type == Float) ? Float : Int;
+    case BinaryOp::Div:
       return Type{ret_type};
-    }
     default: // Mod, Eq, Neq, Lt, Gt, Leq, Geq, And, Or
       return Type{Int};
     }
@@ -570,6 +582,7 @@ std::optional<Type> Typer::visit_expr(const ast::Expression *expr) {
 
 Type Typer::parse_type(const std::unique_ptr<ast::SysYType> &p) {
   Type tp;
+  tp.is_const = false;
   auto ptr = p.get();
   if (TypeCase(scalar_type, ast::ScalarType *, ptr)) {
     tp.base_type = scalar_type->type();

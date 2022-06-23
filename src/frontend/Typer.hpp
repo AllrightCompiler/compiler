@@ -22,6 +22,7 @@ class Typer {
   void visit_statement(const ast::Statement &);
 
   // return type of expression
+  std::optional<Type> visit_expr_aux(const ast::Expression *);
   std::optional<Type> visit_expr(const ast::Expression *);
   std::optional<Type> visit_expr(const std::unique_ptr<ast::Expression> &p) {
     return visit_expr(p.get());

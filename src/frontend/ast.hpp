@@ -62,7 +62,7 @@ public:
 
   void print(std::ostream &out, unsigned indent) const override;
 
-  std::string name() const { return m_name; }
+  const std::string &name() const { return m_name; }
 
 private:
   std::string m_name;
@@ -79,6 +79,9 @@ public:
   const std::unique_ptr<SysYType> &type() const { return m_type; }
   const Identifier &ident() const { return m_ident; }
 
+public:
+  mutable std::shared_ptr<Var> var;
+
 private:
   std::unique_ptr<SysYType> m_type;
   Identifier m_ident;
@@ -94,16 +97,20 @@ class NumberLiteral;
 class Expression : public AstNode {
 public:
   Expression() {}
-  Expression(std::unique_ptr<ScalarType> type,
-             std::unique_ptr<NumberLiteral> value)
-      : m_type{std::move(type)}, m_value{std::move(value)} {}
+  // Expression(std::unique_ptr<ScalarType> type,
+  //            std::unique_ptr<NumberLiteral> value)
+  //     : m_type{std::move(type)}, m_value{std::move(value)} {}
   virtual ~Expression() = default;
 
-  NumberLiteral const *value() const { return m_value.get(); }
+//   NumberLiteral const *value() const { return m_value.get(); }
 
-protected:
-  std::unique_ptr<ScalarType> m_type;
-  std::unique_ptr<NumberLiteral> m_value;
+// protected:
+//   std::unique_ptr<ScalarType> m_type;
+//   std::unique_ptr<NumberLiteral> m_value;
+
+public:
+  // 求得的表达式类型
+  mutable std::optional<Type> type;
 };
 
 class LValue : public Expression {
@@ -300,6 +307,9 @@ public:
   const Identifier &ident() const { return m_ident; }
   const std::unique_ptr<Initializer> &init() const { return m_init; }
   bool const_qualified() const { return m_const_qualified; }
+
+public:
+  mutable std::shared_ptr<Var> var;
 
 private:
   std::unique_ptr<SysYType> m_type;

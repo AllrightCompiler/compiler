@@ -4,6 +4,7 @@
 #include "frontend/SysYLexer.h"
 #include "frontend/SysYParser.h"
 #include "frontend/Typer.hpp"
+#include "frontend/IrGen.hpp"
 
 #include "common/errors.hpp"
 #include "common/utils.hpp"
@@ -46,10 +47,14 @@ int main(int argc, char *argv[]) {
     frontend::AstVisitor visitor;
     visitor.visitCompUnit(root);
     auto &ast = visitor.compileUnit();
-    ast.print(cout, 0);
+    // ast.print(cout, 0);
 
     frontend::Typer typer;
     typer.visit_compile_unit(ast);
+
+    frontend::IrGen ir_gen;
+    ir_gen.visit_compile_unit(ast);
+    std::cout << *ir_gen.get_program();
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;
   } catch (const CompileError &e) {
