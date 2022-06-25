@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 
-#define TypeCase(res, type, expr) auto res = dynamic_cast<type>(expr)
+#define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 
 enum class UnaryOp { Add, Sub, Not };
 

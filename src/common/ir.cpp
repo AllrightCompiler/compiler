@@ -194,31 +194,31 @@ ostream &operator<<(ostream &os, const Branch &ins) {
 ostream &operator<<(ostream &os, const Instruction &insn) {
   using namespace insns;
   auto ins = &insn;
-  if (TypeCase(alloca, const Alloca *, ins)) {
+  TypeCase(alloca, const Alloca *, ins) {
     os << *alloca;
-  } else if (TypeCase(load, const Load *, ins)) {
+  } else TypeCase(load, const Load *, ins) {
     os << *load;
-  } else if (TypeCase(load_imm, const LoadImm *, ins)) {
+  } else TypeCase(load_imm, const LoadImm *, ins) {
     os << *load_imm;
-  } else if (TypeCase(load_addr, const LoadAddr *, ins)) {
+  } else TypeCase(load_addr, const LoadAddr *, ins) {
     os << *load_addr;
-  } else if (TypeCase(store, const Store *, ins)) {
+  } else TypeCase(store, const Store *, ins) {
     os << *store;
-  } else if (TypeCase(gep, const GetElementPtr *, ins)) {
+  } else TypeCase(gep, const GetElementPtr *, ins) {
     os << *gep;
-  } else if (TypeCase(convert, const Convert *, ins)) {
+  } else TypeCase(convert, const Convert *, ins) {
     os << *convert;
-  } else if (TypeCase(call, const Call *, ins)) {
+  } else TypeCase(call, const Call *, ins) {
     os << *call;
-  } else if (TypeCase(unary, const Unary *, ins)) {
+  } else TypeCase(unary, const Unary *, ins) {
     os << *unary;
-  } else if (TypeCase(binary, const Binary *, ins)) {
+  } else TypeCase(binary, const Binary *, ins) {
     os << *binary;
-  } else if (TypeCase(ret, const Return *, ins)) {
+  } else TypeCase(ret, const Return *, ins) {
     os << *ret;
-  } else if (TypeCase(jump, const Jump *, ins)) {
+  } else TypeCase(jump, const Jump *, ins) {
     os << *jump;
-  } else if (TypeCase(branch, const Branch *, ins)) {
+  } else TypeCase(branch, const Branch *, ins) {
     os << *branch;
   }
   return os;

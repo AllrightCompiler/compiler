@@ -173,11 +173,11 @@ void Typer::visit_statement(const ast::Statement &node) {
   auto stmt = &node;
   auto &scopes = sym_tab.cur_func->scopes;
 
-  if (TypeCase(expr_stmt, const ast::ExprStmt *, stmt)) {
+  TypeCase(expr_stmt, const ast::ExprStmt *, stmt) {
     visit_expr(expr_stmt->expr());
     return;
   }
-  if (TypeCase(assign, const ast::Assignment *, stmt)) {
+  TypeCase(assign, const ast::Assignment *, stmt) {
     auto &lhs = assign->lhs();
     auto &rhs = assign->rhs();
     auto t1 = visit_expr(lhs.get());
@@ -192,7 +192,7 @@ void Typer::visit_statement(const ast::Statement &node) {
     // 这里假设剩下的是int或float，它们总是兼容的
     return;
   }
-  if (TypeCase(block, const ast::Block *, stmt)) {
+  TypeCase(block, const ast::Block *, stmt) {
     scopes.open();
     for (auto &child : block->children()) {
       if (child.index() == 0) {
@@ -206,7 +206,7 @@ void Typer::visit_statement(const ast::Statement &node) {
     scopes.close();
     return;
   }
-  if (TypeCase(if_, const ast::IfElse *, stmt)) {
+  TypeCase(if_, const ast::IfElse *, stmt) {
     auto t = visit_expr(if_->cond());
     if (!t || t->is_array())
       throw CompileError{"invalid type for condition expression"};
@@ -214,7 +214,7 @@ void Typer::visit_statement(const ast::Statement &node) {
     visit_statement(*if_->otherwise());
     return;
   }
-  if (TypeCase(while_, const ast::While *, stmt)) {
+  TypeCase(while_, const ast::While *, stmt) {
     auto t = visit_expr(while_->cond());
     if (!t || t->is_array())
       throw CompileError{"invalid type for condition expression"};
@@ -223,17 +223,17 @@ void Typer::visit_statement(const ast::Statement &node) {
     scopes.close();
     return;
   }
-  if (TypeCase(break_, const ast::Break *, stmt)) {
+  TypeCase(break_, const ast::Break *, stmt) {
     if (!scopes.nearest_loop())
       throw CompileError{"not in a loop"};
     return;
   }
-  if (TypeCase(continue_, const ast::Continue *, stmt)) {
+  TypeCase(continue_, const ast::Continue *, stmt) {
     if (!scopes.nearest_loop())
       throw CompileError{"not in a loop"};
     return;
   }
-  if (TypeCase(return_, const ast::Return *, stmt)) {
+  TypeCase(return_, const ast::Return *, stmt) {
     auto &res = return_->res();
     auto func = sym_tab.cur_func;
     if (!res) { // 无实际返回值 (return;)
@@ -265,15 +265,15 @@ void Typer::attach_symbol(const ast::LValue &node) {
 }
 
 std::optional<ConstValue> Typer::eval(const ast::Expression *node) {
-  if (TypeCase(int_literal, const ast::IntLiteral *, node))
+  TypeCase(int_literal, const ast::IntLiteral *, node)
     return ConstValue{int_literal->value()};
-  if (TypeCase(float_literal, const ast::FloatLiteral *, node))
+  TypeCase(float_literal, const ast::FloatLiteral *, node)
     return ConstValue{float_literal->value()};
 
   // no constpexr functions
-  if (TypeCase(call, const ast::Call *, node))
+  TypeCase(call, const ast::Call *, node)
     return std::nullopt;
-  if (TypeCase(lval, const ast::LValue *, node)) {
+  TypeCase(lval, const ast::LValue *, node) {
     attach_symbol(*lval);
     auto &var = lval->var;
     auto &type = var->type;
@@ -314,7 +314,7 @@ std::optional<ConstValue> Typer::eval(const ast::Expression *node) {
     }
     return var->val;
   }
-  if (TypeCase(unary, const ast::UnaryExpr *, node)) {
+  TypeCase(unary, const ast::UnaryExpr *, node) {
     auto op = unary->op();
     auto val = eval(unary->operand());
     if (!val)
@@ -337,7 +337,7 @@ std::optional<ConstValue> Typer::eval(const ast::Expression *node) {
       break;
     }
   }
-  if (TypeCase(binary, const ast::BinaryExpr *, node)) {
+  TypeCase(binary, const ast::BinaryExpr *, node) {
     auto op = binary->op();
     auto lhs = eval(binary->lhs());
     auto rhs = eval(binary->rhs());
@@ -473,12 +473,12 @@ std::optional<Type> Typer::visit_expr(const ast::Expression *expr) {
 }
 
 std::optional<Type> Typer::visit_expr_aux(const ast::Expression *expr) {
-  if (TypeCase(_, const ast::IntLiteral *, expr))
+  TypeCase(_, const ast::IntLiteral *, expr)
     return Type{Int};
-  if (TypeCase(_, const ast::FloatLiteral *, expr))
+  TypeCase(_, const ast::FloatLiteral *, expr)
     return Type{Float};
 
-  if (TypeCase(lval, const ast::LValue *, expr)) {
+  TypeCase(lval, const ast::LValue *, expr) {
     attach_symbol(*lval);
     for (auto &index_expr : lval->indices())
       visit_expr(index_expr);
@@ -493,7 +493,7 @@ std::optional<Type> Typer::visit_expr_aux(const ast::Expression *expr) {
               std::back_inserter(dims));
     return Type{tp.base_type, std::move(dims)};
   }
-  if (TypeCase(call, const ast::Call *, expr)) {
+  TypeCase(call, const ast::Call *, expr) {
     auto func_name = call->func().name();
     bool variadic = false;
     std::optional<Type> ret_type;
@@ -542,7 +542,7 @@ std::optional<Type> Typer::visit_expr_aux(const ast::Expression *expr) {
     }
     return ret_type;
   }
-  if (TypeCase(unary, const ast::UnaryExpr *, expr)) {
+  TypeCase(unary, const ast::UnaryExpr *, expr) {
     auto t = visit_expr(unary->operand());
     if (!t.has_value())
       throw CompileError{"invalid unary operation on void type"};
@@ -552,7 +552,7 @@ std::optional<Type> Typer::visit_expr_aux(const ast::Expression *expr) {
     else
       return t;
   }
-  if (TypeCase(binary, const ast::BinaryExpr *, expr)) {
+  TypeCase(binary, const ast::BinaryExpr *, expr) {
     auto t1 = visit_expr(binary->lhs());
     auto t2 = visit_expr(binary->rhs());
     if (!t1 || !t2)
@@ -584,9 +584,9 @@ Type Typer::parse_type(const std::unique_ptr<ast::SysYType> &p) {
   Type tp;
   tp.is_const = false;
   auto ptr = p.get();
-  if (TypeCase(scalar_type, ast::ScalarType *, ptr)) {
+  TypeCase(scalar_type, ast::ScalarType *, ptr) {
     tp.base_type = scalar_type->type();
-  } else if (TypeCase(array_type, ast::ArrayType *, ptr)) {
+  } else TypeCase(array_type, ast::ArrayType *, ptr) {
     tp.base_type = array_type->base_type();
     if (array_type->first_dimension_omitted())
       tp.dims.push_back(0);

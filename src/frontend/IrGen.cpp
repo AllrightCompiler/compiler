@@ -182,11 +182,11 @@ void IrGen::visit_function(const ast::Function &node) {
 void IrGen::visit_statement(const ast::Statement &node) {
   auto stmt = &node;
 
-  if (TypeCase(expr_stmt, const ast::ExprStmt *, stmt)) {
+  TypeCase(expr_stmt, const ast::ExprStmt *, stmt) {
     visit_arith_expr(expr_stmt->expr());
     return;
   }
-  if (TypeCase(assign, const ast::Assignment *, stmt)) {
+  TypeCase(assign, const ast::Assignment *, stmt) {
     auto &lhs = assign->lhs();
     auto &rhs = assign->rhs();
 
@@ -195,7 +195,7 @@ void IrGen::visit_statement(const ast::Statement &node) {
     emit(new insns::Store{addr, val});
     return;
   }
-  if (TypeCase(block, const ast::Block *, stmt)) {
+  TypeCase(block, const ast::Block *, stmt) {
     for (auto &child : block->children()) {
       if (child.index() == 0) {
         auto &decl = std::get<std::unique_ptr<ast::Declaration>>(child);
@@ -207,25 +207,25 @@ void IrGen::visit_statement(const ast::Statement &node) {
     }
     return;
   }
-  if (TypeCase(if_, const ast::IfElse *, stmt)) {
+  TypeCase(if_, const ast::IfElse *, stmt) {
     visit_if(*if_);
     return;
   }
-  if (TypeCase(while_, const ast::While *, stmt)) {
+  TypeCase(while_, const ast::While *, stmt) {
     visit_while(*while_);
     return;
   }
-  if (TypeCase(break_, const ast::Break *, stmt)) {
+  TypeCase(break_, const ast::Break *, stmt) {
     emit(new insns::Jump{break_targets.back()});
     cur_bb = new_bb();
     return;
   }
-  if (TypeCase(continue_, const ast::Continue *, stmt)) {
+  TypeCase(continue_, const ast::Continue *, stmt) {
     emit(new insns::Jump{continue_targets.back()});
     cur_bb = new_bb();
     return;
   }
-  if (TypeCase(return_, const ast::Return *, stmt)) {
+  TypeCase(return_, const ast::Return *, stmt) {
     std::optional<Reg> ret;
     if (return_->res()) {
       Reg val = visit_arith_expr(return_->res());
@@ -272,20 +272,20 @@ Reg IrGen::visit_lvalue(const ast::LValue &node, bool return_addr_when_scalar) {
 }
 
 Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
-  if (TypeCase(int_literal, const ast::IntLiteral *, expr)) {
+  TypeCase(int_literal, const ast::IntLiteral *, expr) {
     Reg reg = new_reg(Int);
     emit(new insns::LoadImm{reg, int_literal->value()});
     return reg;
   }
-  if (TypeCase(float_literal, const ast::FloatLiteral *, expr)) {
+  TypeCase(float_literal, const ast::FloatLiteral *, expr) {
     Reg reg = new_reg(Float);
     emit(new insns::LoadImm(reg, float_literal->value()));
     return reg;
   }
-  if (TypeCase(lvalue, const ast::LValue *, expr)) {
+  TypeCase(lvalue, const ast::LValue *, expr) {
     return visit_lvalue(*lvalue, false);
   }
-  if (TypeCase(call, const ast::Call *, expr)) {
+  TypeCase(call, const ast::Call *, expr) {
     auto &callee_name = call->func().name();
     ir::FunctionSignature *sig = nullptr;
     if (program->functions.count(callee_name))
@@ -319,7 +319,7 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
     emit(new insns::Call{ret_reg, callee_name, std::move(arg_regs)});
     return ret_reg;
   }
-  if (TypeCase(unary, const ast::UnaryExpr *, expr)) {
+  TypeCase(unary, const ast::UnaryExpr *, expr) {
     auto op = unary->op();
     Reg src = visit_arith_expr(unary->operand());
     switch (op) {
@@ -341,7 +341,7 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
     }
     }
   }
-  if (TypeCase(binary, const ast::BinaryExpr *, expr)) {
+  TypeCase(binary, const ast::BinaryExpr *, expr) {
     auto op = binary->op();
     assert(op != BinaryOp::And && op != BinaryOp::Or);
 
@@ -370,7 +370,7 @@ BranchTargets IrGen::emit_branch(Reg val) {
 }
 
 BranchTargets IrGen::visit_logical_expr(const ast::Expression *expr) {
-  if (TypeCase(binary, const ast::BinaryExpr *, expr)) {
+  TypeCase(binary, const ast::BinaryExpr *, expr) {
     auto op = binary->op();
     if (op == BinaryOp::Or) {
       auto cond1_targets = visit_logical_expr(binary->lhs());
