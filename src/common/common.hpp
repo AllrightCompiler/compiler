@@ -4,6 +4,8 @@
 #include <map>
 #include <memory>
 #include <vector>
+#include <unordered_map>
+#include <unordered_set>
 
 #define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 

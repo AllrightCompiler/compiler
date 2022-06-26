@@ -6,6 +6,8 @@
 #include "frontend/Typer.hpp"
 #include "frontend/IrGen.hpp"
 
+#include "mediumend/optmizer.hpp"
+
 #include "common/errors.hpp"
 #include "common/utils.hpp"
 
@@ -54,6 +56,9 @@ int main(int argc, char *argv[]) {
 
     frontend::IrGen ir_gen;
     ir_gen.visit_compile_unit(ast);
+
+    auto &program = ir_gen.get_program();
+    mediumend::run_medium(program.get());
     std::cout << *ir_gen.get_program();
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;
