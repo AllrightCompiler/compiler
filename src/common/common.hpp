@@ -3,9 +3,10 @@
 #include <cstdint>
 #include <map>
 #include <memory>
-#include <vector>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 

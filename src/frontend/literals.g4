@@ -54,4 +54,4 @@ HexFloatConst
 
 fragment Escaped : '\\'['"?\\abfnrtv];
 
-StringConst : '"' (~['\\\r\n] | Escaped)* '"';
+StringConst : '"' (~['"\\\r\n] | Escaped)* '"';
