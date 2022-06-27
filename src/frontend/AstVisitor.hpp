@@ -10,109 +10,109 @@ using namespace ast;
 
 class AstVisitor : public SysYBaseVisitor {
 public:
-  CompileUnit const &compileUnit() const;
+  [[nodiscard]] CompileUnit const &compileUnit() const;
 
-  std::any visitCompUnit(SysYParser::CompUnitContext *const ctx) override;
+  antlrcpp::Any visitCompUnit(SysYParser::CompUnitContext *ctx) override;
 
-  std::any visitConstDecl(SysYParser::ConstDeclContext *const ctx) override;
+  antlrcpp::Any visitConstDecl(SysYParser::ConstDeclContext *ctx) override;
 
-  std::any visitInt(SysYParser::IntContext *const ctx) override;
+  antlrcpp::Any visitInt(SysYParser::IntContext *ctx) override;
 
-  std::any visitFloat(SysYParser::FloatContext *const ctx) override;
+  antlrcpp::Any visitFloat(SysYParser::FloatContext *ctx) override;
 
-  std::any visitVarDecl(SysYParser::VarDeclContext *const ctx) override;
+  antlrcpp::Any visitVarDecl(SysYParser::VarDeclContext *ctx) override;
 
-  std::any visitInit(SysYParser::InitContext *const ctx) override;
+  antlrcpp::Any visitInit(SysYParser::InitContext *ctx) override;
 
-  std::any visitInitList(SysYParser::InitListContext *const ctx) override;
+  antlrcpp::Any visitInitList(SysYParser::InitListContext *ctx) override;
 
-  std::any visitFuncDef(SysYParser::FuncDefContext *const ctx) override;
+  antlrcpp::Any visitFuncDef(SysYParser::FuncDefContext *ctx) override;
 
-  std::any visitVoid(SysYParser::VoidContext *const ctx) override;
+  antlrcpp::Any visitVoid(SysYParser::VoidContext *ctx) override;
 
-  std::any visitScalarParam(SysYParser::ScalarParamContext *const ctx) override;
+  antlrcpp::Any visitScalarParam(SysYParser::ScalarParamContext *ctx) override;
 
-  std::any visitArrayParam(SysYParser::ArrayParamContext *const ctx) override;
+  antlrcpp::Any visitArrayParam(SysYParser::ArrayParamContext *ctx) override;
 
-  std::any visitBlock(SysYParser::BlockContext *const ctx) override;
+  antlrcpp::Any visitBlock(SysYParser::BlockContext *ctx) override;
 
-  std::any visitAssign(SysYParser::AssignContext *const ctx) override;
+  antlrcpp::Any visitAssign(SysYParser::AssignContext *ctx) override;
 
-  std::any visitExprStmt(SysYParser::ExprStmtContext *const ctx) override;
+  antlrcpp::Any visitExprStmt(SysYParser::ExprStmtContext *ctx) override;
 
-  std::any visitBlockStmt(SysYParser::BlockStmtContext *const ctx) override;
+  antlrcpp::Any visitBlockStmt(SysYParser::BlockStmtContext *ctx) override;
 
-  std::any visitIfElse(SysYParser::IfElseContext *const ctx) override;
+  antlrcpp::Any visitIfElse(SysYParser::IfElseContext *ctx) override;
 
-  std::any visitWhile(SysYParser::WhileContext *const ctx) override;
+  antlrcpp::Any visitWhile(SysYParser::WhileContext *ctx) override;
 
-  std::any visitBreak(SysYParser::BreakContext *const ctx) override;
+  antlrcpp::Any visitBreak(SysYParser::BreakContext *ctx) override;
 
-  std::any visitContinue(SysYParser::ContinueContext *const ctx) override;
+  antlrcpp::Any visitContinue(SysYParser::ContinueContext *ctx) override;
 
-  std::any visitReturn(SysYParser::ReturnContext *const ctx) override;
+  antlrcpp::Any visitReturn(SysYParser::ReturnContext *ctx) override;
 
-  std::any visitLVal(SysYParser::LValContext *const ctx) override;
+  antlrcpp::Any visitLVal(SysYParser::LValContext *ctx) override;
 
-  std::any visitLValExpr(SysYParser::LValExprContext *const ctx) override;
+  antlrcpp::Any visitLValExpr(SysYParser::LValExprContext *ctx) override;
 
-  std::any visitDecIntConst(SysYParser::DecIntConstContext *const ctx) override;
+  antlrcpp::Any visitDecIntConst(SysYParser::DecIntConstContext *ctx) override;
 
-  std::any visitOctIntConst(SysYParser::OctIntConstContext *const ctx) override;
+  antlrcpp::Any visitOctIntConst(SysYParser::OctIntConstContext *ctx) override;
 
-  std::any visitHexIntConst(SysYParser::HexIntConstContext *const ctx) override;
+  antlrcpp::Any visitHexIntConst(SysYParser::HexIntConstContext *ctx) override;
 
-  std::any
-  visitDecFloatConst(SysYParser::DecFloatConstContext *const ctx) override;
+  antlrcpp::Any
+  visitDecFloatConst(SysYParser::DecFloatConstContext *ctx) override;
 
-  std::any
-  visitHexFloatConst(SysYParser::HexFloatConstContext *const ctx) override;
+  antlrcpp::Any
+  visitHexFloatConst(SysYParser::HexFloatConstContext *ctx) override;
 
-  std::any visitCall(SysYParser::CallContext *const ctx) override;
+  antlrcpp::Any visitCall(SysYParser::CallContext *ctx) override;
 
-  std::any visitUnaryAdd(SysYParser::UnaryAddContext *const ctx) override;
+  antlrcpp::Any visitUnaryAdd(SysYParser::UnaryAddContext *ctx) override;
 
-  std::any visitUnarySub(SysYParser::UnarySubContext *const ctx) override;
+  antlrcpp::Any visitUnarySub(SysYParser::UnarySubContext *ctx) override;
 
-  std::any visitNot(SysYParser::NotContext *const ctx) override;
+  antlrcpp::Any visitNot(SysYParser::NotContext *ctx) override;
 
-  std::any visitStringConst(SysYParser::StringConstContext *const ctx) override;
+  antlrcpp::Any visitStringConst(SysYParser::StringConstContext *ctx) override;
 
-  std::any visitFuncRParam(SysYParser::FuncRParamContext *const ctx) override;
+  antlrcpp::Any visitFuncRParam(SysYParser::FuncRParamContext *ctx) override;
 
-  std::any visitFuncRParams(SysYParser::FuncRParamsContext *const ctx) override;
+  antlrcpp::Any visitFuncRParams(SysYParser::FuncRParamsContext *ctx) override;
 
-  std::any visitDiv(SysYParser::DivContext *const ctx) override;
+  antlrcpp::Any visitDiv(SysYParser::DivContext *ctx) override;
 
-  std::any visitMod(SysYParser::ModContext *const ctx) override;
+  antlrcpp::Any visitMod(SysYParser::ModContext *ctx) override;
 
-  std::any visitMul(SysYParser::MulContext *const ctx) override;
+  antlrcpp::Any visitMul(SysYParser::MulContext *ctx) override;
 
-  std::any visitAdd(SysYParser::AddContext *const ctx) override;
+  antlrcpp::Any visitAdd(SysYParser::AddContext *ctx) override;
 
-  std::any visitSub(SysYParser::SubContext *const ctx) override;
+  antlrcpp::Any visitSub(SysYParser::SubContext *ctx) override;
 
-  std::any visitGeq(SysYParser::GeqContext *const ctx) override;
+  antlrcpp::Any visitGeq(SysYParser::GeqContext *ctx) override;
 
-  std::any visitLt(SysYParser::LtContext *const ctx) override;
+  antlrcpp::Any visitLt(SysYParser::LtContext *ctx) override;
 
-  std::any visitLeq(SysYParser::LeqContext *const ctx) override;
+  antlrcpp::Any visitLeq(SysYParser::LeqContext *ctx) override;
 
-  std::any visitGt(SysYParser::GtContext *const ctx) override;
+  antlrcpp::Any visitGt(SysYParser::GtContext *ctx) override;
 
-  std::any visitNeq(SysYParser::NeqContext *const ctx) override;
+  antlrcpp::Any visitNeq(SysYParser::NeqContext *ctx) override;
 
-  std::any visitEq(SysYParser::EqContext *const ctx) override;
+  antlrcpp::Any visitEq(SysYParser::EqContext *ctx) override;
 
-  std::any visitAnd(SysYParser::AndContext *const ctx) override;
+  antlrcpp::Any visitAnd(SysYParser::AndContext *ctx) override;
 
-  std::any visitOr(SysYParser::OrContext *const ctx) override;
+  antlrcpp::Any visitOr(SysYParser::OrContext *ctx) override;
 
-  std::any visitNumber(SysYParser::NumberContext *const ctx) override;
+  antlrcpp::Any visitNumber(SysYParser::NumberContext *ctx) override;
 
 private:
   std::vector<std::unique_ptr<Expression>>
-    visitDimensions(const std::vector<SysYParser::ExpContext *> &ctxs);
+  visitDimensions(const std::vector<SysYParser::ExpContext *> &ctxs);
 
   std::unique_ptr<CompileUnit> m_compile_unit;
 };
