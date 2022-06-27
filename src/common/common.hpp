@@ -1,10 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <vector>
+#include <unordered_map>
+#include <unordered_set>
 
-#define TypeCase(res, type, expr) auto res = dynamic_cast<type>(expr)
+#define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 
 enum class UnaryOp { Add, Sub, Not };
 
@@ -40,8 +43,11 @@ struct Type {
   bool is_array() const { return dims.size() > 0; }
 
   Type() {}
-  Type(ScalarType btype) : base_type{btype} {}
-  Type(ScalarType btype, bool const_qualified) : base_type{btype}, is_const{const_qualified} {}
+  Type(ScalarType btype) : base_type{btype}, is_const{false} {}
+  Type(ScalarType btype, bool const_qualified)
+      : base_type{btype}, is_const{const_qualified} {}
+  Type(ScalarType btype, std::vector<int> &&dimensions)
+      : base_type{btype}, is_const{false}, dims{std::move(dimensions)} {}
 };
 
 // std::variant过于难用，这里直接用union
@@ -61,10 +67,12 @@ struct ConstValue {
 // variable or constant
 struct Var {
   Type type;
-  ConstValue val;
-  std::vector<ConstValue> arr_val;
+  std::optional<ConstValue> val;
+  std::unique_ptr<std::map<int, ConstValue>>
+      arr_val; // index -> value，未记录的项全部初始化为0
 
   Var() {}
   Var(Type &&type_) : type{type_} {}
-  Var(Type &&type_, ConstValue &&value) : type{type_}, val{value} {}
+  Var(Type &&type_, std::optional<ConstValue> &&value)
+      : type{type_}, val{value} {}
 };

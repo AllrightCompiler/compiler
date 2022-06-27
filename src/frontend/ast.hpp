@@ -62,7 +62,7 @@ public:
 
   void print(std::ostream &out, unsigned indent) const override;
 
-  std::string name() const { return m_name; }
+  const std::string &name() const { return m_name; }
 
 private:
   std::string m_name;
@@ -79,6 +79,9 @@ public:
   const std::unique_ptr<SysYType> &type() const { return m_type; }
   const Identifier &ident() const { return m_ident; }
 
+public:
+  mutable std::shared_ptr<Var> var;
+
 private:
   std::unique_ptr<SysYType> m_type;
   Identifier m_ident;
@@ -94,16 +97,20 @@ class NumberLiteral;
 class Expression : public AstNode {
 public:
   Expression() {}
-  Expression(std::unique_ptr<ScalarType> type,
-             std::unique_ptr<NumberLiteral> value)
-      : m_type{std::move(type)}, m_value{std::move(value)} {}
+  // Expression(std::unique_ptr<ScalarType> type,
+  //            std::unique_ptr<NumberLiteral> value)
+  //     : m_type{std::move(type)}, m_value{std::move(value)} {}
   virtual ~Expression() = default;
 
-  NumberLiteral const *value() const { return m_value.get(); }
+//   NumberLiteral const *value() const { return m_value.get(); }
 
-protected:
-  std::unique_ptr<ScalarType> m_type;
-  std::unique_ptr<NumberLiteral> m_value;
+// protected:
+//   std::unique_ptr<ScalarType> m_type;
+//   std::unique_ptr<NumberLiteral> m_value;
+
+public:
+  // 求得的表达式类型
+  mutable std::optional<Type> type;
 };
 
 class LValue : public Expression {
@@ -222,6 +229,9 @@ public:
       : m_func{std::move(func)}, m_args{std::move(args)} {}
   virtual ~Call() = default;
 
+  const Identifier &func() const { return m_func; }
+  const std::vector<Argument> &args() const { return m_args; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -240,6 +250,8 @@ public:
       : m_expr{std::move(expr)} {}
   virtual ~ExprStmt() = default;
 
+  const std::unique_ptr<Expression> &expr() const { return m_expr; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -251,6 +263,9 @@ public:
   Assignment(std::unique_ptr<LValue> lhs, std::unique_ptr<Expression> rhs)
       : m_lhs{std::move(lhs)}, m_rhs{std::move(rhs)} {}
   virtual ~Assignment() = default;
+
+  const std::unique_ptr<LValue> &lhs() const { return m_lhs; }
+  const std::unique_ptr<Expression> &rhs() const { return m_rhs; }
 
   void print(std::ostream &out, unsigned indent) const override;
 
@@ -293,6 +308,9 @@ public:
   const std::unique_ptr<Initializer> &init() const { return m_init; }
   bool const_qualified() const { return m_const_qualified; }
 
+public:
+  mutable std::shared_ptr<Var> var;
+
 private:
   std::unique_ptr<SysYType> m_type;
   Identifier m_ident;
@@ -309,6 +327,8 @@ public:
       : m_children{std::move(children)} {}
   virtual ~Block() = default;
 
+  const std::vector<Child> &children() const { return m_children; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -323,6 +343,10 @@ public:
                                                               else_)} {}
   virtual ~IfElse() = default;
 
+  const std::unique_ptr<Expression> &cond() const { return m_cond; }
+  const std::unique_ptr<Statement> &then() const { return m_then; }
+  const std::unique_ptr<Statement> &otherwise() const { return m_else; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -335,6 +359,9 @@ public:
   While(std::unique_ptr<Expression> cond, std::unique_ptr<Statement> body)
       : m_cond{std::move(cond)}, m_body{std::move(body)} {}
   virtual ~While() = default;
+
+  const std::unique_ptr<Expression> &cond() const { return m_cond; }
+  const std::unique_ptr<Statement> &body() const { return m_body; }
 
   void print(std::ostream &out, unsigned indent) const override;
 
@@ -362,6 +389,8 @@ public:
   explicit Return(std::unique_ptr<Expression> res) : m_res{std::move(res)} {}
   virtual ~Return() = default;
 
+  const std::unique_ptr<Expression> &res() const { return m_res; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
@@ -378,6 +407,11 @@ public:
   virtual ~Function() = default;
 
   void print(std::ostream &out, unsigned indent) const override;
+
+  const std::unique_ptr<ScalarType> &type() const { return m_type; }
+  const Identifier &ident() const { return m_ident; }
+  const std::vector<std::unique_ptr<Parameter>> &params() const { return m_params; }
+  const std::unique_ptr<Block> &body() const { return m_body; }
 
 private:
   std::unique_ptr<ScalarType> m_type;
