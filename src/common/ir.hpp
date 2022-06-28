@@ -13,6 +13,7 @@ using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::vector;
+using std::list;
 
 struct Reg {
   ScalarType type;
@@ -34,7 +35,7 @@ struct Instruction : Display {
 
 struct BasicBlock {
   string label;
-  vector<unique_ptr<Instruction>> insns;
+  list<unique_ptr<Instruction>> insns;
 
   void push(Instruction *insn) { insns.emplace_back(insn); }
 };
@@ -48,7 +49,7 @@ struct Function {
   string name;
   FunctionSignature sig;
 
-  vector<unique_ptr<BasicBlock>> bbs;
+  list<unique_ptr<BasicBlock>> bbs;
 };
 
 struct LibFunction {
@@ -148,6 +149,10 @@ struct Binary : Output {
 
   Binary(Reg dst, BinaryOp op, Reg src1, Reg src2)
       : op{op}, src1{src1}, src2{src2}, Output{dst} {}
+};
+
+struct Phi : Output{
+  Phi(Reg dst) : Output(dst) {}
 };
 
 struct Return : Terminator {

@@ -8,7 +8,7 @@ namespace mediumend {
 CFG::CFG(ir::Function *func) {
   for (auto & bb : func->bbs) {
     this->succ[bb.get()] = {};
-    this->pred[bb.get()] = {};
+    this->prev[bb.get()] = {};
   }
   for (auto &bb : func->bbs) {
     if(bb->insns.empty()) continue;
@@ -19,12 +19,12 @@ CFG::CFG(ir::Function *func) {
     auto &succ = this->succ[bb.get()];
     if (jmp) {
       succ.insert(jmp->target);
-      pred[jmp->target].insert(bb.get());
+      prev[jmp->target].insert(bb.get());
     } else if (brh) {
       succ.insert(brh->true_target);
       succ.insert(brh->false_target);
-      pred[brh->true_target].insert(bb.get());
-      pred[brh->false_target].insert(bb.get());
+      prev[brh->true_target].insert(bb.get());
+      prev[brh->false_target].insert(bb.get());
     } else if (ret) {
     } else {
       assert(false);

@@ -244,11 +244,12 @@ ostream &operator<<(ostream &os, const Function &f) {
     os << type_string(types[i]) << " %" << std::to_string(i + 1);
   }
   os << ") {\n";
-
-  for (int i = 0; i < int(f.bbs.size()); ++i) {
+  int i = 0;
+  for (auto &bb : f.bbs) {
     if (i != 0)
       os << "\n";
-    os << *f.bbs[i];
+    os << *bb;
+    i++;
   }
   return os << "}\n\n";
 }

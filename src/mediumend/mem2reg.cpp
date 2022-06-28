@@ -9,9 +9,11 @@ using ir::Function;
 using ir::BasicBlock;
 
 void remove_unreachable_bb(Function *func, CFG *cfg){
-  auto entry = func->bbs[0].get();
+  auto entry = func->bbs.front().get();
+  std::unordered_set<BasicBlock*> remove_set;
   vector<BasicBlock*> to_remove;
-  for(auto & prev: cfg->pred){
+
+  for(auto prev : cfg->prev){
     if(prev.second.size() == 0 && prev.first != entry){
       to_remove.push_back(prev.first);
     }
@@ -20,16 +22,18 @@ void remove_unreachable_bb(Function *func, CFG *cfg){
     auto bb = to_remove.back();
     to_remove.pop_back();
     for(auto & succ: cfg->succ[bb]){
-      cfg->pred[succ].erase(bb);
-      if(cfg->pred[succ].size() == 0){
+      cfg->prev[succ].erase(bb);
+      if(cfg->prev[succ].size() == 0){
         to_remove.push_back(succ);
       }
     }
-    for(auto iter = func->bbs.begin(); iter != func->bbs.end();++iter){
-      if(iter->get() == bb){
-        func->bbs.erase(iter);
-        break;
-      }
+    remove_set.insert(bb);
+  }
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    if(remove_set.find(iter->get()) != remove_set.end()){
+      iter = func->bbs.erase(iter);
+    }else{
+      iter++;
     }
   }
 }
