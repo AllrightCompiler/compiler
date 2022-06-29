@@ -39,6 +39,12 @@ struct Type {
 
   int nr_dims() const { return dims.size(); }
   bool is_array() const { return dims.size() > 0; }
+  int size() const {
+    int size = 4;
+    for (int n : dims)
+      size *= n;
+    return size;
+  }
 
   Type() {}
   Type(ScalarType btype) : base_type{btype}, is_const{false} {}

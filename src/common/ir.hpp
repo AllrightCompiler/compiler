@@ -47,6 +47,7 @@ struct FunctionSignature {
 struct Function {
   string name;
   FunctionSignature sig;
+  int regs_used;
 
   vector<unique_ptr<BasicBlock>> bbs;
 };

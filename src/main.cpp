@@ -6,6 +6,8 @@
 #include "frontend/Typer.hpp"
 #include "frontend/IrGen.hpp"
 
+#include "backend/armv7/program.hpp"
+
 #include "common/errors.hpp"
 #include "common/utils.hpp"
 
@@ -55,6 +57,10 @@ int main(int argc, char *argv[]) {
     frontend::IrGen ir_gen;
     ir_gen.visit_compile_unit(ast);
     std::cout << *ir_gen.get_program();
+
+    auto &ir_program = *ir_gen.get_program();
+    auto program = armv7::translate(ir_program);
+    program->emit(std::cout);
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;
   } catch (const CompileError &e) {

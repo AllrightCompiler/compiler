@@ -15,6 +15,7 @@ IrGen::IrGen() : program{new Program} {
   local_regs = global_regs = 0;
   cur_func = nullptr;
   init_bb = cur_bb = new BasicBlock;
+  init_bb->label = ".init.BB";
 }
 
 BasicBlock *IrGen::new_bb() {
@@ -46,6 +47,13 @@ void IrGen::visit_compile_unit(const ast::CompileUnit &node) {
       visit_function(*func);
     }
   }
+
+  // 将init_bb包装成.init函数
+  init_bb->push(new insns::Return{std::nullopt});
+  auto &init_fn = program->functions[".init"];
+  init_fn.name = ".init";
+  init_fn.bbs.emplace_back(init_bb);
+  init_fn.regs_used = global_regs;
 }
 
 void IrGen::visit_declaration(const ast::Declaration &node) {
@@ -68,6 +76,7 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
     auto &value = initializer->value();
     if (is_global) {
       // load base address of global variable into reg
+      reg = new_reg(String);
       emit(new insns::LoadAddr{reg, name});
     }
 
@@ -173,7 +182,12 @@ void IrGen::visit_function(const ast::Function &node) {
     }
   }
 
+  if (name == "main")
+    emit(new insns::Call{new_reg(String), ".init", {}});
+
   visit_statement(*node.body());
+
+  cur_func->regs_used = local_regs;
 
   cur_func = nullptr;
   cur_bb = init_bb;

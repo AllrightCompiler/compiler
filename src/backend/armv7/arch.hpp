@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cmath>
 
 namespace armv7 {
 
@@ -33,6 +34,10 @@ constexpr int ip = r12;
 constexpr int sp = r13;
 constexpr int lr = r14;
 constexpr int pc = r15;
+
+constexpr int s0 = 0;
+
+constexpr int GPR_SIZE = 4;
 
 constexpr int NR_GPRS = 16; // 通用寄存器数量
 constexpr int NR_FPRS = 32; // 浮点寄存器数量
@@ -67,7 +72,7 @@ constexpr int ARG_GPRS[NR_ARG_GPRS] = {r0, r1, r2, r3};
 constexpr int NR_ARG_FPRS = 8;
 
 // <imm8m>: 无符号8位立即数循环右移偶数位得到
-bool is_imm8m(int x) {
+inline bool is_imm8m(int x) {
   uint32_t v = uint32_t(x);
   for (int i = 0; i < 32; i += 2) {
     uint32_t t = (v << i) | (v >> (32 - i)); // 循环左移回去
@@ -78,9 +83,24 @@ bool is_imm8m(int x) {
 }
 
 // Thumb-2指令集使用的12位立即数
-bool is_imm12(int x) {
+inline bool is_imm12(int x) {
   uint32_t v = uint32_t(x);
   return 0 <= v && v < 4096;
+}
+
+// vmov.f32使用的立即数
+inline bool is_vmov_f32_imm(float x) {
+  float a = std::abs(x);
+  for (int n = 16; n <= 31; ++n)
+    for (int r = 0; r <= 7; ++r)
+      if (a == std::ldexp(float(n), -r))
+        return true;
+  return false;
+}
+
+// load和store的偏移量
+inline bool is_valid_ldst_offset(int x) {
+  return -4095 <= x && x <= 4095;
 }
 
 } // namespace armv7
