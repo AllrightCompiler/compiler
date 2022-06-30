@@ -90,7 +90,13 @@ struct Instruction {
 
   Instruction() : cond{ExCond::Always} {}
   virtual ~Instruction() = default;
+
+  virtual void emit(std::ostream &os) const {}
+  std::ostream &write_op(std::ostream &os, const char *op,
+                         bool is_float = false, bool is_ldst = false) const;
 };
+
+void next_instruction(std::ostream &os);
 
 // 形如 op Rd, Rm, Rn 的指令
 struct RType : Instruction {
@@ -98,6 +104,8 @@ struct RType : Instruction {
   Reg dst, s1, s2;
 
   RType(Op op, Reg dst, Reg s1, Reg s2) : op{op}, dst{dst}, s1{s1}, s2{s2} {}
+
+  void emit(std::ostream &os) const override;
 
   static Op from(BinaryOp);
 };
@@ -111,6 +119,8 @@ struct IType : Instruction {
   int imm;
 
   IType(Op op, Reg dst, Reg s1, int imm) : op{op}, dst{dst}, s1{s1}, imm{imm} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // 具有 op Rd, R1, Operand2 形式的指令
@@ -121,6 +131,8 @@ struct FullRType : Instruction {
 
   FullRType(Op op, Reg dst, Reg s1, Operand2 s2)
       : op{op}, dst{dst}, s1{s1}, s2{std::move(s2)} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // 完整形式的MOV: MOV Rd, Operand2
@@ -134,6 +146,8 @@ struct Move : Instruction {
   Move(Reg dst, Operand2 src) : dst{dst}, src{std::move(src)}, flip{false} {}
   Move(Reg dst, Operand2 src, bool flip)
       : dst{dst}, src{std::move(src)}, flip{flip} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // Thumb-2 movw: 加载低16位，清零高16位
@@ -142,6 +156,8 @@ struct MovW : Instruction {
   int imm;
 
   MovW(Reg dst, int imm) : dst{dst}, imm{imm} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // Thumb-2 movt: 加载高16位，低16为不变
@@ -150,6 +166,8 @@ struct MovT : Instruction {
   int imm;
 
   MovT(Reg dst, int imm) : dst{dst}, imm{imm} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // 加载全局变量的地址
@@ -160,6 +178,8 @@ struct LoadAddr : Instruction {
   std::string symbol;
 
   LoadAddr(Reg dst, std::string sym) : dst{dst}, symbol{std::move(sym)} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // CMP Rn, Operand2: 更新Rn - Operand2的CPSR标记
@@ -172,6 +192,8 @@ struct Compare : Instruction {
   Compare(Reg s1, Operand2 s2) : s1{s1}, s2{std::move(s2)}, neg{false} {}
   Compare(Reg s1, Operand2 s2, bool neg)
       : s1{s1}, s2{std::move(s2)}, neg{neg} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // 简单load: base_reg + offset_imm 寻址
@@ -180,6 +202,8 @@ struct Load : Instruction {
   int offset;
 
   Load(Reg dst, Reg base, int offset) : dst{dst}, base{base}, offset{offset} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // 简单store: base_reg + offset_imm 寻址
@@ -188,6 +212,8 @@ struct Store : Instruction {
   int offset;
 
   Store(Reg src, Reg base, int offset) : src{src}, base{base}, offset{offset} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // MLA Rd, Rm, Rs, Rn: Rd := Rn + Rm * Rs
@@ -200,6 +226,8 @@ struct FusedMul : Instruction {
       : dst{dst}, s1{s1}, s2{s2}, s3{s3}, sub{false} {}
   FusedMul(Reg dst, Reg s1, Reg s2, Reg s3, bool sub)
       : dst{dst}, s1{s1}, s2{s2}, s3{s3}, sub{sub} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 struct BasicBlock;
@@ -209,6 +237,8 @@ struct Branch : Instruction {
   BasicBlock *target;
 
   Branch(BasicBlock *target) : target{target} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // CBZ/CBNZ
@@ -219,6 +249,8 @@ struct RegBranch : Instruction {
 
   RegBranch(Type type, Reg src, BasicBlock *target)
       : type{type}, target{target}, src{src} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // 下面是与栈指针sp相关的指令
@@ -234,6 +266,8 @@ struct LoadStackAddr : SpRelative {
 
   LoadStackAddr(Reg dst, StackObject *base, int offset)
       : dst{dst}, base{base}, offset{offset} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 // dst = [base + offset]
@@ -244,6 +278,8 @@ struct LoadStack : SpRelative {
 
   LoadStack(Reg dst, StackObject *base, int offset)
       : dst{dst}, base{base}, offset{offset} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 struct StoreStack : SpRelative {
@@ -253,32 +289,44 @@ struct StoreStack : SpRelative {
 
   StoreStack(Reg src, StackObject *base, int offset)
       : src{src}, base{base}, offset{offset} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 struct AdjustSp : SpRelative {
   int offset;
 
   AdjustSp(int offset) : offset{offset} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 struct Push : SpRelative {
   std::vector<Reg> srcs;
 
   Push(std::vector<Reg> srcs) : srcs{std::move(srcs)} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 struct Call : Instruction {
   std::string func;
 
   Call(std::string func) : func{std::move(func)} {}
+
+  void emit(std::ostream &os) const override;
 };
 
-struct Return : Instruction {};
+struct Return : Instruction {
+  void emit(std::ostream &os) const override;
+};
 
 struct CountLeadingZero : Instruction {
   Reg dst, src;
 
   CountLeadingZero(Reg dst, Reg src) : dst{dst}, src{src} {}
+
+  void emit(std::ostream &os) const override;
 };
 
 } // namespace armv7

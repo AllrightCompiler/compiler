@@ -298,6 +298,7 @@ class ProgramTranslator {
         bb->push(new AdjustSp{sp_adjustment});
     }
     else TypeCase(ret, ii::Return *, ins) {
+      // NOTE: 此指令不一定是bx lr，可能实际是到exit_bb的跳转
       if (ret->val)
         bb->push(
             new Move{Reg{ret->val->type, 0},
@@ -381,9 +382,25 @@ public:
 std::unique_ptr<Program> translate(const ir::Program &ir_program) {
   auto prog = new Program;
   ProgramTranslator translator{*prog, ir_program};
+  translator.translate();
   return std::unique_ptr<Program>(prog);
 }
 
-void Program::emit(std::ostream &os) {}
+void Program::emit(std::ostream &os) {
+  for (auto &[name, fn] : functions) {
+    os << name << ":\n";
+    for (auto &bb : fn.bbs) {
+      if (bb->insns.empty())
+        continue;
+
+      os << bb->label << ':';
+      for (auto &insn : bb->insns) {
+        next_instruction(os);
+        insn->emit(os);
+      }
+      os << "\n\n";
+    }
+  }
+}
 
 } // namespace armv7

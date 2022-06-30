@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 
 namespace armv7 {
 
@@ -44,17 +44,21 @@ constexpr int NR_FPRS = 32; // 浮点寄存器数量
 
 enum RegisterAttr {
   Special,
-  Volatile, // caller saved
+  Volatile,    // caller saved
   NonVolatile, // callee saved
 };
 
 constexpr RegisterAttr GPRS_ATTR[NR_GPRS] = {
-  Volatile, Volatile, Volatile, Volatile, // r0 ~ r3
-  NonVolatile, NonVolatile, NonVolatile, NonVolatile, NonVolatile, // r4 ~ r8
-  NonVolatile, // r9
-  NonVolatile, NonVolatile, // r10, r11
-  Volatile, Special, NonVolatile, Special, // ip, sp, lr, pc
+    Volatile,    Volatile,    Volatile,    Volatile,                 // r0 ~ r3
+    NonVolatile, NonVolatile, NonVolatile, NonVolatile, NonVolatile, // r4 ~ r8
+    NonVolatile,                                                     // r9
+    NonVolatile, NonVolatile,                                        // r10, r11
+    Volatile,    Special,     NonVolatile, Special, // ip, sp, lr, pc
 };
+
+constexpr const char *GPR_NAMES[NR_GPRS] = {
+    "r0", "r1", "r2",  "r3",  "r4", "r5", "r6", "r7",
+    "r8", "r9", "r10", "r11", "ip", "sp", "lr", "pc"};
 
 // TODO: 确认vfp寄存器属性
 
@@ -62,9 +66,7 @@ constexpr bool gpr_allocable(int reg) {
   return GPRS_ATTR[reg] == Volatile || GPRS_ATTR[reg] == NonVolatile;
 }
 
-constexpr bool fpr_allocable(int reg) {
-  return 0 <= reg && reg < 32;
-}
+constexpr bool fpr_allocable(int reg) { return 0 <= reg && reg < 32; }
 
 constexpr int NR_ARG_GPRS = 4;
 constexpr int ARG_GPRS[NR_ARG_GPRS] = {r0, r1, r2, r3};
@@ -77,7 +79,7 @@ inline bool is_imm8m(int x) {
   for (int i = 0; i < 32; i += 2) {
     uint32_t t = (v << i) | (v >> (32 - i)); // 循环左移回去
     if (t <= 0xff)
-      return true; 
+      return true;
   }
   return false;
 }
@@ -99,8 +101,6 @@ inline bool is_vmov_f32_imm(float x) {
 }
 
 // load和store的偏移量
-inline bool is_valid_ldst_offset(int x) {
-  return -4095 <= x && x <= 4095;
-}
+inline bool is_valid_ldst_offset(int x) { return -4095 <= x && x <= 4095; }
 
 } // namespace armv7
