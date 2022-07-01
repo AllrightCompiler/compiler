@@ -201,7 +201,11 @@ void mem2reg(Function *func) {
   }
 
   // mem2reg第二阶段，寄存器重命名
-  for (auto &bb : func->bbs) {
+  vector<BasicBlock *> stack;
+  stack.push_back(func->bbs.front().get());
+  while(stack.size()){
+    auto bb = stack.back();
+    stack.pop_back();
     for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
       TypeCase(inst, ir::insns::Alloca *, iter->get()) {
         iter = bb->insns.erase(iter);
@@ -209,7 +213,7 @@ void mem2reg(Function *func) {
       }
       TypeCase(inst, ir::insns::Load *, iter->get()) {
         if(alloc_set.find(inst->addr) != alloc_set.end()) {
-          iter->reset(new ir::insns::Unary(inst->dst, UnaryOp::Equ, alloc_map[bb.get()][inst->addr]));
+          iter->reset(new ir::insns::Unary(inst->dst, UnaryOp::Equ, alloc_map[bb][inst->addr]));
           iter++;
           continue;
         }
@@ -217,12 +221,15 @@ void mem2reg(Function *func) {
       TypeCase(inst, ir::insns::Store *, iter->get()) {
         if(alloc_set.find(inst->addr) != alloc_set.end()) {
           iter = bb->insns.erase(iter);
-          alloc_map[bb.get()].insert({inst->addr, inst->val});
+          alloc_map[bb].insert({inst->addr, inst->val});
           continue;
         }
       }
       iter++;
       continue;
+    }
+    for(auto &next : cfg.dom[bb]){
+      stack.push_back(next);
     }
   }
 }
