@@ -209,7 +209,7 @@ void mem2reg(Function *func) {
       }
       TypeCase(inst, ir::insns::Load *, iter->get()) {
         if(alloc_set.find(inst->addr) != alloc_set.end()) {
-          iter->reset(new ir::insns::Unary(inst->dst, UnaryOp::Not, alloc_map[bb.get()][inst->addr]));
+          iter->reset(new ir::insns::Unary(inst->dst, UnaryOp::Equ, alloc_map[bb.get()][inst->addr]));
           iter++;
           continue;
         }
@@ -217,6 +217,7 @@ void mem2reg(Function *func) {
       TypeCase(inst, ir::insns::Store *, iter->get()) {
         if(alloc_set.find(inst->addr) != alloc_set.end()) {
           iter = bb->insns.erase(iter);
+          alloc_map[bb.get()].insert({inst->addr, inst->val});
           continue;
         }
       }

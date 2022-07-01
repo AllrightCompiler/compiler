@@ -50,6 +50,8 @@ std::string op_string(UnaryOp op) {
     return "neg";
   case UnaryOp::Not:
     return "not";
+  case UnaryOp::Equ:
+    return "";
   default:
     return "[unary op]";
   }
@@ -190,7 +192,7 @@ ostream &operator<<(ostream &os, const Branch &ins) {
 }
 
 ostream &operator<<(ostream &os, const Phi &ins) {
-  write_reg(os, ins) << " = " << "Phi" << " ";
+  write_reg(os, ins) << " = " << "Phi";
   for (auto each : ins.incoming) {
     os << " [" << label_name(each.first->label) << ", "
        << reg_name(each.second) << "]";
@@ -229,6 +231,8 @@ ostream &operator<<(ostream &os, const Instruction &insn) {
     os << *jump;
   } else TypeCase(branch, const Branch *, ins) {
     os << *branch;
+  } else TypeCase(phi, const Phi *, ins) {
+    os << *phi;
   }
   return os;
 }
