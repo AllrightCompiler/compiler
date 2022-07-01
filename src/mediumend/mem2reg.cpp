@@ -96,7 +96,7 @@ void compute_dom(Function *func, CFG *cfg) {
       }
     }
   }
-  // 计算直接支配节点用于计算迭代支配边界
+
   idom[entry] = nullptr;
   for (auto &bb : func->bbs) {
     auto &domby_bb = domby[bb.get()];
@@ -131,7 +131,6 @@ auto compute_df(Function *func, CFG *cfg) {
       auto &domby = cfg->domby[to];
       BasicBlock *x = bb.get();
       while (x == to || domby.find(x) == domby.end()) {
-        // while x不strictly dom to
         df[x].insert(to);
         x = idom[x];
       }
@@ -148,8 +147,10 @@ void mem2reg(Function *func) {
   unordered_map<Reg, BasicBlock *> alloc_set;
   unordered_map<Reg, vector<BasicBlock *>> defs;
   unordered_map<Reg, vector<Reg>> defs_reg;
+  unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
 
   for (auto &bb : func->bbs) {
+    alloc_map[bb.get()] = {};
     for (auto &i : bb->insns) {
       TypeCase(inst, ir::insns::Alloca *, i.get()) {
         alloc_set[inst->dst] = bb.get();
@@ -165,7 +166,7 @@ void mem2reg(Function *func) {
       }
     }
   }
-
+  // mem2reg第一阶段，添加Phi函数
   for (auto v : alloc_set) {
     unordered_set<BasicBlock *> F;
     unordered_set<BasicBlock *> W;
@@ -177,9 +178,11 @@ void mem2reg(Function *func) {
       W.erase(W.begin());
       for (auto &Y : df[bb]) {
         if (F.find(Y) == F.end()) {
-          Y->push_front(new ir::insns::Phi(func->new_reg(v.first.type),
+          Reg r = func->new_reg(v.first.type);
+          Y->push_front(new ir::insns::Phi(r,
                                            defs[v.first],
                                            defs_reg[v.first])); // add phi
+          alloc_map[Y].insert({v.first, r});
           F.insert(Y);
           bool find = false;
           for (auto &each : defs[v.first]) {
@@ -194,6 +197,31 @@ void mem2reg(Function *func) {
         }
       }
       F.insert(bb);
+    }
+  }
+
+  // mem2reg第二阶段，寄存器重命名
+  for (auto &bb : func->bbs) {
+    for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
+      TypeCase(inst, ir::insns::Alloca *, iter->get()) {
+        iter = bb->insns.erase(iter);
+        continue;
+      }
+      TypeCase(inst, ir::insns::Load *, iter->get()) {
+        if(alloc_set.find(inst->addr) != alloc_set.end()) {
+          iter->reset(new ir::insns::Unary(inst->dst, UnaryOp::Not, alloc_map[bb.get()][inst->addr]));
+          iter++;
+          continue;
+        }
+      }
+      TypeCase(inst, ir::insns::Store *, iter->get()) {
+        if(alloc_set.find(inst->addr) != alloc_set.end()) {
+          iter = bb->insns.erase(iter);
+          continue;
+        }
+      }
+      iter++;
+      continue;
     }
   }
 }
