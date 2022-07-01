@@ -56,9 +56,9 @@ class ProgramTranslator {
     nr_gp_params = nr_fp_params = 0;
     std::vector<int> stack_params;
     for (int i = 0; i < nr_params; ++i) {
-      auto type = params[i].base_type;
+      auto type = ir_to_machine_reg_type(params[i].base_type);
       Reg dst = Reg{type, -(i + 1)};
-      if (type != Float) {
+      if (type != Fp) {
         if (nr_gp_params++ < NR_GPRS) {
           entry_bb->push(new Move{dst, Operand2::from(Reg{type, r0 + i})});
         } else {
@@ -82,7 +82,7 @@ class ProgramTranslator {
       dst_fn.param_objs.insert(obj);
       dst_fn.stack_objects.emplace_back(obj);
 
-      Reg dst = Reg{params[i].base_type, -(i + 1)};
+      Reg dst = Reg::from(params[i].base_type, -(i + 1));
       entry_bb->push(new LoadStack{dst, obj, 0});
     }
     entry_bb->label = ".entry";
@@ -283,16 +283,16 @@ class ProgramTranslator {
                             Operand2::from(arg_reg)});
         } else {
           // TODO: move or explicit vmov?
-          bb->push(
-              new Move{Reg{Float, s0 + nr_fp_args}, Operand2::from(arg_reg)});
+          bb->push(new Move{Reg{Fp, s0 + nr_fp_args}, Operand2::from(arg_reg)});
         }
       }
       bb->push(new Call{call->func, nr_gp_args, nr_fp_args});
       // 这里钻了个空子，这个语法中函数的返回值只能是int或float
       // 如果接收返回值的寄存器类型是String表明实际上无返回值
       if (call->dst.type != String)
-        bb->push(new Move{Reg::from(call->dst),
-                          Operand2::from(Reg{call->dst.type, 0})}); // r0或s0
+        bb->push(
+            new Move{Reg::from(call->dst),
+                     Operand2::from(Reg::from(call->dst.type, 0))}); // r0或s0
       int sp_adjustment = 4 * stack_args.size(); // NOTE: 所有标量类型都是4字节
       if (sp_adjustment != 0)
         bb->push(new AdjustSp{sp_adjustment});
@@ -301,7 +301,7 @@ class ProgramTranslator {
       // NOTE: 此指令不一定是bx lr，可能实际是到exit_bb的跳转
       if (ret->val)
         bb->push(
-            new Move{Reg{ret->val->type, 0},
+            new Move{Reg::from(ret->val->type, 0),
                      Operand2::from(Reg::from(ret->val.value()))}); // r0或s0
       bb->push(new Return{});
     }

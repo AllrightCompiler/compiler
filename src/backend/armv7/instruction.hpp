@@ -9,29 +9,46 @@
 
 namespace armv7 {
 
+enum RegType {
+  General,
+  Fp,
+};
+
+inline constexpr RegType ir_to_machine_reg_type(ScalarType t) {
+  return t == Float ? Fp : General;
+}
+
 // 此结构几乎与ir::Reg一致
 // 负id表示虚拟（伪）寄存器
 struct Reg {
+  using Type = RegType;
+
   int id;
-  ScalarType type;
+  RegType type;
 
   Reg() {}
-  Reg(ScalarType type, int id) : type{type}, id{id} {}
+  Reg(RegType type, int id) : type{type}, id{id} {}
 
   bool is_virt() const { return id < 0; }
   bool is_pseudo() const { return id < 0; }
-  bool is_float() const { return type == Float; }
+  bool is_float() const { return type == Fp; }
 
   bool operator==(const Reg &rhs) const {
-    return is_float() == rhs.is_float() && id == rhs.id;
+    return type == rhs.type && id == rhs.id;
   }
+  bool operator!=(const Reg &rhs) const { return !(*this == rhs); }
   bool operator<(const Reg &rhs) const {
     if (type != rhs.type)
       return type < rhs.type;
     return id < rhs.id;
   }
 
-  static Reg from(ir::Reg ir_reg) { return Reg{ir_reg.type, -ir_reg.id}; }
+  static Reg from(ir::Reg ir_reg) {
+    return Reg{ir_to_machine_reg_type(ir_reg.type), -ir_reg.id};
+  }
+  static Reg from(ScalarType t, int id) {
+    return Reg{ir_to_machine_reg_type(t), id};
+  }
 };
 
 // 指令执行条件码
@@ -112,8 +129,7 @@ struct Instruction {
   virtual std::set<Reg> def() const { return {}; }
   virtual std::set<Reg> use() const { return {}; }
 
-  template <typename T>
-  bool is() const {
+  template <typename T> bool is() const {
     return dynamic_cast<const T *>(this) != nullptr;
   }
 
@@ -185,6 +201,14 @@ struct Move : Instruction {
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return src.get_use(); }
+
+  // “正规”的mov Rd, Rs
+  bool is_reg_mov() const {
+    if (!src.is_imm_shift())
+      return false;
+    auto &reg_shift = std::get<RegImmShift>(src.opd);
+    return !flip && reg_shift.s == 0; 
+  }
 };
 
 // Thumb-2 movw: 加载低16位，清零高16位
@@ -389,12 +413,12 @@ struct Call : Instruction {
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override {
     // lr和所有caller-saved (volatile)寄存器
-    std::set<Reg> d{Reg{String, lr}};
+    std::set<Reg> d{Reg{General, lr}};
     for (int i = 0; i < NR_GPRS; ++i)
       if (GPRS_ATTR[i] == Volatile)
-        d.insert(Reg{Int, i});
+        d.insert(Reg{General, i});
     for (int i = 0; i < NR_VOLATILE_FPRS; ++i)
-      d.insert(Reg{Float, i});
+      d.insert(Reg{Fp, i});
     return d;
   }
   std::set<Reg> use() const override {
@@ -402,9 +426,9 @@ struct Call : Instruction {
     int gp_regs = nr_gp_args < NR_ARG_GPRS ? nr_gp_args : NR_ARG_GPRS;
     int fp_regs = nr_fp_args < NR_ARG_FPRS ? nr_fp_args : NR_ARG_FPRS;
     for (int i = 0; i < gp_regs; ++i)
-      u.insert(Reg{Int, ARG_GPRS[i]});
+      u.insert(Reg{General, ARG_GPRS[i]});
     for (int i = 0; i < fp_regs; ++i)
-      u.insert(Reg{Float, s0 + i});
+      u.insert(Reg{Fp, s0 + i});
     return u;
   }
 };
@@ -412,7 +436,7 @@ struct Call : Instruction {
 struct Return : Instruction {
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }
-  std::set<Reg> use() const override { return {Reg{Int, r0}, Reg{Float, s0}}; }
+  std::set<Reg> use() const override { return {Reg{General, r0}, Reg{Fp, s0}}; }
 };
 
 struct CountLeadingZero : Instruction {
