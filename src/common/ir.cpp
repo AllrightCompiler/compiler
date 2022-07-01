@@ -189,6 +189,15 @@ ostream &operator<<(ostream &os, const Branch &ins) {
   return os;
 }
 
+ostream &operator<<(ostream &os, const Phi &ins) {
+  write_reg(os, ins) << " = " << "Phi" << " ";
+  for (auto each : ins.incoming) {
+    os << " [" << label_name(each.first->label) << ", "
+       << reg_name(each.second) << "]";
+  }
+  return os;
+}
+
 } // namespace insns
 
 ostream &operator<<(ostream &os, const Instruction &insn) {

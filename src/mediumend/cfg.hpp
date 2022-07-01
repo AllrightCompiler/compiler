@@ -11,6 +11,10 @@ public:
     std::unordered_map<ir::BasicBlock *, std::unordered_set<ir::BasicBlock *>> dom, domby;
     std::unordered_map<ir::BasicBlock *, ir::BasicBlock *> idom;
     std::unordered_map<ir::BasicBlock *, int> domlevel;
+    std::unordered_set<ir::BasicBlock *> visit;
+    inline void clear_visit(){
+        visit.clear();
+    }
 };
     
 } // namespace mediumend

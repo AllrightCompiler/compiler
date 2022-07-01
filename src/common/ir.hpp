@@ -14,6 +14,7 @@ using std::string;
 using std::unique_ptr;
 using std::vector;
 using std::list;
+using std::unordered_map;
 
 struct Reg {
   ScalarType type;
@@ -21,6 +22,9 @@ struct Reg {
 
   Reg() {}
   Reg(ScalarType type_, int id_) : type{type_}, id{id_} {}
+  bool operator== (const Reg &b)const{
+      return id == b.id && type == b.type;
+  }
 };
 
 struct Storage {
@@ -38,6 +42,7 @@ struct BasicBlock {
   list<unique_ptr<Instruction>> insns;
 
   void push(Instruction *insn) { insns.emplace_back(insn); }
+  void push_front(Instruction *insn) { insns.emplace_front(insn); }
 };
 
 struct FunctionSignature {
@@ -48,8 +53,12 @@ struct FunctionSignature {
 struct Function {
   string name;
   FunctionSignature sig;
+  int nr_regs = 0;
 
   list<unique_ptr<BasicBlock>> bbs;
+  Reg new_reg(::ScalarType t) {
+    return ir::Reg{t, ++nr_regs};
+  }
 };
 
 struct LibFunction {
@@ -151,8 +160,14 @@ struct Binary : Output {
       : op{op}, src1{src1}, src2{src2}, Output{dst} {}
 };
 
-struct Phi : Output{
-  Phi(Reg dst) : Output(dst) {}
+struct Phi : Output {
+  vector<std::pair<BasicBlock*, Reg>> incoming;
+
+  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs): Output{dst} {
+    for (int i = 0; i < bbs.size(); i++) {
+      incoming.emplace_back(std::make_pair(bbs[i], regs[i]));
+    }
+  };
 };
 
 struct Return : Terminator {
@@ -178,3 +193,11 @@ struct Branch : Terminator {
 } // namespace insns
 
 } // namespace ir
+
+namespace std{
+template<>
+class hash<ir::Reg> {
+public:
+	size_t operator()(const ir::Reg& r) const{ return hash<int>()(r.id); }
+};
+}

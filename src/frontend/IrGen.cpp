@@ -174,7 +174,7 @@ void IrGen::visit_function(const ast::Function &node) {
   }
 
   visit_statement(*node.body());
-
+  cur_func->nr_regs = local_regs;
   cur_func = nullptr;
   cur_bb = init_bb;
 }
