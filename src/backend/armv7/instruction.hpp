@@ -22,6 +22,9 @@ struct Reg {
   bool is_pseudo() const { return id < 0; }
   bool is_float() const { return type == Float; }
 
+  bool operator==(const Reg &rhs) const {
+    return is_float() == rhs.is_float() && id == rhs.id;
+  }
   bool operator<(const Reg &rhs) const {
     if (type != rhs.type)
       return type < rhs.type;
@@ -108,6 +111,11 @@ struct Instruction {
   virtual void emit(std::ostream &os) const {}
   virtual std::set<Reg> def() const { return {}; }
   virtual std::set<Reg> use() const { return {}; }
+
+  template <typename T>
+  bool is() const {
+    return dynamic_cast<const T *>(this) != nullptr;
+  }
 
   std::ostream &write_op(std::ostream &os, const char *op,
                          bool is_float = false, bool is_ldst = false) const;

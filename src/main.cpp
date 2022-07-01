@@ -7,6 +7,7 @@
 #include "frontend/IrGen.hpp"
 
 #include "backend/armv7/program.hpp"
+#include "backend/armv7/passes.hpp"
 
 #include "common/errors.hpp"
 #include "common/utils.hpp"
@@ -60,6 +61,7 @@ int main(int argc, char *argv[]) {
 
     auto &ir_program = *ir_gen.get_program();
     auto program = armv7::translate(ir_program);
+    armv7::backend_passes(*program);
     program->emit(std::cout);
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;
