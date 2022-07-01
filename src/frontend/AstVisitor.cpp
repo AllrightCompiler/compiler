@@ -16,8 +16,9 @@ AstVisitor::visitCompUnit(SysYParser::CompUnitContext *const ctx) {
   std::vector<CompileUnit::Child> children;
   for (auto item : ctx->compUnitItem()) {
     if (auto decl = item->decl()) {
-      auto const decls = decl->accept(this).as<std::vector<Declaration *>>();
-      for (auto d : decls) {
+      auto const decls =
+          decl->accept(this).as<std::shared_ptr<std::vector<Declaration *>>>();
+      for (auto d : *decls) {
         children.emplace_back(std::unique_ptr<Declaration>(d));
       }
     } else if (auto func_ = item->funcDef()) {
@@ -54,7 +55,7 @@ AstVisitor::visitConstDecl(SysYParser::ConstDeclContext *const ctx) {
     ret.push_back(new Declaration(std::move(type), std::move(ident),
                                   std::move(init), true));
   }
-  return std::move(ret);
+  return std::make_shared<std::vector<Declaration *>>(std::move(ret));
 }
 
 antlrcpp::Any AstVisitor::visitInt(SysYParser::IntContext *const ctx) {
@@ -86,7 +87,7 @@ antlrcpp::Any AstVisitor::visitVarDecl(SysYParser::VarDeclContext *const ctx) {
     ret.push_back(new Declaration(std::move(type), std::move(ident),
                                   std::move(init), false));
   }
-  return std::move(ret);
+  return std::make_shared<std::vector<Declaration *>>(std::move(ret));
 }
 
 antlrcpp::Any AstVisitor::visitInit(SysYParser::InitContext *const ctx) {
@@ -148,8 +149,9 @@ antlrcpp::Any AstVisitor::visitBlock(SysYParser::BlockContext *const ctx) {
   std::vector<Block::Child> children;
   for (auto item : ctx->blockItem()) {
     if (auto decl = item->decl()) {
-      auto const decls = decl->accept(this).as<std::vector<Declaration *>>();
-      for (auto d : decls) {
+      auto const decls =
+          decl->accept(this).as<std::shared_ptr<std::vector<Declaration *>>>();
+      for (auto d : *decls) {
         children.emplace_back(std::unique_ptr<Declaration>(d));
       }
     } else if (auto stmt_ = item->stmt()) {
@@ -293,8 +295,8 @@ antlrcpp::Any AstVisitor::visitCall(SysYParser::CallContext *const ctx) {
         auto const arg = exp->accept(this).as<Expression *>();
         args.emplace_back(std::unique_ptr<Expression>(arg));
       } else if (auto str = arg_->stringConst()) {
-        auto arg = str->accept(this).as<std::string>();
-        args.emplace_back(std::move(arg));
+        auto arg = str->accept(this).as<std::shared_ptr<std::string>>();
+        args.emplace_back(std::move(*arg));
       } else {
         assert(false);
       }
@@ -329,7 +331,7 @@ antlrcpp::Any AstVisitor::visitNot(SysYParser::NotContext *const ctx) {
 
 antlrcpp::Any
 AstVisitor::visitStringConst(SysYParser::StringConstContext *const ctx) {
-  return ctx->getText();
+  return std::make_shared<std::string>(ctx->getText());
 }
 
 antlrcpp::Any AstVisitor::visitMul(SysYParser::MulContext *const ctx) {
