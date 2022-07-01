@@ -61,6 +61,7 @@ constexpr const char *GPR_NAMES[NR_GPRS] = {
     "r8", "r9", "r10", "r11", "ip", "sp", "lr", "pc"};
 
 // TODO: 确认vfp寄存器属性
+constexpr int NR_VOLATILE_FPRS = 16;
 
 constexpr bool gpr_allocable(int reg) {
   return GPRS_ATTR[reg] == Volatile || GPRS_ATTR[reg] == NonVolatile;

@@ -3,6 +3,7 @@
 #include "backend/armv7/instruction.hpp"
 #include "common/common.hpp"
 
+#include <functional>
 #include <list>
 #include <set>
 
@@ -16,12 +17,22 @@ struct BasicBlock {
   std::string label;
   std::list<std::unique_ptr<Instruction>> insns;
 
+  std::list<BasicBlock *> pred, succ;             // CFG
+  std::set<Reg> def, live_use, live_in, live_out; // for liveness analysis
+
   void push(Instruction *insn) { insns.emplace_back(insn); }
   void push(ExCond cond, Instruction *insn) {
     insn->cond = cond;
     insns.emplace_back(insn);
   }
+
+  static void add_edge(BasicBlock *from, BasicBlock *to) {
+    from->succ.push_back(to);
+    to->pred.push_back(from);
+  }
 };
+
+using RegFilter = std::function<bool(const Reg &)>;
 
 struct Function {
   std::string name;
@@ -39,6 +50,8 @@ struct Function {
 
   Reg new_reg(ScalarType type) { return Reg{type, ++regs_allocated}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
+
+  void do_liveness_analysis(RegFilter filter = [](const Reg &){ return true; });
 };
 
 struct Program {

@@ -1,7 +1,10 @@
 #pragma once
 
+#include "backend/armv7/arch.hpp"
+
 #include "common/ir.hpp"
 
+#include <set>
 #include <variant>
 
 namespace armv7 {
@@ -15,6 +18,7 @@ struct Reg {
   Reg() {}
   Reg(ScalarType type, int id) : type{type}, id{id} {}
 
+  bool is_virt() const { return id < 0; }
   bool is_pseudo() const { return id < 0; }
   bool is_float() const { return type == Float; }
 
@@ -78,6 +82,16 @@ struct Operand2 {
 
   template <typename T> auto get() const { return std::get<T>(opd); }
 
+  std::set<Reg> get_use() const {
+    if (is_imm_shift())
+      return {std::get<RegImmShift>(opd).r};
+    if (is_reg_shift()) {
+      auto &rr_shift = std::get<RegRegShift>(opd);
+      return {rr_shift.r1, rr_shift.r2};
+    }
+    return {};
+  }
+
   static Operand2 from(int imm) { return Operand2{.opd = imm}; }
   static Operand2 from(Reg r) { return Operand2{.opd = RegImmShift{r}}; }
   static Operand2 from(ShiftType type, Reg r, int s) {
@@ -92,6 +106,9 @@ struct Instruction {
   virtual ~Instruction() = default;
 
   virtual void emit(std::ostream &os) const {}
+  virtual std::set<Reg> def() const { return {}; }
+  virtual std::set<Reg> use() const { return {}; }
+
   std::ostream &write_op(std::ostream &os, const char *op,
                          bool is_float = false, bool is_ldst = false) const;
 };
@@ -106,6 +123,8 @@ struct RType : Instruction {
   RType(Op op, Reg dst, Reg s1, Reg s2) : op{op}, dst{dst}, s1{s1}, s2{s2} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {s1, s2}; }
 
   static Op from(BinaryOp);
 };
@@ -121,6 +140,8 @@ struct IType : Instruction {
   IType(Op op, Reg dst, Reg s1, int imm) : op{op}, dst{dst}, s1{s1}, imm{imm} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {s1}; }
 };
 
 // 具有 op Rd, R1, Operand2 形式的指令
@@ -133,6 +154,12 @@ struct FullRType : Instruction {
       : op{op}, dst{dst}, s1{s1}, s2{std::move(s2)} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override {
+    std::set<Reg> u{s1};
+    u.merge(s2.get_use());
+    return u;
+  }
 };
 
 // 完整形式的MOV: MOV Rd, Operand2
@@ -148,6 +175,8 @@ struct Move : Instruction {
       : dst{dst}, src{std::move(src)}, flip{flip} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return src.get_use(); }
 };
 
 // Thumb-2 movw: 加载低16位，清零高16位
@@ -158,9 +187,11 @@ struct MovW : Instruction {
   MovW(Reg dst, int imm) : dst{dst}, imm{imm} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {}; }
 };
 
-// Thumb-2 movt: 加载高16位，低16为不变
+// Thumb-2 movt: 加载高16位，低16位不变
 struct MovT : Instruction {
   Reg dst;
   int imm;
@@ -168,6 +199,8 @@ struct MovT : Instruction {
   MovT(Reg dst, int imm) : dst{dst}, imm{imm} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {dst}; }
 };
 
 // 加载全局变量的地址
@@ -180,6 +213,8 @@ struct LoadAddr : Instruction {
   LoadAddr(Reg dst, std::string sym) : dst{dst}, symbol{std::move(sym)} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {}; }
 };
 
 // CMP Rn, Operand2: 更新Rn - Operand2的CPSR标记
@@ -194,6 +229,12 @@ struct Compare : Instruction {
       : s1{s1}, s2{std::move(s2)}, neg{neg} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override {
+    std::set<Reg> u{s1};
+    u.merge(s2.get_use());
+    return u;
+  }
 };
 
 // 简单load: base_reg + offset_imm 寻址
@@ -204,6 +245,8 @@ struct Load : Instruction {
   Load(Reg dst, Reg base, int offset) : dst{dst}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {base}; }
 };
 
 // 简单store: base_reg + offset_imm 寻址
@@ -214,6 +257,8 @@ struct Store : Instruction {
   Store(Reg src, Reg base, int offset) : src{src}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override { return {src, base}; }
 };
 
 // MLA Rd, Rm, Rs, Rn: Rd := Rn + Rm * Rs
@@ -228,6 +273,8 @@ struct FusedMul : Instruction {
       : dst{dst}, s1{s1}, s2{s2}, s3{s3}, sub{sub} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {s1, s2, s3}; }
 };
 
 struct BasicBlock;
@@ -251,10 +298,13 @@ struct RegBranch : Instruction {
       : type{type}, target{target}, src{src} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override { return {src}; }
 };
 
 // 下面是与栈指针sp相关的指令
 // 为了拓展性，StackObject *与int offset配对，offset表示相对于stack object的偏移
+// 由于sp不被用于寄存器分配，此类指令的def和use都不显含sp
 struct StackObject;
 struct SpRelative : Instruction {};
 
@@ -268,6 +318,8 @@ struct LoadStackAddr : SpRelative {
       : dst{dst}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {}; }
 };
 
 // dst = [base + offset]
@@ -280,6 +332,8 @@ struct LoadStack : SpRelative {
       : dst{dst}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {}; }
 };
 
 struct StoreStack : SpRelative {
@@ -291,6 +345,8 @@ struct StoreStack : SpRelative {
       : src{src}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override { return {src}; }
 };
 
 struct AdjustSp : SpRelative {
@@ -299,6 +355,8 @@ struct AdjustSp : SpRelative {
   AdjustSp(int offset) : offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override { return {}; }
 };
 
 struct Push : SpRelative {
@@ -307,18 +365,46 @@ struct Push : SpRelative {
   Push(std::vector<Reg> srcs) : srcs{std::move(srcs)} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override {
+    return std::set<Reg>(srcs.begin(), srcs.end());
+  }
 };
 
 struct Call : Instruction {
   std::string func;
+  int nr_gp_args, nr_fp_args;
 
-  Call(std::string func) : func{std::move(func)} {}
+  Call(std::string func, int nr_gp_args, int nr_fp_args)
+      : func{std::move(func)}, nr_gp_args{nr_gp_args}, nr_fp_args{nr_fp_args} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override {
+    // lr和所有caller-saved (volatile)寄存器
+    std::set<Reg> d{Reg{String, lr}};
+    for (int i = 0; i < NR_GPRS; ++i)
+      if (GPRS_ATTR[i] == Volatile)
+        d.insert(Reg{Int, i});
+    for (int i = 0; i < NR_VOLATILE_FPRS; ++i)
+      d.insert(Reg{Float, i});
+    return d;
+  }
+  std::set<Reg> use() const override {
+    std::set<Reg> u;
+    int gp_regs = nr_gp_args < NR_ARG_GPRS ? nr_gp_args : NR_ARG_GPRS;
+    int fp_regs = nr_fp_args < NR_ARG_FPRS ? nr_fp_args : NR_ARG_FPRS;
+    for (int i = 0; i < gp_regs; ++i)
+      u.insert(Reg{Int, ARG_GPRS[i]});
+    for (int i = 0; i < fp_regs; ++i)
+      u.insert(Reg{Float, s0 + i});
+    return u;
+  }
 };
 
 struct Return : Instruction {
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override { return {Reg{Int, r0}, Reg{Float, s0}}; }
 };
 
 struct CountLeadingZero : Instruction {
@@ -327,6 +413,8 @@ struct CountLeadingZero : Instruction {
   CountLeadingZero(Reg dst, Reg src) : dst{dst}, src{src} {}
 
   void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {src}; }
 };
 
 } // namespace armv7

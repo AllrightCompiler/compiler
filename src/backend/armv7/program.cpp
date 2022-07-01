@@ -287,7 +287,7 @@ class ProgramTranslator {
               new Move{Reg{Float, s0 + nr_fp_args}, Operand2::from(arg_reg)});
         }
       }
-      bb->push(new Call{call->func});
+      bb->push(new Call{call->func, nr_gp_args, nr_fp_args});
       // 这里钻了个空子，这个语法中函数的返回值只能是int或float
       // 如果接收返回值的寄存器类型是String表明实际上无返回值
       if (call->dst.type != String)
@@ -307,6 +307,7 @@ class ProgramTranslator {
     }
     else TypeCase(jump, ii::Jump *, ins) {
       auto target = bb_map[jump->target];
+      BasicBlock::add_edge(bb, target);
       if (target != next_bb)
         bb->push(new Branch{target});
     }
@@ -314,6 +315,8 @@ class ProgramTranslator {
       Reg val = Reg::from(br->val);
       auto true_target = bb_map[br->true_target];
       auto false_target = bb_map[br->false_target];
+      BasicBlock::add_edge(bb, true_target);
+      BasicBlock::add_edge(bb, false_target);
 
       auto emit_branch = [bb, next_bb, true_target, false_target](ExCond cond) {
         if (next_bb == false_target)
