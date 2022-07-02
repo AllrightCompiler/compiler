@@ -10,6 +10,8 @@ using std::unordered_set;
 
 void compute_use_def_list(ir::Function *);
 
+void mark_global_addr_reg(ir::Function *);
+
 class CFG{
 private:
     ir::Function *func;

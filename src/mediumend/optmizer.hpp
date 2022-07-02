@@ -18,6 +18,7 @@ inline void run_medium(ir::Program *prog) {
     func.second.cfg->remove_unreachable_bb();
     compute_use_def_list(&func.second);
     func.second.cfg->compute_dom();
+    mark_global_addr_reg(&func.second);
   }
   mem2reg(prog);
   remove_unused_function(prog);

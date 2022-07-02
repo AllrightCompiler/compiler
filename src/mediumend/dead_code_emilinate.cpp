@@ -3,7 +3,6 @@
 namespace mediumend {
 
 using std::vector;
-using std::unordered_map;
 using std::unordered_set;
 
 
@@ -59,10 +58,19 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
   }
   for (auto &bb : func->bbs) {
     for (auto &inst : bb->insns) {
-      if(auto x = dynamic_cast<ir::insns::Store *>(inst.get())){
+      // 修改了全局变量，不是纯函数
+      TypeCase(store, ir::insns::Store *, inst.get()){
+        if(func->global_addr.count(store->addr)){
+          func->pure = 0;
+          return;
+        }
+      }
+      // 使用了全局变量，不能当作纯函数
+      if(auto x = dynamic_cast<ir::insns::LoadAddr *>(inst.get())){
         func->pure = 0;
         return;
       }
+      // 此处为了便于处理递归函数，因此这么做
       TypeCase(call, ir::insns::Call *, inst.get()) {
         if(prog->functions[call->func].pure == 1){
           continue;
@@ -160,6 +168,5 @@ void remove_uneffective_inst(ir::Program *prog){
     }
   }
 }
-
 
 }

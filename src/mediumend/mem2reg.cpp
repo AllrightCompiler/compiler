@@ -85,9 +85,11 @@ void mem2reg(ir::Program *prog) {
       stack.pop_back();
       for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
         TypeCase(inst, ir::insns::Alloca *, iter->get()) {
-          inst->remove_use_def(func->use_list, func->def_list);
-          iter = bb->insns.erase(iter);
-          continue;
+          if(!inst->type.is_array()){
+            inst->remove_use_def(func->use_list, func->def_list);
+            iter = bb->insns.erase(iter);
+            continue;
+          }
         }
         TypeCase(inst, ir::insns::Load *, iter->get()) {
           if(alloc_set.find(inst->addr) != alloc_set.end()) {

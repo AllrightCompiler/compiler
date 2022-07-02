@@ -17,6 +17,23 @@ void compute_use_def_list(ir::Function *func){
   }
 }
 
+void mark_global_addr_reg(ir::Function *func){
+  auto &bbs = func->bbs;
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto &inst : insns) {
+      TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
+        func->global_addr.insert(loadaddr->dst);
+      }
+      TypeCase(get_ptr, ir::insns::GetElementPtr *, inst.get()){
+        if(func->global_addr.count(get_ptr->base)){
+          func->global_addr.insert(get_ptr->dst);
+        }
+      }
+    }
+  }
+}
+
 CFG::CFG(ir::Function *func) : func(func) {}
 
 void CFG::build(){

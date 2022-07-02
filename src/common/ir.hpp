@@ -19,6 +19,7 @@ using std::unique_ptr;
 using std::vector;
 using std::list;
 using std::unordered_map;
+using std::unordered_set;
 
 struct Reg {
   ScalarType type;
@@ -77,6 +78,7 @@ struct Function {
 
   unordered_map<Reg, list<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
+  unordered_set<Reg> global_addr;
 
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(::ScalarType t) {
