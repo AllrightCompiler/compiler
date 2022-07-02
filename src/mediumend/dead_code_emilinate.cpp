@@ -64,13 +64,11 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
         return;
       }
       TypeCase(call, ir::insns::Call *, inst.get()) {
-        if(prog->functions[call->func].pure == -1){
-          detect_pure_function(prog, &prog->functions[call->func]);
+        if(prog->functions[call->func].pure == 1){
+          continue;
         }
-        if(prog->functions[call->func].pure == 0){
-          func->pure = 0;
-          return;
-        }
+        func->pure = 0;
+        return;
       }
     }
   }
