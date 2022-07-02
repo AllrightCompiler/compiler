@@ -7,6 +7,52 @@ namespace mediumend {
 
 using std::vector;
 
+vector<ir::Reg> get_inst_use_reg(ir::Instruction *inst){
+  vector<ir::Reg> regs;
+  TypeCase(unary, ir::insns::Unary *, inst){
+    regs.push_back(unary->src);
+  }
+  TypeCase(binary, ir::insns::Binary *, inst){
+    regs.push_back(binary->src1);
+    regs.push_back(binary->src2);
+  }
+  TypeCase(load, ir::insns::Load *, inst){
+    regs.push_back(load->addr);
+  }
+  TypeCase(store, ir::insns::Store *, inst){
+    regs.push_back(store->addr);
+    regs.push_back(store->val);
+  }
+  TypeCase(call, ir::insns::Call *, inst){
+    for(auto &r : call->args){
+      regs.push_back(r);
+    }
+  }
+  TypeCase(phi, ir::insns::Phi *, inst){
+    for(auto &r : phi->incoming){
+      regs.push_back(r.second);
+    }
+  }
+  TypeCase(convey, ir::insns::Convert *, inst){
+    regs.push_back(convey->src);
+  }
+  TypeCase(ret, ir::insns::Return *, inst){
+    if(ret->val.has_value()){
+      regs.push_back(ret->val.value());
+    }
+  }
+  TypeCase(branch, ir::insns::Branch *, inst){
+    regs.push_back(branch->val);
+  }
+  TypeCase(ptr, ir::insns::GetElementPtr *, inst){
+    regs.push_back(ptr->base);
+    for(auto &r : ptr->indices){
+      regs.push_back(r);
+    }
+  }
+  return regs;
+}
+
 CFG::CFG(ir::Function *func) : func(func) {
   for (auto &bb : func->bbs) {
     this->succ[bb.get()] = {};
@@ -157,27 +203,28 @@ unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {
   return df;
 }
 
-void CFG::compute_use_list(){
+void CFG::compute_use_def_list(){
   auto &bbs = func->bbs;
   for (auto &bb : bbs) {
     auto &insns = bb->insns;
     for (auto &inst : insns) {
-      inst.get()->addUse(this->use_list);
+      inst.get()->addUseDef(this->use_list, this->def_list);
     }
   }
 }
 
 void CFG::remove_unused_reg(){
   auto &bbs = func->bbs;
-  vector<list<std::unique_ptr<ir::Instruction>>::iterator> stack;
+  vector<ir::Instruction *> stack;
   vector<ir::BasicBlock *> bb_stack;
+  unordered_set<ir::Instruction *> remove_inst_set; 
   for (auto &bb : bbs) {
     auto &insns = bb->insns;
-    for (auto iter = insns.begin(); iter != insns.end();iter++) {
-      TypeCase(output, ir::insns::Output *, iter->get()){
+    for (auto &inst : insns) {
+      TypeCase(output, ir::insns::Output *, inst.get()){
         auto &reg = output->dst;
         if (reg.id && this->use_list[reg].size() == 0) {
-          stack.push_back(iter);
+          stack.push_back(output);
           bb_stack.push_back(bb.get());
         }
       }
@@ -188,8 +235,24 @@ void CFG::remove_unused_reg(){
     auto bb = bb_stack.back();
     stack.pop_back();
     bb_stack.pop_back();
-    inst->get()->removeUse(this->use_list);
-    bb->insns.erase(inst);
+    auto regs = get_inst_use_reg(inst);
+    inst->removeUseDef(this->use_list, this->def_list);
+    for(auto reg : regs){
+      if(this->use_list[reg].size() == 0){
+        stack.push_back(def_list[reg]);
+      }
+    }
+    remove_inst_set.insert(inst);
+  }
+  for(auto &bb : bbs){
+    auto &insns = bb->insns;
+    for(auto iter = insns.begin(); iter != insns.end();){
+      if(remove_inst_set.find(iter->get()) != remove_inst_set.end()){
+        iter = insns.erase(iter);
+      }else{
+        iter++;
+      }
+    }
   }
 }
 

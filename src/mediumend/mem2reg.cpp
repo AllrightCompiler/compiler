@@ -14,7 +14,7 @@ using std::vector;
 
 void mem2reg(Function *func, CFG *cfg) {
   cfg->remove_unreachable_bb();
-  cfg->compute_use_list();
+  cfg->compute_use_def_list();
   cfg->compute_dom();
   auto df = cfg->compute_df();
   unordered_map<Reg, BasicBlock *> alloc_set;
@@ -58,7 +58,7 @@ void mem2reg(Function *func, CFG *cfg) {
                                            defs[v.first],
                                            defs_reg[v.first]);
           Y->push_front(phi); // add phi
-          phi->addUse(cfg->use_list);
+          phi->addUseDef(cfg->use_list, cfg->def_list);
           phi2mem[phi] = v.first;
           F.insert(Y);
           bool find = false;
@@ -85,7 +85,7 @@ void mem2reg(Function *func, CFG *cfg) {
     stack.pop_back();
     for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
       TypeCase(inst, ir::insns::Alloca *, iter->get()) {
-        inst->removeUse(cfg->use_list);
+        inst->removeUseDef(cfg->use_list, cfg->def_list);
         iter = bb->insns.erase(iter);
         continue;
       }
@@ -104,7 +104,7 @@ void mem2reg(Function *func, CFG *cfg) {
       TypeCase(inst, ir::insns::Store *, iter->get()) {
         if(alloc_set.find(inst->addr) != alloc_set.end()) {
           alloc_map[inst->addr] = inst->val;
-          inst->removeUse(cfg->use_list);
+          inst->removeUseDef(cfg->use_list, cfg->def_list);
           iter = bb->insns.erase(iter);
           continue;
         }

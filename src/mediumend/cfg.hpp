@@ -24,6 +24,7 @@ public:
     unordered_map<BasicBlock *, int> domlevel;
     unordered_set<BasicBlock *> visit;
     unordered_map<Reg, list<Instruction *>> use_list;
+    unordered_map<Reg, Instruction *> def_list;
     inline void clear_visit(){
         visit.clear();
     }
@@ -41,7 +42,7 @@ public:
 
     void compute_dom();
 
-    void compute_use_list();
+    void compute_use_def_list();
 
     void compute_dom_level(BasicBlock *bb, int dom_level);
 
