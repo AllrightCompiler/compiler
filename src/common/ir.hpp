@@ -30,7 +30,17 @@ struct Reg {
       return id == b.id && type == b.type;
   }
 };
+}
 
+namespace std{
+template<>
+class hash<ir::Reg> {
+public:
+	size_t operator()(const ir::Reg& r) const{ return hash<int>()(r.id); }
+};
+}
+
+namespace ir{
 struct Storage {
   bool global;
   Reg reg; // reg的type字段无效，此reg表示变量的地址。全局变量的此字段无效。
@@ -39,9 +49,9 @@ struct Storage {
 struct Instruction : Display {
   virtual void print(std::ostream &, unsigned) const override;
   virtual ~Instruction();
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &, unordered_map<Reg, Instruction *> &) {};
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &, unordered_map<Reg, Instruction *> &) {};
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &, Reg , Reg ) {};
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &, unordered_map<Reg, Instruction *> &) {};
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &, unordered_map<Reg, Instruction *> &) {};
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &, Reg , Reg ) {};
 };
 
 struct BasicBlock {
@@ -63,6 +73,10 @@ struct Function {
   int nr_regs = 0;
 
   mediumend::CFG* cfg = nullptr;
+  int pure = -1;
+
+  unordered_map<Reg, list<Instruction *>> use_list;
+  unordered_map<Reg, Instruction *> def_list;
 
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(::ScalarType t) {
@@ -96,8 +110,8 @@ struct Output : Instruction {
 
   Output() {}
   Output(Reg r) : dst{r} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
 };
 
 // 栈空间分配
@@ -112,9 +126,9 @@ struct Load : Output {
   Reg addr;
 
   Load(Reg dst, Reg addr) : addr{addr}, Output{dst} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 // 将全局变量地址加载到dst寄存器
@@ -134,9 +148,9 @@ struct Store : Instruction {
   Reg addr, val;
 
   Store(Reg addr, Reg val) : addr{addr}, val{val} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 struct GetElementPtr : Output {
@@ -147,18 +161,18 @@ struct GetElementPtr : Output {
   GetElementPtr(Reg dst, Type tp, Reg base, vector<Reg> indexes)
       : type{std::move(tp)}, indices{std::move(indexes)}, base{base},
         Output{dst} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 struct Convert : Output {
   Reg src;
 
   Convert(Reg to, Reg from) : src{from}, Output{to} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 struct Call : Output {
@@ -167,9 +181,9 @@ struct Call : Output {
 
   Call(Reg dst, string callee, vector<Reg> arg_regs)
       : func{std::move(callee)}, args{std::move(arg_regs)}, Output{dst} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 struct Unary : Output {
@@ -177,9 +191,9 @@ struct Unary : Output {
   Reg src;
 
   Unary(Reg dst, UnaryOp op, Reg src) : op{op}, src{src}, Output{dst} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 struct Binary : Output {
@@ -188,9 +202,9 @@ struct Binary : Output {
 
   Binary(Reg dst, BinaryOp op, Reg src1, Reg src2)
       : op{op}, src1{src1}, src2{src2}, Output{dst} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 struct Phi : Output {
@@ -201,18 +215,18 @@ struct Phi : Output {
       incoming[bbs[i]] = regs[i];
     }
   };
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 struct Return : Terminator {
   std::optional<Reg> val;
 
   Return(std::optional<Reg> ret_val) : val{ret_val} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 struct Jump : Terminator {
@@ -227,19 +241,12 @@ struct Branch : Terminator {
 
   Branch(Reg src, BasicBlock *true_dst, BasicBlock *false_dst)
       : val{src}, true_target{true_dst}, false_target{false_dst} {}
-  virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
-  virtual void changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+  virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
+  virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
 };
 
 } // namespace insns
 
 } // namespace ir
 
-namespace std{
-template<>
-class hash<ir::Reg> {
-public:
-	size_t operator()(const ir::Reg& r) const{ return hash<int>()(r.id); }
-};
-}

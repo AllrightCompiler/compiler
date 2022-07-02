@@ -6,30 +6,26 @@
 namespace mediumend {
 
 void remove_unused_function(ir::Program *prog);
-void mem2reg(ir::Function *func);
-void constant_propagation(Function *func);
+void mem2reg(ir::Program *prog);
+void constant_propagation(ir::Program *prog);
+void mark_pure_func(ir::Program *);
+void remove_uneffective_inst(ir::Program *prog);
 
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){
     func.second.cfg = new CFG(&func.second);
     func.second.cfg->build();
     func.second.cfg->remove_unreachable_bb();
-    func.second.cfg->compute_use_def_list();
+    compute_use_def_list(&func.second);
     func.second.cfg->compute_dom();
   }
-  for (auto &func : prog->functions) {
-    mem2reg(&func.second);
-  }
-  for(auto &func : prog->functions){
-    func.second.cfg->remove_unused_reg();
-  }
+  mem2reg(prog);
   remove_unused_function(prog);
-  for(auto &func : prog->functions){
-    constant_propagation(&func.second);
-  }
-  for(auto &func : prog->functions){
-    func.second.cfg->remove_unused_reg();
-  }
+  constant_propagation(prog);
+  mark_pure_func(prog);
+  remove_uneffective_inst(prog);
+  // 移除无用指令后可能有的函数不会被调用，pure function / unreachable BB里的function
+  remove_unused_function(prog);
 }
 
 } // namespace mediumend
