@@ -167,4 +167,30 @@ void CFG::compute_use_list(){
   }
 }
 
+void CFG::remove_unused_reg(){
+  auto &bbs = func->bbs;
+  vector<list<std::unique_ptr<ir::Instruction>>::iterator> stack;
+  vector<ir::BasicBlock *> bb_stack;
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto iter = insns.begin(); iter != insns.end();iter++) {
+      TypeCase(output, ir::insns::Output *, iter->get()){
+        auto &reg = output->dst;
+        if (reg.id && this->use_list[reg].size() == 0) {
+          stack.push_back(iter);
+          bb_stack.push_back(bb.get());
+        }
+      }
+    }
+  }
+  while(!stack.empty()){
+    auto inst = stack.back();
+    auto bb = bb_stack.back();
+    stack.pop_back();
+    bb_stack.pop_back();
+    inst->get()->removeUse(this->use_list);
+    bb->insns.erase(inst);
+  }
+}
+
 } // namespace mediumend

@@ -16,6 +16,7 @@ class CFG{
 private:
     Function *func;
 public:
+    CFG(){}
     CFG(ir::Function *func);
     unordered_map<BasicBlock *, unordered_set<BasicBlock *>> prev, succ;
     unordered_map<BasicBlock *, unordered_set<BasicBlock *>> dom, domby;
@@ -43,6 +44,8 @@ public:
     void compute_use_list();
 
     void compute_dom_level(BasicBlock *bb, int dom_level);
+
+    void remove_unused_reg();
 
     unordered_map<BasicBlock *, unordered_set<BasicBlock *>> compute_df();
 };
