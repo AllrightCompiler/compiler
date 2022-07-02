@@ -194,11 +194,11 @@ struct Binary : Output {
 };
 
 struct Phi : Output {
-  vector<std::pair<BasicBlock*, Reg>> incoming;
+  unordered_map<BasicBlock *, Reg> incoming;
 
   Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs): Output{dst} {
     for (int i = 0; i < bbs.size(); i++) {
-      incoming.emplace_back(std::make_pair(bbs[i], regs[i]));
+      incoming[bbs[i]] = regs[i];
     }
   };
   virtual void addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;

@@ -54,6 +54,11 @@ vector<ir::Reg> get_inst_use_reg(ir::Instruction *inst){
 }
 
 CFG::CFG(ir::Function *func) : func(func) {
+}
+
+void CFG::build(){
+  succ.clear();
+  prev.clear();
   for (auto &bb : func->bbs) {
     this->succ[bb.get()] = {};
     this->prev[bb.get()] = {};
@@ -65,13 +70,13 @@ CFG::CFG(ir::Function *func) : func(func) {
     ir::insns::Jump *jmp = dynamic_cast<ir::insns::Jump *>(ins.get());
     ir::insns::Branch *brh = dynamic_cast<ir::insns::Branch *>(ins.get());
     ir::insns::Return *ret = dynamic_cast<ir::insns::Return *>(ins.get());
-    auto &succ = this->succ[bb.get()];
+    auto &next = this->succ[bb.get()];
     if (jmp) {
-      succ.insert(jmp->target);
+      next.insert(jmp->target);
       prev[jmp->target].insert(bb.get());
     } else if (brh) {
-      succ.insert(brh->true_target);
-      succ.insert(brh->false_target);
+      next.insert(brh->true_target);
+      next.insert(brh->false_target);
       prev[brh->true_target].insert(bb.get());
       prev[brh->false_target].insert(bb.get());
     } else if (ret) {
@@ -122,6 +127,10 @@ void CFG::compute_dom_level(BasicBlock *bb, int dom_level) {
 }
 
 void CFG::compute_dom() {
+  dom.clear();
+  domby.clear();
+  idom.clear();
+  domlevel.clear();
   BasicBlock *entry = func->bbs.front().get();
   domby[entry] = {entry};
   unordered_set<BasicBlock *> all_bb;
@@ -184,6 +193,7 @@ void CFG::compute_dom() {
       }
     }
   }
+  compute_dom_level(entry, 0);
 }
 
 unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {

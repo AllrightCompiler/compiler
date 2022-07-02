@@ -143,6 +143,34 @@ void constant_propagation(Function *func) {
           ins->addUseDef(func->cfg->use_list, func->cfg->def_list);
           const_map[new_ins->dst] = new_ins->imm;
         }
+        continue;
+      }
+      TypeCase(br, ir::insns::Branch *, ins.get()) {
+        if (const_map.find(br->val) != const_map.end()) {
+          br->removeUseDef(func->cfg->use_list, func->cfg->def_list);
+          ir::BasicBlock *target;
+          if(const_map[br->val].iv) {
+            target = br->true_target;
+          } else {
+            target = br->false_target;
+          }
+          auto new_ins = new ir::insns::Jump(target);
+          ins.reset(new_ins);
+        }
+        continue;
+      }
+    }
+  }
+  func->cfg->build();
+  func->cfg->remove_unreachable_bb();
+  for(auto &bb : func->bbs){
+    for(auto &inst : bb->insns){
+      if(auto phi = dynamic_cast<ir::insns::Phi *>(inst.get())){
+        for(auto &in : phi->incoming){
+          if(func->cfg->prev.find(in.first) == func->cfg->prev.end()){
+            phi->incoming.erase(in.first);
+          }
+        }
       }
     }
   }

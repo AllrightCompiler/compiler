@@ -37,6 +37,8 @@ public:
         domlevel.erase(bb);
         visit.erase(bb);
     }
+
+    void build();
     
     void remove_unreachable_bb();
 
