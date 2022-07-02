@@ -7,6 +7,10 @@
 
 #include <ostream>
 
+namespace mediumend{
+class CFG;
+}
+
 namespace ir {
 
 using std::optional;
@@ -58,10 +62,13 @@ struct Function {
   FunctionSignature sig;
   int nr_regs = 0;
 
+  mediumend::CFG* cfg = nullptr;
+
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(::ScalarType t) {
     return ir::Reg{t, ++nr_regs};
   }
+  ~Function();
 };
 
 struct LibFunction {

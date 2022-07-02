@@ -12,10 +12,8 @@ using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 
-void mem2reg(Function *func, CFG *cfg) {
-  cfg->remove_unreachable_bb();
-  cfg->compute_use_def_list();
-  cfg->compute_dom();
+void mem2reg(Function *func) {
+  CFG *cfg = func->cfg;
   auto df = cfg->compute_df();
   unordered_map<Reg, BasicBlock *> alloc_set;
   unordered_map<Reg, ScalarType> alloc2type;

@@ -1,4 +1,5 @@
 #include "common/ir.hpp"
+#include "mediumend/cfg.hpp"
 #include <string>
 #include <string_view>
 
@@ -88,6 +89,12 @@ std::string op_string(BinaryOp op) {
 
 void Instruction::print(std::ostream &, unsigned int) const {}
 Instruction::~Instruction() {}
+
+Function::~Function() {
+  if(cfg){
+    delete cfg;
+  }
+}
 
 namespace insns {
 
