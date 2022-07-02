@@ -216,30 +216,33 @@ void CFG::compute_use_def_list(){
 void CFG::remove_unused_reg(){
   auto &bbs = func->bbs;
   vector<ir::Instruction *> stack;
-  vector<ir::BasicBlock *> bb_stack;
   unordered_set<ir::Instruction *> remove_inst_set; 
   for (auto &bb : bbs) {
     auto &insns = bb->insns;
     for (auto &inst : insns) {
       TypeCase(output, ir::insns::Output *, inst.get()){
+        if(auto call = dynamic_cast<ir::insns::Call *>(output)){
+          continue;
+        }
         auto &reg = output->dst;
         if (reg.id && this->use_list[reg].size() == 0) {
           stack.push_back(output);
-          bb_stack.push_back(bb.get());
         }
       }
     }
   }
   while(!stack.empty()){
     auto inst = stack.back();
-    auto bb = bb_stack.back();
     stack.pop_back();
-    bb_stack.pop_back();
     auto regs = get_inst_use_reg(inst);
     inst->removeUseDef(this->use_list, this->def_list);
     for(auto reg : regs){
       if(this->use_list[reg].size() == 0){
-        stack.push_back(def_list[reg]);
+        auto inst = def_list[reg];
+        if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
+          continue;
+        }
+        stack.push_back(inst);
       }
     }
     remove_inst_set.insert(inst);
