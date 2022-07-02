@@ -36,13 +36,13 @@ public:
         visit.erase(bb);
     }
     
-    void dfs(BasicBlock *bb, int dom_level);
-
     void remove_unreachable_bb();
 
     void compute_dom();
 
     void compute_use_list();
+
+    void compute_dom_level(BasicBlock *bb, int dom_level);
 
     unordered_map<BasicBlock *, unordered_set<BasicBlock *>> compute_df();
 };

@@ -66,31 +66,25 @@ void CFG::remove_unreachable_bb() {
   }
 }
 
-void CFG::dfs(BasicBlock *bb, int dom_level) {
+void CFG::compute_dom_level(BasicBlock *bb, int dom_level) {
   auto &domlevel = this->domlevel;
   auto &dom = this->dom;
   domlevel[bb] = dom_level;
-  for (BasicBlock *ch : dom[bb]) {
-    dfs(ch, dom_level + 1);
+  for (BasicBlock *succ : dom[bb]) {
+    compute_dom_level(succ, dom_level + 1);
   }
 }
 
 void CFG::compute_dom() {
   BasicBlock *entry = func->bbs.front().get();
-  auto &domby = this->domby;
-  auto &dom = this->dom;
-  auto &prev = this->prev;
-  auto &succ = this->succ;
-  auto &idom = this->idom;
   domby[entry] = {entry};
   unordered_set<BasicBlock *> all_bb;
   for (auto &bb : func->bbs) {
     all_bb.insert(bb.get());
   }
   for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
-    this->domby[iter->get()] = all_bb;
+    domby[iter->get()] = all_bb;
   }
-
   bool modify = true;
   while (modify) {
     modify = false;
@@ -98,8 +92,8 @@ void CFG::compute_dom() {
       auto bb = iter->get();
       auto &domby_bb = domby[bb];
       auto &dom_bb = dom[bb];
-      for (auto it = domby_bb.begin(); it != domby_bb.end();) {
-        BasicBlock *x = *it;
+      for (auto iter = domby_bb.begin(); iter != domby_bb.end();) {
+        BasicBlock *x = *iter;
         auto &prev_bb = prev[bb];
         auto &succ_bb = succ[bb];
         if (x != bb) {
@@ -108,15 +102,15 @@ void CFG::compute_dom() {
             if (domby[pre].find(x) == domby[pre].end()) {
               modify = true;
               find = true;
-              it = domby_bb.erase(it);
+              iter = domby_bb.erase(iter);
               break;
             }
           }
           if (!find) {
-            ++it;
+            ++iter;
           }
         } else {
-          ++it;
+          ++iter;
         }
       }
     }
@@ -144,7 +138,6 @@ void CFG::compute_dom() {
       }
     }
   }
-  dfs(entry, 0);
 }
 
 unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {

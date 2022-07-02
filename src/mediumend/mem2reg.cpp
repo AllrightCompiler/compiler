@@ -22,10 +22,9 @@ void mem2reg(Function *func) {
   unordered_map<Reg, ScalarType> alloc2type;
   unordered_map<Reg, vector<BasicBlock *>> defs;
   unordered_map<Reg, vector<Reg>> defs_reg;
-  unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
+  unordered_map<Reg, Reg> alloc_map;
 
   for (auto &bb : func->bbs) {
-    alloc_map[bb.get()] = {};
     for (auto &i : bb->insns) {
       TypeCase(inst, ir::insns::Alloca *, i.get()) {
         alloc_set[inst->dst] = bb.get();
@@ -59,7 +58,6 @@ void mem2reg(Function *func) {
                                            defs[v.first],
                                            defs_reg[v.first])); // add phi
           Y->insns.front()->addUse(cfg.use_list);
-          alloc_map[Y][v.first] = r;
           F.insert(Y);
           bool find = false;
           for (auto &each : defs[v.first]) {
@@ -91,11 +89,11 @@ void mem2reg(Function *func) {
       }
       TypeCase(inst, ir::insns::Load *, iter->get()) {
         if(alloc_set.find(inst->addr) != alloc_set.end()) {
-          assert(alloc_map[bb].find(inst->addr) != alloc_map[bb].end());
+          assert(alloc_map.find(inst->addr) != alloc_map.end());
           auto &all_use = cfg.use_list[inst->dst];
           while(!all_use.empty()){
             auto &uses= all_use.front();
-            uses->changeUse(cfg.use_list, inst->dst, alloc_map[bb][inst->addr]);
+            uses->changeUse(cfg.use_list, inst->dst, alloc_map[inst->addr]);
           }
           iter = bb->insns.erase(iter);
           continue;
@@ -103,7 +101,7 @@ void mem2reg(Function *func) {
       }
       TypeCase(inst, ir::insns::Store *, iter->get()) {
         if(alloc_set.find(inst->addr) != alloc_set.end()) {
-          alloc_map[bb][inst->addr] = inst->val;
+          alloc_map[inst->addr] = inst->val;
           inst->removeUse(cfg.use_list);
           iter = bb->insns.erase(iter);
           continue;
