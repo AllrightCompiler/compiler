@@ -145,6 +145,32 @@ void constant_propagation(Function *func) {
         }
         continue;
       }
+      TypeCase(convey, ir::insns::Convert *, ins.get()){
+        if(const_map.find(convey->src) != const_map.end()){
+          Reg reg = convey->dst;
+          convey->removeUseDef(func->cfg->use_list, func->cfg->def_list);
+          ConstValue new_val;
+          new_val.type = convey->dst.type;
+          if(convey->dst.type == ScalarType::Int){
+            if(convey->src.type == ScalarType::Int){
+              new_val.iv = const_map[convey->src].iv;
+            } else {
+              new_val.iv = (int)const_map[convey->src].fv;
+            }
+          } else {
+            if(convey->src.type == ScalarType::Int){
+              new_val.fv = (float)const_map[convey->src].iv;
+            } else {
+              new_val.fv = const_map[convey->src].fv;
+            }
+          }
+          auto new_ins = new ir::insns::LoadImm(reg, new_val);
+          ins.reset(new_ins);
+          ins->addUseDef(func->cfg->use_list, func->cfg->def_list);
+          const_map[new_ins->dst] = new_ins->imm;
+        }
+        continue;
+      }
       TypeCase(br, ir::insns::Branch *, ins.get()) {
         if (const_map.find(br->val) != const_map.end()) {
           br->removeUseDef(func->cfg->use_list, func->cfg->def_list);
