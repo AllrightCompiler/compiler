@@ -51,8 +51,6 @@ std::string op_string(UnaryOp op) {
     return "neg";
   case UnaryOp::Not:
     return "not";
-  case UnaryOp::Equ:
-    return "equ";
   default:
     return "[unary op]";
   }

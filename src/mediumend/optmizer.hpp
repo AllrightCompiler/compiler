@@ -7,6 +7,7 @@ namespace mediumend {
 
 void remove_unused_function(ir::Program *prog);
 void mem2reg(ir::Function *func);
+void constant_propagation(Function *func);
 
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){
@@ -22,6 +23,12 @@ inline void run_medium(ir::Program *prog) {
     func.second.cfg->remove_unused_reg();
   }
   remove_unused_function(prog);
+  for(auto &func : prog->functions){
+    constant_propagation(&func.second);
+  }
+  for(auto &func : prog->functions){
+    func.second.cfg->remove_unused_reg();
+  }
 }
 
 } // namespace mediumend

@@ -11,7 +11,7 @@
 
 #define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 
-enum class UnaryOp { Add, Sub, Not, Equ };
+enum class UnaryOp { Add, Sub, Not };
 
 enum class BinaryOp {
   Add,
