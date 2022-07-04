@@ -18,6 +18,7 @@ void constant_propagation(ir::Program *prog) {
         }
       }
     }
+    // TODO: 改为根据控制流来进行常量传播，否则可能计算不全
     for (auto &bb : func->bbs) {
       for (auto &ins : bb->insns) {
         TypeCase(unary, ir::insns::Unary *, ins.get()) {

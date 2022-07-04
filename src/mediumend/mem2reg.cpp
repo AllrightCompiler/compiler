@@ -145,7 +145,9 @@ void simplification_phi(ir::Program *prog){
               uses->change_use(func->use_list, inst->dst, inst->incoming.begin()->second);
             }
             iter = bb->insns.erase(iter);
+            continue;
           }
+          iter++;
         } else {
           break;
         }
