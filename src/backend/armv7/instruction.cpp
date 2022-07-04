@@ -72,7 +72,7 @@ void next_instruction(ostream &os) {
 }
 
 ostream &operator<<(ostream &os, const Reg &r) {
-  if (r.type != Float) {
+  if (r.type != Fp) {
     if (r.id >= 0)
       os << GPR_NAMES[r.id];
     else
@@ -259,6 +259,17 @@ void Push::emit(std::ostream &os) const {
     if (i != 0)
       os << ", ";
     os << srcs[i];
+  }
+  os << '}';
+}
+
+void Pop::emit(std::ostream &os) const {
+  write_op(os, "pop") << '{';
+  int n = dsts.size();
+  for (int i = 0; i < n; ++i) {
+    if (i != 0)
+      os << ", ";
+    os << dsts[i];
   }
   os << '}';
 }

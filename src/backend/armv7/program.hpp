@@ -38,20 +38,26 @@ struct Function {
   std::string name;
   std::list<std::unique_ptr<BasicBlock>> bbs;
   std::list<std::unique_ptr<StackObject>> stack_objects;
+  // BasicBlock *entry, *exit;
 
   // stack objects的细分类型:
   // 1. 此函数的参数，位于fp（初始sp）之上，相对fp偏移为正
   // 2. 普通栈对象，包括局部数组和spilled regs，相对fp偏移为负
   // 未计入的类型:
   // 3. 调用子函数压栈的参数，相对fp偏移为负
-  std::set<StackObject *> param_objs, normal_objs;
+  std::vector<StackObject *> param_objs, normal_objs;
 
   int regs_allocated; // 分配的虚拟寄存器总数
 
-  Reg new_reg(ScalarType type) { return Reg{type, ++regs_allocated}; }
+  Reg new_reg(Reg::Type type) { return Reg{type, ++regs_allocated}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
 
   void do_liveness_analysis(RegFilter filter = [](const Reg &){ return true; });
+  bool check_and_resolve_stack_store();
+  
+  // post-register allocation passes
+  void emit_prologue_epilogue();
+  void resolve_stack_ops(int frame_size);
 };
 
 struct Program {

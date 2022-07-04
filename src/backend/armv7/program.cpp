@@ -13,18 +13,23 @@ namespace armv7 {
 
 inline bool is_power_of_2(int x) { return (x & (x - 1)) == 0; }
 
-void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
+template <typename Container = std::list<std::unique_ptr<Instruction>>>
+void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst, int imm) {
   if (is_imm8m(imm))
-    bb->push(new Move{dst, Operand2::from(imm)});
+    cont.emplace(it, new Move{dst, Operand2::from(imm)});
   else if (is_imm8m(~imm))
-    bb->push(new Move{dst, Operand2::from(~imm), true});
+    cont.emplace(it, new Move{dst, Operand2::from(~imm), true});
   else {
     uint32_t x = uint32_t(imm);
     auto lo = x & 0xffff, hi = x >> 16;
-    bb->push(new MovW(dst, lo));
+    cont.emplace(it, new MovW(dst, lo));
     if (hi > 0)
-      bb->push(new MovT(dst, hi));
+      cont.emplace(it, new MovT(dst, hi));
   }
+}
+
+void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
+  emit_load_imm(bb->insns, bb->insns.end(), dst, imm);
 }
 
 class ProgramTranslator {
@@ -79,7 +84,7 @@ class ProgramTranslator {
       obj->size = 4; // 参数的size总是4
       obj->offset = params_size;
       params_size += obj->size;
-      dst_fn.param_objs.insert(obj);
+      dst_fn.param_objs.push_back(obj);
       dst_fn.stack_objects.emplace_back(obj);
 
       Reg dst = Reg::from(params[i].base_type, -(i + 1));
@@ -116,7 +121,7 @@ class ProgramTranslator {
     TypeCase(alloca, ii::Alloca *, ins) {
       auto obj = new StackObject;
       obj->size = alloca->type.size();
-      fn.normal_objs.insert(obj);
+      fn.normal_objs.push_back(obj);
       fn.stack_objects.emplace_back(obj);
 
       bb->push(new LoadStackAddr{Reg::from(alloca->dst), obj, 0});
@@ -137,7 +142,7 @@ class ProgramTranslator {
         if (is_vmov_f32_imm(imm))
           ; // TODO
         else {
-          Reg t = fn.new_reg(Int);
+          Reg t = fn.new_reg(General);
           emit_load_imm(bb, t, *reinterpret_cast<int *>(&imm));
           // TODO: emit vmov
         }
@@ -152,7 +157,7 @@ class ProgramTranslator {
       Reg index_reg = Reg::from(gep->indices[0]);
       int nr_indices = gep->indices.size();
       for (int i = 1; i < nr_indices; ++i) {
-        Reg t = fn.new_reg(Int);
+        Reg t = fn.new_reg(General);
         Reg s = Reg::from(gep->indices[i]);
         int dim = gep->type.dims[i];
         if (is_power_of_2(dim)) {
@@ -160,7 +165,7 @@ class ProgramTranslator {
               FullRType::Op::Add, t, s,
               Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
         } else {
-          Reg imm_reg = fn.new_reg(Int);
+          Reg imm_reg = fn.new_reg(General);
           emit_load_imm(bb, imm_reg, dim);
           bb->push(new FusedMul{t, index_reg, imm_reg, s});
         }
@@ -228,7 +233,7 @@ class ProgramTranslator {
         break;
       case BinaryOp::Mod: {
         // TODO: 确认负数取模的行为
-        Reg t = fn.new_reg(Int);
+        Reg t = fn.new_reg(General);
         bb->push(new RType{RType::Op::Div, t, s1, s2});
         bb->push(new FusedMul{dst, t, s2, s1, true});
         break;
@@ -402,6 +407,235 @@ void Program::emit(std::ostream &os) {
         insn->emit(os);
       }
       os << "\n\n";
+    }
+  }
+}
+
+int round_up_to_imm8m(int x) {
+  if (!x)
+    return x;
+  int bits = 8 * sizeof(x);
+  int hi = bits - 1 - __builtin_clz(x);
+  int lo = __builtin_ctz(x);
+  if (hi & 1) {
+    if (hi - lo + 1 <= 7)
+      return x;
+  } else {
+    if (hi - lo + 1 <= 8)
+      return x;
+  }
+
+  int a;
+  if (hi & 1)
+    a = 1 << (hi - 6);
+  else
+    a = 1 << (hi - 7);
+  int m = ~(a - 1);
+  return (x + a - 1) & m;
+}
+
+void assign_offsets(const std::vector<StackObject *> &objs) {
+  int offset = 0;
+  for (auto obj : objs) {
+    obj->offset = offset;
+    offset += obj->size;
+  }
+}
+
+// 计算栈对象相对sp的偏移，如果全部StackStore的对象偏移都能用ldr和str的立即数表示返回true
+// 否则将StackStore替换为LoadStackAddr + Store
+bool Function::check_and_resolve_stack_store() {
+  bool ok = true;
+  assign_offsets(normal_objs);
+
+  int sp_offset = 0; // sp相对normal objects基址的偏移
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end();) {
+      auto ins = it->get();
+      TypeCase(store, StoreStack *, ins) {
+        int offset = store->offset + store->base->offset - sp_offset;
+        if (!is_valid_ldst_offset(offset)) {
+          auto next = std::next(it);
+
+          Reg tmp = new_reg(General);
+          insns.emplace(next,
+                        new LoadStackAddr{tmp, store->base, store->offset});
+          insns.emplace(next, new Store{store->src, tmp, 0});
+
+          ok = false;
+          insns.erase(it);
+          it = next;
+          continue;
+        }
+      }
+      else TypeCase(push, Push *, ins) {
+        sp_offset -= push->srcs.size() * 4;
+      }
+      else TypeCase(pop, Pop *, ins) {
+        sp_offset += pop->dsts.size() * 4;
+      }
+      else TypeCase(spa, AdjustSp *, ins) {
+        sp_offset += spa->offset;
+      }
+      ++it;
+    }
+  }
+  return ok;
+}
+
+void Function::emit_prologue_epilogue() {
+  bool gpr_used[NR_GPRS], fpr_used[NR_FPRS];
+  std::fill_n(gpr_used, NR_GPRS, false);
+  std::fill_n(fpr_used, NR_FPRS, false);
+
+  for (auto &bb : bbs) {
+    for (auto &insn : bb->insns) {
+      auto def = insn->def();
+      for (Reg r : def) {
+        if (!r.is_float())
+          gpr_used[r.id] = true;
+        else
+          fpr_used[r.id] = true;
+      }
+    }
+  }
+
+  bool save_lr = gpr_used[lr];
+  std::vector<Reg> saved_gprs, saved_fprs;
+  for (int i = 0; i < NR_GPRS; ++i)
+    if (GPRS_ATTR[i] == NonVolatile && gpr_used[i] && i != lr)
+      saved_gprs.push_back(Reg{General, i});
+  if (save_lr)
+    saved_gprs.push_back(Reg{General, lr});
+  for (int i = NR_VOLATILE_FPRS; i < NR_FPRS; ++i)
+    if (fpr_used[i])
+      saved_fprs.push_back(Reg{Fp, i});
+
+  auto entry = bbs.begin()->get();
+  auto exit = new BasicBlock;
+  exit->label = ".exit";
+
+  int stack_obj_size = round_up_to_imm8m(4 * normal_objs.size());
+  // emit prologue
+  auto &prologue = entry->insns;
+  // 每次都插入在头部，先生成后面的
+  if (stack_obj_size)
+    prologue.emplace(prologue.begin(), new AdjustSp{-stack_obj_size});
+  if (!saved_fprs.empty())
+    prologue.emplace(prologue.begin(), new Push{saved_fprs});
+  if (!saved_gprs.empty())
+    prologue.emplace(prologue.begin(), new Push{saved_gprs});
+
+  // emit epilogue
+  auto &epilogue = exit->insns;
+  if (stack_obj_size)
+    epilogue.emplace(epilogue.end(), new AdjustSp{stack_obj_size});
+  if (!saved_fprs.empty())
+    epilogue.emplace(epilogue.end(), new Pop{saved_fprs});
+  if (!saved_gprs.empty()) {
+    if (save_lr)
+      saved_gprs.back().id = pc;
+    epilogue.emplace(epilogue.end(), new Pop{saved_gprs});
+  }
+  if (!save_lr)
+    epilogue.emplace(epilogue.end(), new Return);
+
+  auto last = std::prev(bbs.end())->get();
+  bool trivial_return =
+      !stack_obj_size && saved_fprs.empty() && saved_gprs.empty();
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end(); ++it) {
+      auto ins = it->get();
+      TypeCase(ret, Return *, ins) {
+        if (bb.get() == last && std::next(it) == insns.end()) {
+          it = insns.erase(it);
+          break;
+        }
+
+        if (!trivial_return)
+          it->reset(new Branch{exit});
+      }
+    }
+  }
+  bbs.emplace_back(exit);
+
+  int frame_size = stack_obj_size + 4 * (saved_gprs.size() + saved_fprs.size());
+  resolve_stack_ops(frame_size);
+}
+
+void Function::resolve_stack_ops(int frame_size) {
+  assign_offsets(normal_objs);
+  assign_offsets(param_objs);
+
+  // 获得StackObject相对于fp的偏移
+  auto get_obj_offset = [this, frame_size](const StackObject *obj) {
+    if (std::find(param_objs.begin(), param_objs.end(), obj) !=
+        param_objs.end()) {
+      return obj->offset;
+    } else {
+      return obj->offset - frame_size;
+    }
+  };
+
+  Reg reg_sp{General, sp};
+  int sp_offset = 0; // sp相对fp的偏移
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end(); ++it) {
+      auto ins = it->get();
+      TypeCase(load_addr, LoadStackAddr *, ins) {
+        Reg dst = load_addr->dst;
+        int offset = load_addr->offset + get_obj_offset(load_addr->base) - sp_offset;
+        int imm = std::abs(offset);
+        bool sub = offset < 0;
+
+        if (is_imm8m(imm) || is_imm12(imm)) {
+          auto op = sub ? IType::Sub : IType::Add;
+          it->reset(new IType{op, dst, reg_sp, imm});
+        } else {
+          auto op = sub ? RType::Sub : RType::Add;
+          emit_load_imm(insns, it, dst, imm);
+          it->reset(new RType{op, dst, reg_sp, dst});
+        }
+      }
+      else TypeCase(load, LoadStack *, ins) {
+        Reg dst = load->dst;
+        int offset = load->offset + get_obj_offset(load->base) - sp_offset;
+        // TODO: 目标为浮点寄存器时可能无法生成有效的立即数偏移
+        if (dst.is_float()) {
+          assert(is_valid_ldst_offset(offset));
+          it->reset(new Load{dst, reg_sp, offset});
+        } else {
+          if (is_valid_ldst_offset(offset)) {
+            it->reset(new Load{dst, reg_sp, offset});
+          } else {
+            assert(0);
+            // TODO: 提供ldr Rd, [R1, ±R2]的指令形式
+            // emit_load_imm(insns, it, dst, offset);
+          }
+        }
+      }
+      else TypeCase(store, StoreStack *, ins) {
+        int offset = store->offset + get_obj_offset(store->base) - sp_offset;
+        assert(is_valid_ldst_offset(offset));
+        it->reset(new Store{store->src, reg_sp, offset});
+      }
+      else TypeCase(sp_adjust, AdjustSp *, ins) {
+        int offset = sp_adjust->offset;
+        int imm = std::abs(offset);
+        auto op = offset < 0 ? IType::Sub : IType::Add;
+        assert(is_imm8m(imm) || is_imm12(imm));
+        it->reset(new IType{op, reg_sp, reg_sp, imm});
+        sp_offset += offset;
+      }
+      else TypeCase(push, Push *, ins) {
+        sp_offset -= push->srcs.size() * 4;
+      }
+      else TypeCase(pop, Pop *, ins) {
+        sp_offset += pop->dsts.size() * 4;
+      }
     }
   }
 }

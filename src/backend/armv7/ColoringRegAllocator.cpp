@@ -1,4 +1,5 @@
 #include "backend/armv7/ColoringRegAllocator.hpp"
+#include "backend/armv7/arch.hpp"
 
 #include <algorithm>
 
@@ -8,11 +9,15 @@ std::set<Reg> ColoringRegAllocator::adjacent(Reg n) const {
   // adjList[n] \ (selectStack ∪ coalescedNodes)
   std::set<Reg> res;
   auto &nodes = adj_list.find(n)->second;
-  std::copy_if(nodes.begin(), nodes.end(), res.begin(), [this](Reg r) {
+  auto pred = [this](Reg r) {
     return !coalesced_nodes.count(r) &&
            (std::find(select_stack.begin(), select_stack.end(), r) ==
             select_stack.end());
-  });
+  };
+  // std::copy_if(nodes.begin(), nodes.end(), res.begin(), pred);
+  for (Reg n : nodes)
+    if (pred(n))
+      res.insert(n);
   return res;
 }
 
@@ -20,9 +25,13 @@ std::set<Move *> ColoringRegAllocator::node_moves(Reg n) const {
   // moveList[n] ∩ (activeMoves ∪ worklistMoves)
   std::set<Move *> res;
   auto &moves = move_list.find(n)->second;
-  std::copy_if(moves.begin(), moves.end(), res.begin(), [this](Move *m) {
+  auto pred = [this](Move *m) {
     return active_moves.count(m) || worklist_moves.count(m);
-  });
+  };
+  // std::copy_if(moves.begin(), moves.end(), res.begin(), pred);
+  for (auto m : moves)
+    if (pred(m))
+      res.insert(m);
   return res;
 }
 
@@ -67,7 +76,20 @@ void ColoringRegAllocator::add_edge(Reg u, Reg v) {
 }
 
 void ColoringRegAllocator::build() {
-  f->do_liveness_analysis(); // TODO: reg filter
+  adj_list.clear();
+  adj_set.clear();
+  degree.clear();
+
+  constexpr int inf = 1 << 30;
+  if (is_gp_pass) {
+    for (int i = 0; i <= 12; ++i)
+      degree[Reg{General, i}] = inf;
+    degree[Reg{General, lr}] = inf;
+  } else {
+    for (int i = 0; i < NR_FPRS; ++i)
+      degree[Reg{Fp, i}] = inf;
+  }
+
   for (auto &bb : f->bbs) {
     auto live = bb->live_out;
     for (auto it = bb->insns.rbegin(); it != bb->insns.rend(); ++it) {
@@ -218,7 +240,7 @@ void ColoringRegAllocator::combine(Reg u, Reg v) {
   auto &moves = move_list[u];
   for (auto m : move_list[v])
     moves.insert(m);
-  
+
   for (Reg t : adjacent(v)) {
     add_edge(t, u);
     decrement_degree(t);
@@ -260,7 +282,123 @@ void ColoringRegAllocator::select_spill() {
   freeze_moves(u);
 }
 
-void ColoringRegAllocator::do_reg_alloc() {
+std::map<Reg, int> ColoringRegAllocator::assign_colors() {
+  std::map<Reg, int> color;
+  while (!select_stack.empty()) {
+    Reg n = select_stack.back();
+    select_stack.pop_back();
+
+    std::set<int> avail_colors;
+    if (is_gp_pass) {
+      for (int i = 0; i <= 12; ++i)
+        avail_colors.insert(r0 + i);
+      avail_colors.insert(lr);
+    } else {
+      for (int i = 0; i < NR_FPRS; ++i)
+        avail_colors.insert(s0 + i);
+    }
+
+    for (Reg w : adj_list[n]) {
+      Reg u = get_alias(w);
+      if (!u.is_virt() || colored_nodes.count(u))
+        avail_colors.erase(color[u]);
+    }
+
+    if (avail_colors.empty())
+      spilled_nodes.insert(n);
+    else {
+      colored_nodes.insert(n);
+      color[n] = *avail_colors.begin();
+    }
+  }
+
+  for (Reg n : coalesced_nodes)
+    color[n] = color[get_alias(n)];
+  return color;
+}
+
+void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
+  if (is_gp_pass) {
+    // NOTE: 在最后的def后添加store，每个use前插入load
+    // 这时应该还是单赋值形式，但立即数加载等指令可能会产生连续的def
+    for (Reg r : nodes) {
+      auto obj = new StackObject;
+      obj->size = 4;
+      f->stack_objects.emplace_back(obj);
+      f->normal_objs.push_back(obj);
+
+      for (auto &bb : f->bbs) {
+        auto &insns = bb->insns;
+        auto last_def = insns.end();
+        for (auto it = insns.begin(); it != insns.end(); ++it) {
+          auto ins = it->get();
+          auto def = ins->def();
+          auto use = ins->use();
+
+          if (def.count(r)) {
+            last_def = it;
+            continue;
+          }
+          if (use.count(r)) {
+            Reg tmp = f->new_reg(General);
+            insns.emplace(it, new LoadStack{tmp, obj, 0});
+            for (Reg *p : ins->reg_ptrs())
+              if (*p == r)
+                *p = tmp;
+          }
+        }
+
+        if (last_def != insns.end())
+          insns.emplace(std::next(last_def), new StoreStack{r, obj, 0});
+      }
+    }
+  } else {
+    // TODO
+  }
+}
+
+void ColoringRegAllocator::init(Function &func, bool is_gp_pass) {
+  this->f = &func;
+  this->is_gp_pass = is_gp_pass;
+  if (is_gp_pass) {
+    K = 14; // 16个通用寄存器去掉sp和pc
+  } else {
+    K = NR_FPRS; // 32个单精度vfp寄存器
+  }
+
+  alias.clear();
+  move_list.clear();
+
+  // 每次循环后3个xxx_worklist和select_stack总是空的
+  spilled_nodes.clear();
+  colored_nodes.clear();
+  coalesced_nodes.clear();
+
+  coalesced_moves.clear();
+  constrained_moves.clear();
+  frozen_moves.clear();
+  worklist_moves.clear();
+  active_moves.clear();
+}
+
+void ColoringRegAllocator::replace_virtual_regs(
+    const std::map<Reg, int> &reg_map) {
+  for (auto &bb : f->bbs) {
+    for (auto &insn : bb->insns) {
+      auto reg_ptrs = insn->reg_ptrs();
+      for (auto p : reg_ptrs) {
+        Reg old = *p;
+        if (reg_map.count(old))
+          *p = Reg{old.type, reg_map.find(old)->second};
+      }
+    }
+  }
+}
+
+void ColoringRegAllocator::do_reg_alloc(Function &func, bool is_gp_pass) {
+  init(func, is_gp_pass);
+
+  std::map<Reg, int> color;
   bool done = false;
   do {
     f->do_liveness_analysis();
@@ -279,13 +417,20 @@ void ColoringRegAllocator::do_reg_alloc() {
     } while (!simplify_worklist.empty() || !worklist_moves.empty() ||
              !freeze_worklist.empty() || !spill_worklist.empty());
 
-    assign_colors();
+    color = assign_colors();
     if (!spilled_nodes.empty()) {
-      rewrite_program(spilled_nodes);
+      add_spill_code(spilled_nodes);
+      spilled_nodes.clear();
+      colored_nodes.clear();
+      coalesced_nodes.clear();
       continue;
     }
+    if (is_gp_pass && !f->check_and_resolve_stack_store())
+      continue;
     done = true;
   } while (!done);
+
+  replace_virtual_regs(color);
 }
 
 } // namespace armv7

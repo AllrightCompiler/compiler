@@ -1,6 +1,7 @@
 #include "backend/armv7/passes.hpp"
 #include "backend/armv7/arch.hpp"
 #include "backend/armv7/instruction.hpp"
+#include "backend/armv7/ColoringRegAllocator.hpp"
 
 #include "common/common.hpp"
 
@@ -9,9 +10,15 @@
 namespace armv7 {
 
 void backend_passes(Program &p) {
+  ColoringRegAllocator reg_allocator;
+
   for (auto &[_, f] : p.functions) {
     fold_constants(f);
     remove_unused(f);
+
+    reg_allocator.do_reg_alloc(f);
+
+    f.emit_prologue_epilogue(); // 必须调用
   }
 }
 
