@@ -44,10 +44,6 @@ public:
 
     void compute_dom_level(BasicBlock *bb, int dom_level);
 
-    bool eliminate_useless_cf_one_pass();
-
-    void clean_useless_cf();
-
     unordered_map<BasicBlock *, unordered_set<BasicBlock *>> compute_df();
 };
     

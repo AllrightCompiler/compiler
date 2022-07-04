@@ -1,4 +1,5 @@
 #include "common/ir.hpp"
+#include "mediumend/cfg.hpp"
 
 namespace mediumend {
 
@@ -168,5 +169,112 @@ void remove_uneffective_inst(ir::Program *prog){
     }
   }
 }
+
+// Clean Alogritm: Engineering a Compiler, Chap 10.2
+bool eliminate_useless_cf_one_pass(ir::Function *func){
+  func->cfg->clear_visit();
+  auto &visit = func->cfg->visit;
+  auto &succ = func->cfg->succ;
+  auto &prev = func->cfg->prev;
+  vector<BasicBlock *> stack;
+  stack.push_back(func->bbs.front().get());
+  vector<BasicBlock *> order;
+  visit.insert(func->bbs.front().get());
+  while(stack.size()){
+    auto bb = stack.back();
+    stack.pop_back();
+    order.push_back(bb);
+    auto &succ_bb = succ[bb];
+    for(auto next : succ_bb){
+      if(!visit.count(next)){
+        stack.push_back(next);
+        visit.insert(next);
+      }
+    }
+  }
+  bool ret = false;
+  for(int i = order.size() - 1; i >= 0; i--){
+    auto bb = order[i];
+    auto &inst = bb->insns.back();
+    TypeCase(branch, ir::insns::Branch *, inst.get()){
+      if(branch->true_target == branch->false_target){
+        inst.reset(new ir::insns::Jump(branch->true_target));
+        ret = true;
+      }
+    }
+    TypeCase(jmp, ir::insns::Jump *, inst.get()){
+      auto target = jmp->target;
+      if(bb->insns.size() == 1) {
+        for(auto &pre : prev[bb]){
+          auto &last = pre->insns.back();
+          TypeCase(br, ir::insns::Branch *, inst.get()){
+            if(br->true_target == bb){
+              br->true_target = target;
+            }
+            if(br->false_target == bb){
+              br->false_target = target;
+            }
+          }
+          TypeCase(j, ir::insns::Jump *, inst.get()){
+            if(j->target == bb){
+              j->target = target;
+            }
+          }
+          succ[pre].erase(bb);
+          succ[pre].insert(target);
+          prev[target].erase(bb);
+          prev[target].insert(pre);
+        }
+        for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
+          if(iter->get() == bb){
+            func->bbs.erase(iter);
+            break;
+          }
+        }
+        ret = true;
+        continue;
+      }
+      if(prev[target].size() == 1){
+        succ[bb].erase(target);
+        succ[bb].insert(succ[target].begin(), succ[target].end());
+        succ[target].clear();
+        bb->insns.pop_back();
+        bb->insns.splice(bb->insns.end(), target->insns);
+        for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
+          if(iter->get() == target){
+            func->bbs.erase(iter);
+            break;
+          }
+        }
+        ret = true;
+        continue;
+      }
+      if(target->insns.size() == 1){
+        TypeCase(br, ir::insns::Branch *, target->insns.back().get()){
+          succ[bb].erase(target);
+          prev[target].erase(bb);
+          succ[bb].insert(br->true_target);
+          succ[bb].insert(br->false_target);
+          prev[br->true_target].insert(bb);
+          prev[br->false_target].insert(bb);
+          bb->insns.back().reset(new ir::insns::Branch(br->val, br->true_target, br->false_target));
+          ret = true;
+          continue;
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+void clean_useless_cf(ir::Program *prog){
+  for(auto &each : prog->functions){
+    bool change = true;
+    while(change){
+      change = eliminate_useless_cf_one_pass(&each.second);
+    }
+  }
+}
+
 
 }

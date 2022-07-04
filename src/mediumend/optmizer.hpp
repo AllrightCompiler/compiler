@@ -10,6 +10,7 @@ void mem2reg(ir::Program *prog);
 void constant_propagation(ir::Program *prog);
 void mark_pure_func(ir::Program *);
 void remove_uneffective_inst(ir::Program *prog);
+void clean_useless_cf(ir::Program *prog);
 
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){
@@ -28,9 +29,7 @@ inline void run_medium(ir::Program *prog) {
   // 移除无用指令后可能有的函数不会被调用，pure function / unreachable BB里的function
   remove_unused_function(prog);
 
-  for(auto &func : prog->functions){
-    func.second.cfg->clean_useless_cf();
-  }
+  clean_useless_cf(prog);
 }
 
 } // namespace mediumend
