@@ -124,4 +124,34 @@ void mem2reg(ir::Program *prog) {
   }
 }
 
+void simplification_phi(ir::Program *prog){
+  for(auto &f : prog->functions){
+    Function* func = &f.second;
+    auto &prev = func->cfg->prev;
+    for(auto &bb : func->bbs){
+      for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
+        TypeCase(inst, ir::insns::Phi *, iter->get()) {
+          for(auto in_iter = inst->incoming.begin(); in_iter != inst->incoming.end();){
+            if(!prev[bb.get()].count(in_iter->first)){
+              func->use_list[in_iter->second].remove(inst);
+              in_iter = inst->incoming.erase(in_iter);
+            } else {
+              in_iter++;
+            }
+          }
+          if(inst->incoming.size() == 1){
+            while(func->use_list[inst->dst].size()){
+              auto &uses = func->use_list[inst->dst].front();
+              uses->change_use(func->use_list, inst->dst, inst->incoming.begin()->second);
+            }
+            iter = bb->insns.erase(iter);
+          }
+        } else {
+          break;
+        }
+      }
+    }
+  }
+}
+
 } // namespace mediumend

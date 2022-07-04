@@ -130,7 +130,6 @@ void CFG::compute_dom() {
       for (auto iter = domby_bb.begin(); iter != domby_bb.end();) {
         BasicBlock *x = *iter;
         auto &prev_bb = prev[bb];
-        auto &succ_bb = succ[bb];
         if (x != bb) {
           bool find = false;
           for (auto &pre : prev_bb) {
@@ -176,12 +175,95 @@ void CFG::compute_dom() {
   compute_dom_level(entry, 0);
 }
 
+
+void CFG::compute_rdom() {
+  rdom.clear();
+  rdomby.clear();
+  ridom.clear();
+  BasicBlock *entry = func->bbs.front().get();
+  rdomby[entry] = {entry};
+
+  unordered_set<BasicBlock *> all_bb;
+  unordered_set<BasicBlock *> outs;
+  for (auto &bb : func->bbs) {
+    all_bb.insert(bb.get());
+    auto &inst = bb->insns.back();
+    if(auto ret = dynamic_cast<ir::insns::Return *>(inst.get())){
+      outs.insert(bb.get());
+    }
+  }
+  for (auto iter = func->bbs.begin(); iter != func->bbs.end(); iter++) {
+    auto bb = iter->get();
+    if(outs.count(bb)){
+      rdomby[bb] = {bb};
+      ridom[bb] = nullptr;
+    } else {
+      rdomby[bb] = all_bb;
+    }
+  }
+  bool modify = true;
+  while (modify) {
+    modify = false;
+    for (auto iter = func->bbs.begin(); iter != func->bbs.end(); iter++) {
+      auto bb = iter->get();
+      if(outs.count(bb)){
+        continue;
+      }
+      auto &rdomby_bb = rdomby[bb];
+      auto &rdom_bb = rdom[bb];
+      for (auto iter = rdomby_bb.begin(); iter != rdomby_bb.end();) {
+        BasicBlock *x = *iter;
+        auto &succ_bb = succ[bb];
+        if (x != bb) {
+          bool find = false;
+          for (auto &suc : succ_bb) {
+            if (rdomby[suc].find(x) == rdomby[suc].end()) {
+              modify = true;
+              find = true;
+              iter = rdomby_bb.erase(iter);
+              break;
+            }
+          }
+          if (!find) {
+            ++iter;
+          }
+        } else {
+          ++iter;
+        }
+      }
+    }
+  }
+
+  for (auto &bb : func->bbs) {
+    auto &rdomby_bb = rdomby[bb.get()];
+    for (BasicBlock *d : rdomby_bb) {
+      if (d != bb.get()) {
+        bool all_true = true;
+        for (auto &pre : rdomby_bb) {
+          if (pre == bb.get() || pre == d ||
+              rdomby[pre].find(d) == rdomby[pre].end()) {
+            continue;
+          }
+          all_true = false;
+          break;
+        }
+        if (all_true) {
+          ridom[bb.get()] = d;
+          rdom[d].insert(bb.get());
+          break;
+        }
+      }
+    }
+  }
+}
+
+
 unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {
   unordered_map<BasicBlock *, unordered_set<BasicBlock *>> df;
   auto &idom = this->idom;
   for (auto &bb : func->bbs) {
-    auto &succ = this->succ[bb.get()];
-    for (BasicBlock *to : succ) {
+    auto &succ_bb = this->succ[bb.get()];
+    for (BasicBlock *to : succ_bb) {
       auto &domby = this->domby[to];
       BasicBlock *x = bb.get();
       while (x == to || domby.find(x) == domby.end()) {
@@ -191,6 +273,23 @@ unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {
     }
   }
   return df;
+}
+
+unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_rdf() {
+  unordered_map<BasicBlock *, unordered_set<BasicBlock *>> rdf;
+  auto &ridom = this->ridom;
+  for (auto &bb : func->bbs) {
+    auto &prev_bb = prev[bb.get()];
+    for (BasicBlock *to : prev_bb) {
+      auto &rdomby = this->rdomby[to];
+      BasicBlock *x = bb.get();
+      while (x == to || rdomby.find(x) == rdomby.end()) {
+        rdf[x].insert(to);
+        x = ridom[x];
+      }
+    }
+  }
+  return rdf;
 }
 
 } // namespace mediumend

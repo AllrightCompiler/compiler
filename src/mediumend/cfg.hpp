@@ -21,6 +21,8 @@ public:
     unordered_map<BasicBlock *, unordered_set<BasicBlock *>> prev, succ;
     unordered_map<BasicBlock *, unordered_set<BasicBlock *>> dom, domby;
     unordered_map<BasicBlock *, BasicBlock *> idom;
+    unordered_map<BasicBlock *, unordered_set<BasicBlock *>> rdom, rdomby;
+    unordered_map<BasicBlock *, BasicBlock *> ridom;
     unordered_map<BasicBlock *, int> domlevel;
     unordered_set<BasicBlock *> visit;
     inline void clear_visit(){
@@ -42,9 +44,13 @@ public:
 
     void compute_dom();
 
+    void compute_rdom();
+
     void compute_dom_level(BasicBlock *bb, int dom_level);
 
     unordered_map<BasicBlock *, unordered_set<BasicBlock *>> compute_df();
+
+    unordered_map<BasicBlock *, unordered_set<BasicBlock *>> compute_rdf();
 };
     
 } // namespace mediumend
