@@ -233,14 +233,19 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           succ[pre].insert(target);
           prev[target].erase(bb);
           prev[target].insert(pre);
+          for(auto &ins : target->insns){
+            TypeCase(phi, ir::insns::Phi *, ins.get()){
+              if(phi->incoming.count(bb)){
+                phi->incoming[pre] = phi->incoming[bb];
+              }
+            } else {
+              break;
+            }
+          }
         }
         for(auto &ins : target->insns){
           TypeCase(phi, ir::insns::Phi *, ins.get()){
-            if(phi->incoming.count(bb)){
-              ir::Reg reg = phi->incoming[bb];
-              phi->incoming.erase(bb);
-              phi->incoming[target] = reg;
-            }
+            phi->incoming.erase(bb);
           } else {
             break;
           }
