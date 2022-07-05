@@ -216,7 +216,9 @@ void IrGen::visit_statement(const ast::Statement &node) {
   auto stmt = &node;
 
   TypeCase(expr_stmt, const ast::ExprStmt *, stmt) {
-    visit_arith_expr(expr_stmt->expr());
+    auto &expr = expr_stmt->expr();
+    if (expr)
+      visit_arith_expr(expr);
     return;
   }
   TypeCase(assign, const ast::Assignment *, stmt) {

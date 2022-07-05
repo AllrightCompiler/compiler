@@ -174,7 +174,9 @@ void Typer::visit_statement(const ast::Statement &node) {
   auto &scopes = sym_tab.cur_func->scopes;
 
   TypeCase(expr_stmt, const ast::ExprStmt *, stmt) {
-    visit_expr(expr_stmt->expr());
+    auto &expr = expr_stmt->expr();
+    if (expr)
+      visit_expr(expr);
     return;
   }
   TypeCase(assign, const ast::Assignment *, stmt) {
