@@ -118,7 +118,7 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
               std::get<std::unique_ptr<ast::Expression>>(init_list[0]->value())
                   .get();
         }
-        Reg val = visit_arith_expr(expr);
+        Reg val = scalar_cast(visit_arith_expr(expr), var->type.base_type);
         emit(new insns::Store{reg, val});
       }
     }
@@ -144,7 +144,7 @@ void IrGen::visit_initializer(
       // 如果是全局变量且val_map中有对应索引，说明该项的值已在编译期求出，无需再赋值
       if (cur_func || !val_map.count(index)) {
         auto &expr = std::get<std::unique_ptr<ast::Expression>>(value);
-        Reg val_reg = visit_arith_expr(expr);
+        Reg val_reg = scalar_cast(visit_arith_expr(expr), var->type.base_type);
         Reg idx_reg = new_reg(Int);
         Reg addr_reg = new_reg(String);
         // 这里当成扁平一维数组处理
