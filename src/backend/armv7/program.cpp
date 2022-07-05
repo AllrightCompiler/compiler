@@ -495,14 +495,14 @@ void emit_global(std::ostream &os, const ir::Program &ir_program) {
   if (gen_data) {
     os << ".section .data\n";
     for (auto &[name, var] : glob_vars)
-      if (var->val || var->arr_val)
+      if (!var->type.is_const && (var->val || var->arr_val))
         emit_global_var(os, name, var);
     os << "\n\n";
   }
   if (gen_bss) {
     os << ".section .bss\n";
     for (auto &[name, var] : glob_vars)
-      if (!var->val && !var->arr_val)
+      if (!var->type.is_const && (!var->val && !var->arr_val))
         emit_global_var(os, name, var);
     os << "\n\n";
   }
