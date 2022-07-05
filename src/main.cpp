@@ -57,11 +57,13 @@ int main(int argc, char *argv[]) {
 
     frontend::IrGen ir_gen;
     ir_gen.visit_compile_unit(ast);
-    std::cout << *ir_gen.get_program();
+    // std::cout << *ir_gen.get_program();
 
     auto &ir_program = *ir_gen.get_program();
     auto program = armv7::translate(ir_program);
     armv7::backend_passes(*program);
+
+    armv7::emit_global(std::cout, ir_program);
     program->emit(std::cout);
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;

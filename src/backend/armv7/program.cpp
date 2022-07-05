@@ -90,7 +90,7 @@ class ProgramTranslator {
       Reg dst = Reg::from(params[i].base_type, -(i + 1));
       entry_bb->push(new LoadStack{dst, obj, 0});
     }
-    entry_bb->label = ".entry";
+    entry_bb->label = ".entry." + dst_fn.name;
     dst_fn.bbs.emplace_back(entry_bb);
 
     for (auto &ir_bb : src_fn.bbs) {
@@ -98,7 +98,7 @@ class ProgramTranslator {
       bb_map[ir_bb.get()] = bb;
       dst_fn.bbs.emplace_back(bb);
     }
-    dst_fn.regs_allocated = src_fn.regs_used;
+    dst_fn.regs_used = src_fn.regs_used;
 
     int i = 1;
     auto dst_it = std::next(dst_fn.bbs.begin()); // skip entry
@@ -109,7 +109,7 @@ class ProgramTranslator {
         next_bb = std::next(dst_it)->get();
 
       auto bb = dst_it->get();
-      bb->label = ".L" + std::to_string(i);
+      bb->label = dst.new_label();
       for (auto &ir_insn : (*src_it)->insns)
         translate_instruction(dst_fn, bb, ir_insn.get(), next_bb);
     }
@@ -395,19 +395,116 @@ std::unique_ptr<Program> translate(const ir::Program &ir_program) {
 }
 
 void Program::emit(std::ostream &os) {
+  os << ".arch armv7ve\n";
+  os << ".global main\n";
+  os << ".section .text\n\n";
+
   for (auto &[name, fn] : functions) {
     os << name << ":\n";
     for (auto &bb : fn.bbs) {
-      if (bb->insns.empty())
-        continue;
+      // if (bb->insns.empty())
+      //   continue;
 
       os << bb->label << ':';
+      if (bb->insns.empty()) {
+        next_instruction(os);
+        os << "nop";
+      }
+
       for (auto &insn : bb->insns) {
         next_instruction(os);
         insn->emit(os);
       }
       os << "\n\n";
     }
+  }
+}
+
+void emit_global_array(std::ostream &os, const std::shared_ptr<Var> &var) {
+  int size = var->type.size();
+  if (!var->arr_val) {
+    os << "    .space " << size << ", 0\n";
+    return;
+  }
+
+  int nr_elems = size / 4;
+  int cur_index = 0;
+  for (auto &[index, val] : *var->arr_val) {
+    if (index > cur_index)
+      os << "    .space " << (index - cur_index) * 4 << ", 0\n";
+    if (val.type != Float)
+      os << "    .word " << val.iv << '\n';
+    else
+      os << "    .float " << val.fv << '\n';
+    cur_index = index + 1;
+  }
+  if (nr_elems > cur_index)
+    os << "    .space " << (nr_elems - cur_index) * 4 << ", 0\n";
+}
+
+void emit_global_var(std::ostream &os, const std::string &name, const std::shared_ptr<Var> &var) {
+  os << ".align\n";
+  os << name << ":\n";
+  if (var->type.is_array()) {
+    emit_global_array(os, var);
+    return;
+  }
+
+  if (var->val) {
+    auto init = var->val.value();
+    if (init.type != Float)
+      os << "    .word " << init.iv << '\n';
+    else
+      os << "    .float " << init.fv << '\n';
+  } else {
+    os << "    .space 4, 0\n";
+  }
+}
+
+void emit_global(std::ostream &os, const ir::Program &ir_program) {
+  bool gen_rodata = false;
+  bool gen_data = false;
+  bool gen_bss = false;
+
+  auto &str_tab = ir_program.string_table;
+  auto &glob_vars = ir_program.global_vars;
+
+  if (!ir_program.string_table.empty())
+    gen_rodata = true;
+  for (auto &[_, var] : glob_vars) {
+    if (var->type.is_const)
+      gen_rodata = true;
+    if (!var->val && !var->arr_val)
+      gen_bss = true;
+    else
+      gen_data = true;
+  }
+
+  if (gen_rodata) {
+    os << ".section .rodata\n";
+    for (size_t i = 0; i < str_tab.size(); ++i) {
+      os << ".str." << i << ":\n";
+      os << "    .asciz " << str_tab[i] << '\n';
+    }
+
+    for (auto &[name, var] : glob_vars)
+      if (var->type.is_const) 
+        emit_global_var(os, name, var);
+    os << "\n\n";
+  }
+  if (gen_data) {
+    os << ".section .data\n";
+    for (auto &[name, var] : glob_vars)
+      if (var->val || var->arr_val)
+        emit_global_var(os, name, var);
+    os << "\n\n";
+  }
+  if (gen_bss) {
+    os << ".section .bss\n";
+    for (auto &[name, var] : glob_vars)
+      if (!var->val && !var->arr_val)
+        emit_global_var(os, name, var);
+    os << "\n\n";
   }
 }
 
@@ -514,7 +611,7 @@ void Function::emit_prologue_epilogue() {
 
   auto entry = bbs.begin()->get();
   auto exit = new BasicBlock;
-  exit->label = ".exit";
+  exit->label = ".exit." + name;
 
   int stack_obj_size = round_up_to_imm8m(4 * normal_objs.size());
   // emit prologue

@@ -47,9 +47,9 @@ struct Function {
   // 3. 调用子函数压栈的参数，相对fp偏移为负
   std::vector<StackObject *> param_objs, normal_objs;
 
-  int regs_allocated; // 分配的虚拟寄存器总数
+  int regs_used; // 分配的虚拟寄存器总数
 
-  Reg new_reg(Reg::Type type) { return Reg{type, ++regs_allocated}; }
+  Reg new_reg(Reg::Type type) { return Reg{type, ++regs_used}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
 
   void do_liveness_analysis(RegFilter filter = [](const Reg &){ return true; });
@@ -63,9 +63,15 @@ struct Function {
 struct Program {
   std::unordered_map<std::string, Function> functions;
 
+  int labels_used;
+  std::string new_label() { return ".L" + std::to_string(labels_used++); }
+
+  Program() : labels_used{0} {}
+
   void emit(std::ostream &os);
 };
 
 std::unique_ptr<Program> translate(const ir::Program &ir_program);
+void emit_global(std::ostream &os, const ir::Program &ir_program);
 
 } // namespace armv7

@@ -447,8 +447,12 @@ struct Push : SpRelative {
   std::set<Reg> use() const override {
     return std::set<Reg>(srcs.begin(), srcs.end());
   }
-  // NOTE: Push的操作数是物理寄存器，不提供可修改的寄存器列表
-  std::vector<Reg *> reg_ptrs() override { return {}; }
+  std::vector<Reg *> reg_ptrs() override {
+    std::vector<Reg *> ptrs;
+    for (Reg &r : srcs)
+      ptrs.push_back(&r);
+    return ptrs;
+  }
 };
 
 struct Pop : SpRelative {
@@ -461,6 +465,7 @@ struct Pop : SpRelative {
     return std::set<Reg>(dsts.begin(), dsts.end());
   }
   std::set<Reg> use() const override { return {}; }
+// NOTE: Pop的操作数是物理寄存器，不提供可修改的寄存器列表
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 

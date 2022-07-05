@@ -16,6 +16,27 @@ IrGen::IrGen() : program{new Program} {
   cur_func = nullptr;
   init_bb = cur_bb = new BasicBlock;
   init_bb->label = ".init.BB";
+
+  auto &lib = program->lib_funcs;
+  lib["getint"].sig = {.ret_type = Int, .param_types = {}};
+  lib["getch"].sig = {.ret_type = Int, .param_types = {}};
+  lib["getfloat"].sig = {.ret_type = Float, .param_types = {}};
+  lib["getarray"].sig = {.ret_type = Int,
+                         .param_types = {Type{Int, std::vector<int>{0}}}};
+  lib["getfarray"].sig = {.ret_type = Int,
+                          .param_types = {Type{Float, std::vector<int>{0}}}};
+  lib["putint"].sig = {.ret_type = std::nullopt, .param_types = {Type{Int}}};
+  lib["putch"].sig = {.ret_type = std::nullopt, .param_types = {Type{Int}}};
+  lib["putfloat"].sig = {.ret_type = std::nullopt,
+                         .param_types = {Type{Float}}};
+  lib["putarray"].sig = {
+      .ret_type = std::nullopt,
+      .param_types = {Type{Int}, Type{Int, std::vector<int>{0}}}};
+  lib["putfarray"].sig = {
+      .ret_type = std::nullopt,
+      .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}}};
+  lib["putf"].sig = {.ret_type = std::nullopt,
+                     .param_types = {Type{String}, Type{Int}}};
 }
 
 BasicBlock *IrGen::new_bb() {

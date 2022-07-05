@@ -5,12 +5,12 @@
 using std::ostream;
 
 inline ostream &error(ostream &os) {
-  os << "\e[0;31m[error]\033[0m ";
+  os << "\033[31m[error]\033[0m ";
   return os;
 }
 
 inline ostream &warn(ostream &os) {
-  os << "\e[1;33m[warn]\033[0m ";
+  os << "\033[33m[warn]\033[0m ";
   return os;
 }
 
