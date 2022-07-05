@@ -102,11 +102,11 @@ public:
   //     : m_type{std::move(type)}, m_value{std::move(value)} {}
   virtual ~Expression() = default;
 
-//   NumberLiteral const *value() const { return m_value.get(); }
+  //   NumberLiteral const *value() const { return m_value.get(); }
 
-// protected:
-//   std::unique_ptr<ScalarType> m_type;
-//   std::unique_ptr<NumberLiteral> m_value;
+  // protected:
+  //   std::unique_ptr<ScalarType> m_type;
+  //   std::unique_ptr<NumberLiteral> m_value;
 
 public:
   // 求得的表达式类型
@@ -122,7 +122,9 @@ public:
   void print(std::ostream &out, unsigned indent) const override;
 
   const Identifier &ident() const { return m_ident; }
-  const std::vector<std::unique_ptr<Expression>> &indices() const { return m_indices; }
+  const std::vector<std::unique_ptr<Expression>> &indices() const {
+    return m_indices;
+  }
 
 public:
   mutable std::shared_ptr<Var> var;
@@ -225,18 +227,20 @@ class Call : public Expression {
 public:
   using Argument = std::variant<std::unique_ptr<Expression>, StringLiteral>;
 
-  Call(Identifier func, std::vector<Argument> args)
-      : m_func{std::move(func)}, m_args{std::move(args)} {}
+  Call(Identifier func, std::vector<Argument> args, unsigned line)
+      : m_func{std::move(func)}, m_args{std::move(args)}, m_line(line) {}
   virtual ~Call() = default;
 
   const Identifier &func() const { return m_func; }
   const std::vector<Argument> &args() const { return m_args; }
+  unsigned line() const { return this->m_line; }
 
   void print(std::ostream &out, unsigned indent) const override;
 
 private:
   Identifier m_func;
   std::vector<Argument> m_args;
+  unsigned m_line;
 };
 
 class Statement : public AstNode {
@@ -410,7 +414,9 @@ public:
 
   const std::unique_ptr<ScalarType> &type() const { return m_type; }
   const Identifier &ident() const { return m_ident; }
-  const std::vector<std::unique_ptr<Parameter>> &params() const { return m_params; }
+  const std::vector<std::unique_ptr<Parameter>> &params() const {
+    return m_params;
+  }
   const std::unique_ptr<Block> &body() const { return m_body; }
 
 private:

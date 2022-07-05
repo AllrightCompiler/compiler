@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 
+#include "common/utils.hpp"
 #include "frontend/AstVisitor.hpp"
 #include "frontend/ast.hpp"
 
@@ -300,7 +301,8 @@ antlrcpp::Any AstVisitor::visitCall(SysYParser::CallContext *const ctx) {
       }
     }
   }
-  auto const ret = new Call(std::move(ident), std::move(args));
+  auto const ret =
+      new Call(std::move(ident), std::move(args), ctx->getStart()->getLine());
   return static_cast<Expression *>(ret);
 }
 
