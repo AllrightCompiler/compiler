@@ -18,8 +18,15 @@ void constant_propagation(ir::Program *prog) {
         }
       }
     }
-    // TODO: 改为根据控制流来进行常量传播，否则可能计算不全
+    unordered_set<ir::BasicBlock *> stack;
     for (auto &bb : func->bbs) {
+      stack.insert(bb.get());
+    }
+    while(stack.size()) {
+      auto s_iter = stack.begin();
+      auto bb = *s_iter;
+      stack.erase(s_iter);
+      bool add_res = false;
       for (auto &ins : bb->insns) {
         TypeCase(unary, ir::insns::Unary *, ins.get()) {
           if (const_map.find(unary->src) != const_map.end()) {
@@ -47,6 +54,7 @@ void constant_propagation(ir::Program *prog) {
             }
             ins.reset(new ir::insns::LoadImm(reg, new_val));
             ins->add_use_def(func->use_list, func->def_list);
+            add_res = true;
           }
           continue;
         }
@@ -153,6 +161,7 @@ void constant_propagation(ir::Program *prog) {
             ins.reset(new_ins);
             ins->add_use_def(func->use_list, func->def_list);
             const_map[new_ins->dst] = new_ins->imm;
+            add_res = true;
           }
           continue;
         }
@@ -179,6 +188,7 @@ void constant_propagation(ir::Program *prog) {
             ins.reset(new_ins);
             ins->add_use_def(func->use_list, func->def_list);
             const_map[new_ins->dst] = new_ins->imm;
+            add_res = true;
           }
           continue;
         }
@@ -193,8 +203,14 @@ void constant_propagation(ir::Program *prog) {
             }
             auto new_ins = new ir::insns::Jump(target);
             ins.reset(new_ins);
+            add_res = true;
           }
           continue;
+        }
+      }
+      if(add_res){
+        for(auto suc : func->cfg->succ[bb]){
+          stack.insert(suc);
         }
       }
     }
