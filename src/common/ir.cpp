@@ -279,25 +279,25 @@ ostream &operator<<(ostream &os, const Program &p) {
 }
 namespace insns {
 
-void Output::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Output::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
   def_list[dst] = this;
 }
 
-void Output::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Output::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
   def_list.erase(dst);
 }
 
-void Load::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::addUseDef(use_list, def_list);
+void Load::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::add_use_def(use_list, def_list);
   use_list[addr].push_back(this);
 }
 
-void Load::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::removeUseDef(use_list, def_list);
+void Load::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::remove_use_def(use_list, def_list);
   use_list[addr].remove(this);
 }
 
-void Load::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Load::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   if(addr == old_reg){
     addr = new_reg;
     use_list[new_reg].push_back(this);
@@ -305,17 +305,17 @@ void Load::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_
   }
 }
 
-void Store::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Store::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
   use_list[val].push_back(this);
   use_list[addr].push_back(this);
 }
 
-void Store::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Store::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
   use_list[val].remove(this);
   use_list[addr].remove(this);
 }
 
-void Store::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Store::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   if(val == old_reg){
     val = new_reg;
     use_list[new_reg].push_back(this);
@@ -328,17 +328,17 @@ void Store::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old
   }
 }
 
-void Convert::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::addUseDef(use_list, def_list);
+void Convert::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::add_use_def(use_list, def_list);
   use_list[src].push_back(this);
 }
 
-void Convert::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::removeUseDef(use_list, def_list);
+void Convert::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::remove_use_def(use_list, def_list);
   use_list[src].remove(this);
 }
 
-void Convert::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Convert::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   if(src == old_reg){
     src = new_reg;
     use_list[new_reg].push_back(this);
@@ -346,21 +346,21 @@ void Convert::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg o
   }
 }
 
-void Call::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::addUseDef(use_list, def_list);
+void Call::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::add_use_def(use_list, def_list);
   for(auto &reg : args){
     use_list[reg].push_back(this);
   }
 }
 
-void Call::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::removeUseDef(use_list, def_list);
+void Call::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::remove_use_def(use_list, def_list);
   for(auto &reg : args){
     use_list[reg].remove(this);
   }
 }
 
-void Call::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Call::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   for(auto &reg : args){
     if(reg == old_reg){
       reg = new_reg;
@@ -370,17 +370,17 @@ void Call::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_
   }
 }
 
-void Unary::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::addUseDef(use_list, def_list);
+void Unary::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::add_use_def(use_list, def_list);
   use_list[src].push_back(this);
 }
 
-void Unary::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::removeUseDef(use_list, def_list);
+void Unary::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::remove_use_def(use_list, def_list);
   use_list[src].remove(this);
 }
 
-void Unary::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Unary::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   if(src == old_reg){
     src = new_reg;
     use_list[new_reg].push_back(this);
@@ -388,19 +388,19 @@ void Unary::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old
   }
 }
 
-void Binary::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::addUseDef(use_list, def_list);
+void Binary::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::add_use_def(use_list, def_list);
   use_list[src1].push_back(this);
   use_list[src2].push_back(this);
 }
 
-void Binary::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::removeUseDef(use_list, def_list);
+void Binary::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::remove_use_def(use_list, def_list);
   use_list[src1].remove(this);
   use_list[src2].remove(this);
 }
 
-void Binary::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Binary::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   if(src1 == old_reg){
     src1 = new_reg;
     use_list[new_reg].push_back(this);
@@ -413,21 +413,21 @@ void Binary::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg ol
   }
 }
 
-void Phi::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::addUseDef(use_list, def_list);
+void Phi::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::add_use_def(use_list, def_list);
   for(auto &[bb, reg] : incoming){
     use_list[reg].push_back(this);
   }
 }
 
-void Phi::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::removeUseDef(use_list, def_list);
+void Phi::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::remove_use_def(use_list, def_list);
   for(auto &[bb, reg] : incoming){
     use_list[reg].remove(this);
   }
 }
 
-void Phi::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Phi::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   for(auto &[bb, reg] : incoming){
     if(reg == old_reg){
       reg = new_reg;
@@ -437,17 +437,17 @@ void Phi::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_r
   }
 }
 
-void Return::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Return::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
   if(val.has_value())
     use_list[val.value()].push_back(this);
 }
 
-void Return::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Return::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
   if(val.has_value())
     use_list[val.value()].remove(this);
 }
 
-void Return::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Return::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   if(val.has_value() && val.value() == old_reg){
     val = new_reg;
     use_list[new_reg].push_back(this);
@@ -455,15 +455,15 @@ void Return::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg ol
   }
 }
 
-void Branch::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Branch::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
   use_list[val].push_back(this);
 }
 
-void Branch::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Branch::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
   use_list[val].remove(this);
 }
 
-void Branch::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Branch::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   if(val == old_reg){
     val = new_reg;
     use_list[new_reg].push_back(this);
@@ -471,23 +471,23 @@ void Branch::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg ol
   }
 }
 
-void GetElementPtr::addUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::addUseDef(use_list, def_list);
+void GetElementPtr::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::add_use_def(use_list, def_list);
   use_list[base].push_back(this);
   for(auto &idx : indices){
     use_list[idx].push_back(this);
   }
 }
 
-void GetElementPtr::removeUseDef(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::removeUseDef(use_list, def_list);
+void GetElementPtr::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+  Output::remove_use_def(use_list, def_list);
   use_list[base].remove(this);
   for(auto &idx : indices){
     use_list[idx].remove(this);
   }
 }
 
-void GetElementPtr::changeUse(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void GetElementPtr::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
   if(base == old_reg){
     base = new_reg;
     use_list[new_reg].push_back(this);
