@@ -73,8 +73,11 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
       }
       // 此处为了便于处理递归函数，因此这么做
       TypeCase(call, ir::insns::Call *, inst.get()) {
-        if(prog->functions[call->func].pure == 1){
-          continue;
+        auto call_func = prog->functions.find(call->func);
+        if(call_func != prog->functions.end()){
+          if(call_func->second.pure == 1){
+            continue;
+          }
         }
         func->pure = 0;
         return;
@@ -98,6 +101,9 @@ void remove_unused_function(ir::Program *prog){
   while(!stack.empty()){
     auto func_name = stack.back();
     stack.pop_back();
+    if(prog->functions.find(func_name) == prog->functions.end()){
+      continue;
+    }
     used.insert(func_name);
     auto &func = prog->functions[func_name];
     for(auto &bb : func.bbs){
@@ -130,6 +136,9 @@ void remove_uneffective_inst(ir::Program *prog){
       for (auto &inst : insns) {
         TypeCase(output, ir::insns::Output *, inst.get()){
           if(auto call = dynamic_cast<ir::insns::Call *>(output)){
+            if(!prog->functions.count(call->func)){
+              continue;
+            }
             if(prog->functions[call->func].pure == 0){
               continue;
             }
@@ -207,7 +216,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
       if(bb->insns.size() == 1) {
         for(auto &pre : prev[bb]){
           auto &last = pre->insns.back();
-          TypeCase(br, ir::insns::Branch *, inst.get()){
+          TypeCase(br, ir::insns::Branch *, last.get()){
             if(br->true_target == bb){
               br->true_target = target;
             }
@@ -215,7 +224,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
               br->false_target = target;
             }
           }
-          TypeCase(j, ir::insns::Jump *, inst.get()){
+          TypeCase(j, ir::insns::Jump *, last.get()){
             if(j->target == bb){
               j->target = target;
             }
@@ -224,6 +233,17 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           succ[pre].insert(target);
           prev[target].erase(bb);
           prev[target].insert(pre);
+        }
+        for(auto &ins : target->insns){
+          TypeCase(phi, ir::insns::Phi *, ins.get()){
+            if(phi->incoming.count(bb)){
+              ir::Reg reg = phi->incoming[bb];
+              phi->incoming.erase(bb);
+              phi->incoming[target] = reg;
+            }
+          } else {
+            break;
+          }
         }
         for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
           if(iter->get() == bb){

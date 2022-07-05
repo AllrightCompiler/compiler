@@ -61,8 +61,8 @@ int main(int argc, char *argv[]) {
     ir_gen.visit_compile_unit(ast);
 
     auto &ir_program = ir_gen.get_program();
-    // mediumend::run_medium(ir_program.get());
-    // std::cout << *ir_gen.get_program();
+    mediumend::run_medium(ir_program.get());
+    std::cout << *ir_gen.get_program();
 
     auto program = armv7::translate(*ir_program);
     armv7::backend_passes(*program);
