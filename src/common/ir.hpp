@@ -60,7 +60,7 @@ struct FunctionSignature {
 struct Function {
   string name;
   FunctionSignature sig;
-  int nr_regs = 0;
+  int nr_regs;
 
   mediumend::CFG* cfg = nullptr;
 

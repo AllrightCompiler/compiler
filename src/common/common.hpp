@@ -1,13 +1,13 @@
 #pragma once
 
 #include <cstdint>
+#include <list>
 #include <map>
 #include <memory>
 #include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <list>
 
 #define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 
@@ -43,6 +43,12 @@ struct Type {
 
   int nr_dims() const { return dims.size(); }
   bool is_array() const { return dims.size() > 0; }
+  int size() const {
+    int size = 4;
+    for (int n : dims)
+      size *= n;
+    return size;
+  }
 
   Type() {}
   Type(ScalarType btype) : base_type{btype}, is_const{false} {}

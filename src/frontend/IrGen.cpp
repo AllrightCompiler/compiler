@@ -15,6 +15,28 @@ IrGen::IrGen() : program{new Program} {
   local_regs = global_regs = 0;
   cur_func = nullptr;
   init_bb = cur_bb = new BasicBlock;
+  init_bb->label = ".init.BB";
+
+  auto &lib = program->lib_funcs;
+  lib["getint"].sig = {.ret_type = Int, .param_types = {}};
+  lib["getch"].sig = {.ret_type = Int, .param_types = {}};
+  lib["getfloat"].sig = {.ret_type = Float, .param_types = {}};
+  lib["getarray"].sig = {.ret_type = Int,
+                         .param_types = {Type{Int, std::vector<int>{0}}}};
+  lib["getfarray"].sig = {.ret_type = Int,
+                          .param_types = {Type{Float, std::vector<int>{0}}}};
+  lib["putint"].sig = {.ret_type = std::nullopt, .param_types = {Type{Int}}};
+  lib["putch"].sig = {.ret_type = std::nullopt, .param_types = {Type{Int}}};
+  lib["putfloat"].sig = {.ret_type = std::nullopt,
+                         .param_types = {Type{Float}}};
+  lib["putarray"].sig = {
+      .ret_type = std::nullopt,
+      .param_types = {Type{Int}, Type{Int, std::vector<int>{0}}}};
+  lib["putfarray"].sig = {
+      .ret_type = std::nullopt,
+      .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}}};
+  lib["putf"].sig = {.ret_type = std::nullopt,
+                     .param_types = {Type{String}, Type{Int}}};
 }
 
 BasicBlock *IrGen::new_bb() {
@@ -46,6 +68,13 @@ void IrGen::visit_compile_unit(const ast::CompileUnit &node) {
       visit_function(*func);
     }
   }
+
+  // 将init_bb包装成.init函数
+  init_bb->push(new insns::Return{std::nullopt});
+  auto &init_fn = program->functions[".init"];
+  init_fn.name = ".init";
+  init_fn.bbs.emplace_back(init_bb);
+  init_fn.nr_regs = global_regs;
 }
 
 void IrGen::visit_declaration(const ast::Declaration &node) {
@@ -68,6 +97,7 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
     auto &value = initializer->value();
     if (is_global) {
       // load base address of global variable into reg
+      reg = new_reg(String);
       emit(new insns::LoadAddr{reg, name});
     }
 
@@ -172,6 +202,9 @@ void IrGen::visit_function(const ast::Function &node) {
       emit(new insns::Store{addr_reg, arg_reg});
     }
   }
+
+  if (name == "main")
+    emit(new insns::Call{new_reg(String), ".init", {}});
 
   visit_statement(*node.body());
   cur_func->nr_regs = local_regs;

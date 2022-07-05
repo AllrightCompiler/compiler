@@ -8,6 +8,9 @@
 
 #include "mediumend/optmizer.hpp"
 
+#include "backend/armv7/program.hpp"
+#include "backend/armv7/passes.hpp"
+
 #include "common/errors.hpp"
 #include "common/utils.hpp"
 
@@ -57,9 +60,15 @@ int main(int argc, char *argv[]) {
     frontend::IrGen ir_gen;
     ir_gen.visit_compile_unit(ast);
 
-    auto &program = ir_gen.get_program();
-    mediumend::run_medium(program.get());
-    std::cout << *ir_gen.get_program();
+    auto &ir_program = ir_gen.get_program();
+    // mediumend::run_medium(ir_program.get());
+    // std::cout << *ir_gen.get_program();
+
+    auto program = armv7::translate(*ir_program);
+    armv7::backend_passes(*program);
+
+    armv7::emit_global(std::cout, *ir_program);
+    program->emit(std::cout);
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;
   } catch (const CompileError &e) {
