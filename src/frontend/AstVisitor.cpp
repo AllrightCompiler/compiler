@@ -243,6 +243,16 @@ antlrcpp::Any AstVisitor::visitLVal(SysYParser::LValContext *const ctx) {
 }
 
 antlrcpp::Any
+AstVisitor::visitPrimaryExp_(SysYParser::PrimaryExp_Context *const ctx) {
+  if (ctx->number()) {
+    return ctx->number()->accept(this);
+  } else {
+    assert(ctx->exp());
+    return ctx->exp()->accept(this);
+  }
+}
+
+antlrcpp::Any
 AstVisitor::visitLValExpr(SysYParser::LValExprContext *const ctx) {
   auto const lval = ctx->lVal()->accept(this).as<LValue *>();
   return static_cast<Expression *>(lval);
@@ -271,18 +281,6 @@ AstVisitor::visitDecFloatConst(SysYParser::DecFloatConstContext *const ctx) {
 antlrcpp::Any
 AstVisitor::visitHexFloatConst(SysYParser::HexFloatConstContext *const ctx) {
   return std::stof(ctx->getText());
-}
-
-// 未使用
-antlrcpp::Any
-AstVisitor::visitFuncRParam(SysYParser::FuncRParamContext *const ctx) {
-  return nullptr;
-}
-
-// 未使用
-antlrcpp::Any
-AstVisitor::visitFuncRParams(SysYParser::FuncRParamsContext *const ctx) {
-  return nullptr;
 }
 
 antlrcpp::Any AstVisitor::visitCall(SysYParser::CallContext *const ctx) {

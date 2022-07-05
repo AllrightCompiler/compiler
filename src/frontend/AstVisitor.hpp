@@ -54,6 +54,8 @@ public:
 
   antlrcpp::Any visitLVal(SysYParser::LValContext *ctx) override;
 
+  antlrcpp::Any visitPrimaryExp_(SysYParser::PrimaryExp_Context *ctx) override;
+
   antlrcpp::Any visitLValExpr(SysYParser::LValExprContext *ctx) override;
 
   antlrcpp::Any visitDecIntConst(SysYParser::DecIntConstContext *ctx) override;
@@ -77,10 +79,6 @@ public:
   antlrcpp::Any visitNot(SysYParser::NotContext *ctx) override;
 
   antlrcpp::Any visitStringConst(SysYParser::StringConstContext *ctx) override;
-
-  antlrcpp::Any visitFuncRParam(SysYParser::FuncRParamContext *ctx) override;
-
-  antlrcpp::Any visitFuncRParams(SysYParser::FuncRParamsContext *ctx) override;
 
   antlrcpp::Any visitDiv(SysYParser::DivContext *ctx) override;
 
