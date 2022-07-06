@@ -212,6 +212,8 @@ struct Binary : Output {
 struct Phi : Output {
   unordered_map<BasicBlock *, Reg> incoming;
 
+  Phi(Reg dst) : Output{dst} {}
+
   Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs): Output{dst} {
     for (int i = 0; i < bbs.size(); i++) {
       incoming[bbs[i]] = regs[i];

@@ -110,11 +110,8 @@ void mem2reg(ir::Program *prog) {
         for (auto &Y : df[bb]) {
           if (F.find(Y) == F.end()) {
             Reg r = func->new_reg(alloc2type[v.first]);
-            auto phi = new ir::insns::Phi(r,
-                                            defs[v.first],
-                                            defs_reg[v.first]);
+            auto phi = new ir::insns::Phi(r);
             Y->push_front(phi); // add phi
-            phi->add_use_def(func->use_list, func->def_list);
             phi2mem[phi] = v.first;
             F.insert(Y);
             bool find = false;
@@ -136,6 +133,8 @@ void mem2reg(ir::Program *prog) {
     // mem2reg第二阶段，寄存器重命名
     vector<BasicBlock *> stack;
     stack.push_back(func->bbs.front().get());
+    cfg->clear_visit();
+    cfg->visit.insert(func->bbs.front().get());
     while(stack.size()){
       auto bb = stack.back();
       stack.pop_back();
@@ -173,9 +172,22 @@ void mem2reg(ir::Program *prog) {
         iter++;
         continue;
       }
-      for(auto &next : cfg->dom[bb]){
-        stack.push_back(next);
+      for(auto &succ : cfg->succ[bb]){
+        if(!cfg->visit.count(succ)){
+          cfg->visit.insert(succ);
+          stack.push_back(succ);
+        }
+        for(auto &inst : succ->insns){
+          TypeCase(phi, ir::insns::Phi *, inst.get()) {
+            phi->incoming[bb] = alloc_map[phi2mem[phi]];
+          } else {
+            break;
+          }
+        }
       }
+    }
+    for(auto phi : phi2mem){
+      phi.first->add_use_def(func->use_list, func->def_list);
     }
   }
 }
