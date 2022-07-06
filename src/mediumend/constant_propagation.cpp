@@ -93,10 +93,10 @@ void constant_propagation(ir::Program *prog) {
     for(auto &bb : func->bbs){
       for(auto &inst : bb->insns){
         if(auto phi = dynamic_cast<ir::insns::Phi *>(inst.get())){
-          for(auto &in : phi->incoming){
-            if(func->cfg->prev.find(in.first) == func->cfg->prev.end()){
-              phi->incoming.erase(in.first);
-            }
+          for(auto iter = phi->incoming.begin(); iter != phi->incoming.end();){
+            if(func->cfg->prev.find(iter->first) == func->cfg->prev.end()){
+              iter = phi->incoming.erase(iter);
+            } else iter++;
           }
         }
       }
