@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <vector>
 #include <algorithm>
+#include <cassert>
 
 #define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 
@@ -71,6 +72,13 @@ struct ConstValue {
   ConstValue() {}
   ConstValue(int v) : type{Int} { iv = v; }
   ConstValue(float v) : type{Float} { fv = v; }
+
+  bool operator == (const ConstValue &b) const {
+    if (type != b.type) return false;
+    if (type == Int) return iv == b.iv;
+    if (type == Float) return fv == b.fv;
+    assert(false);
+  }
 };
 
 // variable or constant
