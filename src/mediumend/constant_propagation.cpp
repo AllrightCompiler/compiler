@@ -1,5 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+#include "mediumend/optmizer.hpp"
 
 #include <cassert>
 
@@ -32,26 +33,7 @@ void constant_propagation(ir::Program *prog) {
           if (const_map.find(unary->src) != const_map.end()) {
             Reg reg = unary->dst;
             unary->remove_use_def(func->use_list, func->def_list);
-            ConstValue new_val;
-            new_val.type = unary->dst.type;
-            switch (unary->op) {
-              case UnaryOp::Not:
-                if(unary->dst.type == ScalarType::Int) {
-                  new_val.iv = !const_map[unary->src].iv;
-                } else {
-                  new_val.iv = !const_map[unary->src].fv;
-                }
-                break;
-              case UnaryOp::Sub:
-                if(unary->dst.type == ScalarType::Int) {
-                  new_val.iv = -const_map[unary->src].iv;
-                } else {
-                  new_val.fv = -const_map[unary->src].fv;
-                }
-                break;
-              default:
-                assert(false);
-            }
+            ConstValue new_val = const_compute(unary, const_map[unary->src]);
             ins.reset(new ir::insns::LoadImm(reg, new_val));
             ins->add_use_def(func->use_list, func->def_list);
             add_res = true;
@@ -62,101 +44,7 @@ void constant_propagation(ir::Program *prog) {
           if (const_map.find(binary->src1) != const_map.end() && const_map.find(binary->src2) != const_map.end()) {
             Reg reg = binary->dst;
             binary->remove_use_def(func->use_list, func->def_list);
-            ConstValue new_val;
-            new_val.type = binary->dst.type;
-            switch (binary->op) {
-              case BinaryOp::Add:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv + const_map[binary->src2].iv;
-                } else {
-                  new_val.fv = const_map[binary->src1].fv + const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Sub:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv - const_map[binary->src2].iv;
-                } else {
-                  new_val.fv = const_map[binary->src1].fv - const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Mul:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv * const_map[binary->src2].iv;
-                } else {
-                  new_val.fv = const_map[binary->src1].fv * const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Div:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv / const_map[binary->src2].iv;
-                } else {
-                  new_val.fv = const_map[binary->src1].fv / const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Mod:
-                assert(binary->dst.type == ScalarType::Int);
-                new_val.iv = const_map[binary->src1].iv % const_map[binary->src2].iv;
-                break;
-              // TODO:对于EQ和NEQ的处理需要再考虑一下？
-              case BinaryOp::Eq:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv == const_map[binary->src2].iv;
-                } else {
-                  new_val.iv = const_map[binary->src1].fv == const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Neq:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv != const_map[binary->src2].iv;
-                } else {
-                  new_val.iv = const_map[binary->src1].fv != const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Lt:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv < const_map[binary->src2].iv;
-                } else {
-                  new_val.iv = const_map[binary->src1].fv < const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Gt:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv > const_map[binary->src2].iv;
-                } else {
-                  new_val.iv = const_map[binary->src1].fv > const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Leq:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv <= const_map[binary->src2].iv;
-                } else {
-                  new_val.iv = const_map[binary->src1].fv <= const_map[binary->src2].fv;
-                }
-                break;
-              case BinaryOp::Geq:
-                if(binary->dst.type == ScalarType::Int) {
-                  new_val.iv = const_map[binary->src1].iv >= const_map[binary->src2].iv;
-                } else {
-                  new_val.iv = const_map[binary->src1].fv >= const_map[binary->src2].fv;
-                }
-                break;
-              // case BinaryOp::And:
-              //   if(binary->dst.type == ScalarType::Int) {
-              //     new_val.iv = const_map[binary->src1].iv && const_map[binary->src2].iv;
-              //   } else {
-              //     new_val.iv = const_map[binary->src1].fv && const_map[binary->src2].fv;
-              //   }
-              //   break;
-              // case BinaryOp::Or:
-              //   if(binary->dst.type == ScalarType::Int) {
-              //     new_val.iv = const_map[binary->src1].iv || const_map[binary->src2].iv;
-              //   } else {
-              //     new_val.iv = const_map[binary->src1].fv || const_map[binary->src2].fv;
-              //   }
-              //   break;
-              default:
-                assert(false);
-            }
+            ConstValue new_val = const_compute(binary, const_map[binary->src1], const_map[binary->src2]);
             auto new_ins = new ir::insns::LoadImm(reg, new_val);
             ins.reset(new_ins);
             ins->add_use_def(func->use_list, func->def_list);
@@ -169,21 +57,7 @@ void constant_propagation(ir::Program *prog) {
           if(const_map.find(convey->src) != const_map.end()){
             Reg reg = convey->dst;
             convey->remove_use_def(func->use_list, func->def_list);
-            ConstValue new_val;
-            new_val.type = convey->dst.type;
-            if(convey->dst.type == ScalarType::Int){
-              if(convey->src.type == ScalarType::Int){
-                new_val.iv = const_map[convey->src].iv;
-              } else {
-                new_val.iv = (int)const_map[convey->src].fv;
-              }
-            } else {
-              if(convey->src.type == ScalarType::Int){
-                new_val.fv = (float)const_map[convey->src].iv;
-              } else {
-                new_val.fv = const_map[convey->src].fv;
-              }
-            }
+            ConstValue new_val = const_compute(convey, const_map[convey->src]);
             auto new_ins = new ir::insns::LoadImm(reg, new_val);
             ins.reset(new_ins);
             ins->add_use_def(func->use_list, func->def_list);

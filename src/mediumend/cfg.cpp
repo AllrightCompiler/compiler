@@ -292,4 +292,20 @@ unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_rdf() {
   return rdf;
 }
 
+void CFG::rpo_dfs(BasicBlock *bb) {
+  if (visit.count(bb)) return;
+  visit.insert(bb);
+  for (auto next : succ[bb]) {
+    rpo_dfs(next);
+  }
+  rpo.emplace_back(bb);
+}
+
+void CFG::compute_rpo() {
+  clear_visit();
+  rpo.clear();
+  rpo_dfs(func->bbs.front().get());
+  std::reverse(rpo.begin(), rpo.end());
+}
+
 } // namespace mediumend

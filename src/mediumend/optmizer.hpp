@@ -13,6 +13,10 @@ void remove_uneffective_inst(ir::Program *prog);
 void clean_useless_cf(ir::Program *prog);
 void simplification_phi(ir::Program *prog);
 void main_global_var_to_local(ir::Program *prog);
+void gvn_gcm(ir::Program *prog);
+
+ConstValue const_compute(ir::Instruction *inst, ConstValue oprand);
+ConstValue const_compute(ir::Instruction *inst, ConstValue op1, ConstValue op2);
 
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){
@@ -32,6 +36,8 @@ inline void run_medium(ir::Program *prog) {
   //纯函数可以用来做GVN和无用代码移除
   mark_pure_func(prog);
   remove_uneffective_inst(prog);
+
+  gvn_gcm(prog);
 
   // 下面这两步和SCCP感觉是等效的？
   constant_propagation(prog);
