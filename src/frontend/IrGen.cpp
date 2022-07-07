@@ -225,8 +225,8 @@ void IrGen::visit_statement(const ast::Statement &node) {
     auto &lhs = assign->lhs();
     auto &rhs = assign->rhs();
 
-    Reg addr = visit_lvalue(*lhs, true);
     Reg val = scalar_cast(visit_arith_expr(rhs), lhs->type->base_type);
+    Reg addr = visit_lvalue(*lhs, true);
     emit(new insns::Store{addr, val});
     return;
   }
