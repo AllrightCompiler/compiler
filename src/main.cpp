@@ -1,16 +1,17 @@
 #include "antlr4-runtime.h"
 
 #include "frontend/AstVisitor.hpp"
+#include "frontend/IrGen.hpp"
 #include "frontend/SysYLexer.h"
 #include "frontend/SysYParser.h"
 #include "frontend/Typer.hpp"
-#include "frontend/IrGen.hpp"
 
 #include "mediumend/optmizer.hpp"
 
-#include "backend/armv7/program.hpp"
 #include "backend/armv7/passes.hpp"
+#include "backend/armv7/program.hpp"
 
+#include "common/argparse.hpp"
 #include "common/errors.hpp"
 #include "common/utils.hpp"
 
@@ -29,14 +30,39 @@ struct ThrowingErrorListner : public antlr4::BaseErrorListener {
   }
 };
 
+istream &get_input(int argc, char *argv[]) {
+  for (auto i = 1; i < argc;) {
+    auto const arg = std::string_view{argv[i]};
+    if (arg == "-o") {
+      i += 2;
+    } else if (!arg.empty() && arg.front() == '-') {
+      ++i;
+    } else {
+      static ifstream ifs;
+      ifs.open(argv[i]);
+      return ifs;
+    }
+  }
+  return cin;
+}
+
+ostream &get_output(int argc, char *argv[]) {
+  auto const output = get_option(argc, argv, "-o");
+  if (output == nullptr) {
+    return cout;
+  } else {
+    static ofstream ofs;
+    ofs.open(output);
+    return ofs;
+  }
+}
+
 int main(int argc, char *argv[]) {
-  string source = "input.sy";
-  if (argc > 1)
-    source = argv[1];
-  ifstream ifs{source};
+  auto &is = get_input(argc, argv);
+  auto &os = get_output(argc, argv);
 
   ThrowingErrorListner error_listener;
-  ANTLRInputStream input{ifs};
+  ANTLRInputStream input{is};
   frontend::SysYLexer lexer{&input};
   lexer.removeErrorListeners();
   lexer.addErrorListener(&error_listener);
@@ -52,28 +78,31 @@ int main(int argc, char *argv[]) {
     frontend::AstVisitor visitor;
     visitor.visitCompUnit(root);
     auto &ast = visitor.compileUnit();
-    // ast.print(cout, 0);
+    if (has_option(argc, argv, "--ast")) {
+      ast.print(os, 0);
+      return 0;
+    }
 
     frontend::Typer typer;
     typer.visit_compile_unit(ast);
 
     frontend::IrGen ir_gen;
     ir_gen.visit_compile_unit(ast);
-    std::cout << " before -------------------\n" << *ir_gen.get_program();
 
     auto &ir_program = ir_gen.get_program();
     mediumend::run_medium(ir_program.get());
-    std::cout << " after --------------------\n" << *ir_gen.get_program();
+    if (has_option(argc, argv, "--ir")) {
+      os << *ir_program;
+      return 0;
+    }
 
-    // auto program = armv7::translate(*ir_program);
-    // armv7::backend_passes(*program);
-
-    // armv7::emit_global(std::cout, *ir_program);
-    // program->emit(std::cout);
+    auto program = armv7::translate(*ir_program);
+    armv7::backend_passes(*program);
+    armv7::emit_global(os, *ir_program);
+    program->emit(os);
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;
   } catch (const CompileError &e) {
     error(cerr) << e.what() << endl;
   }
-  return 0;
 }
