@@ -165,7 +165,7 @@ void RType::emit(std::ostream &os) const {
       [Add] = "add",
       [Sub] = "sub",
       [Mul] = "mul",
-      [Div] = "div",
+      [Div] = "sdiv",
   };
   write_op(os, OP_NAMES[op], dst.is_float()) << dst << ", " << s1 << ", " << s2;
 }
@@ -230,7 +230,7 @@ void FusedMul::emit(std::ostream &os) const {
       << dst << ", " << s1 << ", " << s2 << ", " << s3;
 }
 
-void Branch::emit(std::ostream &os) const { 
+void Branch::emit(std::ostream &os) const {
   write_op(os, "b") << target->label;
 }
 
