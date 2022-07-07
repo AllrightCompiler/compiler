@@ -68,15 +68,17 @@ def test(config: Config, testcase: str) -> bool:
         executable = os.path.join(tempdir, 'main')
         output = os.path.join(tempdir, 'output')
         time = os.path.join(tempdir, 'time')
-        try:
-            command = f'{config.compiler} {source} \
+        command = f'{config.compiler} {source} \
                 -o {assemble} {config.compiler_args}'
-            proc = subprocess.run(command, shell=True, timeout=TIMEOUT)
+        proc = subprocess.Popen(command, shell=True)
+        try:
+            proc.wait(TIMEOUT)
         except subprocess.TimeoutExpired:
+            proc.kill()
             print('\033[0;31mCompiler TLE\033[0m')
             return False
         if proc.returncode != 0 \
-                or os.system(f'gcc -march=armv7 {assemble} libsysy.a \
+                or os.system(f'gcc -march=armv7 {assemble} runtime/libsysy.a \
                     -o {executable}') != 0:
             print('\033[0;31mCompiler Error\033[0m')
             return False
@@ -84,12 +86,14 @@ def test(config: Config, testcase: str) -> bool:
         average_time = 0
         timing = True
         for i in range(TEST_ROUND):
+            proc = subprocess.Popen(
+                executable,
+                stdin=open(input) if os.path.exists(input) else None,
+                stdout=open(output, 'w'), stderr=open(time, 'w'))
             try:
-                proc = subprocess.run(
-                    executable, timeout=TIMEOUT,
-                    stdin=open(input) if os.path.exists(input) else None,
-                    stdout=open(output, 'w'), stderr=open(time, 'w'))
+                proc.wait(TIMEOUT)
             except subprocess.TimeoutExpired:
+                proc.kill()
                 print('\033[0;31mTime Limit Exceeded\033[0m')
                 return False
             if proc.returncode != answer_exitcode \
