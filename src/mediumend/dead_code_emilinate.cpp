@@ -57,6 +57,12 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
   if(func->pure != -1){
     return;
   }
+  for(auto &type : func->sig.param_types){
+    if(type.is_array()){
+      func->pure = 0;
+      return;
+    }
+  }
   for (auto &bb : func->bbs) {
     for (auto &inst : bb->insns) {
       // 修改了全局变量，不是纯函数
@@ -157,11 +163,12 @@ void remove_uneffective_inst(ir::Program *prog){
       inst->remove_use_def(func->use_list, func->def_list);
       for(auto reg : regs){
         if(func->use_list[reg].size() == 0){
-          auto inst = func->def_list[reg];
+          auto output = func->def_list[reg];
           if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
             continue;
           }
-          stack.push_back(inst);
+          assert(output);
+          stack.push_back(output);
         }
       }
       remove_inst_set.insert(inst);
@@ -262,15 +269,25 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
       if(prev[target].size() == 1){
         succ[bb].erase(target);
         succ[bb].insert(succ[target].begin(), succ[target].end());
-        succ[target].clear();
         bb->insns.pop_back();
         bb->insns.splice(bb->insns.end(), target->insns);
         for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
           if(iter->get() == target){
+            for(auto suc : succ[target]){
+              for(auto &inst : suc->insns){
+                TypeCase(phi, ir::insns::Phi *, inst.get()){
+                  if(phi->incoming.count(target)){
+                    phi->incoming[bb] = phi->incoming[target];
+                    phi->incoming.erase(target);
+                  }
+                }
+              }
+            }
             func->bbs.erase(iter);
             break;
           }
         }
+        succ[target].clear();
         ret = true;
         continue;
       }

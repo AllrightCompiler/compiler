@@ -59,11 +59,11 @@ int main(int argc, char *argv[]) {
 
     frontend::IrGen ir_gen;
     ir_gen.visit_compile_unit(ast);
-    std::cout << " before -------------------\n" << *ir_gen.get_program();
+    std::cout << "----- before -----\n" << *ir_gen.get_program();
 
     auto &ir_program = ir_gen.get_program();
     mediumend::run_medium(ir_program.get());
-    std::cout << " after --------------------\n" << *ir_gen.get_program();
+    std::cout << "----- after -----\n" << *ir_gen.get_program();
 
     // auto program = armv7::translate(*ir_program);
     // armv7::backend_passes(*program);

@@ -175,6 +175,7 @@ struct Convert : Output {
   virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
   virtual void remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list) override;
   virtual void change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg) override;
+
 };
 
 struct Call : Output {
