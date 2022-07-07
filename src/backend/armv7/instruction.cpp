@@ -73,9 +73,12 @@ void next_instruction(ostream &os) {
 
 ostream &operator<<(ostream &os, const Reg &r) {
   if (r.type != Fp) {
-    if (r.id >= 0)
-      os << GPR_NAMES[r.id];
-    else
+    if (r.id >= 0) {
+      if (r.id < NR_GPRS)
+        os << GPR_NAMES[r.id];
+      else
+        os << "<bad reg " << r.id << ">";
+    } else
       os << "t" + std::to_string(-r.id);
   } else {
     if (r.id >= 0)

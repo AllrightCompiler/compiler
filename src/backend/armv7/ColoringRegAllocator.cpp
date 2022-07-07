@@ -3,6 +3,8 @@
 
 #include <algorithm>
 
+// #include <iostream>
+
 namespace armv7 {
 
 std::set<Reg> ColoringRegAllocator::adjacent(Reg n) const {
@@ -81,14 +83,12 @@ void ColoringRegAllocator::build() {
   degree.clear();
 
   constexpr int inf = 1 << 30;
-  if (is_gp_pass) {
-    for (int i = 0; i <= 12; ++i)
-      degree[Reg{General, i}] = inf;
-    degree[Reg{General, lr}] = inf;
-  } else {
-    for (int i = 0; i < NR_FPRS; ++i)
-      degree[Reg{Fp, i}] = inf;
-  }
+  for (int i = 0; i <= 12; ++i)
+    degree[Reg{General, i}] = inf;
+  degree[Reg{General, lr}] = inf;
+    
+  for (int i = 0; i < NR_FPRS; ++i)
+    degree[Reg{Fp, i}] = inf;
 
   for (auto &bb : f->bbs) {
     auto live = bb->live_out;
@@ -140,6 +140,7 @@ void ColoringRegAllocator::make_worklist() {
   }
 
   for (Reg n : vregs) {
+    // std::cout << "node " << n << " degree=" << degree[n] << " K=" << K << '\n';
     if (degree[n] >= K)
       spill_worklist.insert(n);
     else if (move_related(n))
@@ -154,16 +155,22 @@ void ColoringRegAllocator::simplify() {
   auto n = *it;
   simplify_worklist.erase(it);
   select_stack.push_back(n);
+
+  // std::cout << "simplify: DecrementDegree for adjacent(" << n << ")\n";
   for (Reg m : adjacent(n))
     decrement_degree(m);
 }
 
 void ColoringRegAllocator::decrement_degree(Reg m) {
+  // std::cout << "DecrementDegree: test " << m << " degree=" << degree[m] << '\n';
   if (degree[m]-- == K) {
     auto nodes = adjacent(m);
     nodes.insert(m);
     enable_moves(nodes);
-    spill_worklist.erase(m);
+    // std::cout << "DecrementDegree: remove " << m << " from spillWorklist\n";
+    
+    // NOTE: 这里按照原论文应该移除。实际效果需要进一步确认
+    // spill_worklist.erase(m);
     if (move_related(m))
       freeze_worklist.insert(m);
     else
@@ -176,7 +183,7 @@ void ColoringRegAllocator::enable_moves(const std::set<Reg> &nodes) {
     for (auto m : node_moves(n)) {
       if (active_moves.count(m)) {
         active_moves.erase(m);
-        worklist_moves.erase(m);
+        worklist_moves.insert(m);
       }
     }
   }
@@ -193,6 +200,10 @@ void ColoringRegAllocator::coalesce() {
 
   worklist_moves.erase(m);
   if (u == v) {
+    // printf("coalesced move+: ");
+    // m->emit(std::cout);
+    // printf("\n\n");
+
     coalesced_moves.insert(m);
     add_work_list(u);
   } else if (!v.is_virt() || adj_set.count({u, v})) {
@@ -211,6 +222,10 @@ void ColoringRegAllocator::coalesce() {
     }
 
     if (should_combine) {
+      // printf("coalesced move+: ");
+      // m->emit(std::cout);
+      // printf("\n\n");
+
       coalesced_moves.insert(m);
       combine(u, v);
       add_work_list(u);
@@ -228,6 +243,8 @@ void ColoringRegAllocator::add_work_list(Reg u) {
 }
 
 void ColoringRegAllocator::combine(Reg u, Reg v) {
+  // std::cout << "combine " << u << " & " << v << '\n';
+
   if (freeze_worklist.count(v))
     freeze_worklist.erase(v);
   else
@@ -241,6 +258,7 @@ void ColoringRegAllocator::combine(Reg u, Reg v) {
   for (auto m : move_list[v])
     moves.insert(m);
 
+  // std::cout << "combine: DecrementDegree for adjacent(" << v << ")\n";
   for (Reg t : adjacent(v)) {
     add_edge(t, u);
     decrement_degree(t);
@@ -275,8 +293,25 @@ void ColoringRegAllocator::freeze_moves(Reg u) {
 }
 
 void ColoringRegAllocator::select_spill() {
+  // printf(">>> select_spill candidates: ");
+  // int i = 0;
+  // for (auto it = spill_worklist.begin(); it != spill_worklist.end();
+  //      ++it, ++i) {
+  //   if (i)
+  //     printf(", ");
+  //   std::cout << *it;
+  // }
+  // printf("\n");
+
   // TODO: heuristic
-  Reg u = *spill_worklist.begin();
+  // NOTE: 现在只有这个heuristic勉强能用，实际上选择了编号最*小*的虚拟节点(负数的原因)
+  // 使用度数仍然会挂掉，问题没有太好的解决
+  Reg u = *std::prev(spill_worklist.end());
+  // Reg u = *std::max_element(
+  //     spill_worklist.begin(), spill_worklist.end(),
+  //     [this](const Reg &a, const Reg &b) { return degree[a] < degree[b]; });
+  
+  // std::cout << "<<< spill target: " << u << '\n';
   spill_worklist.erase(u);
   simplify_worklist.insert(u);
   freeze_moves(u);
@@ -287,6 +322,9 @@ std::map<Reg, int> ColoringRegAllocator::assign_colors() {
   while (!select_stack.empty()) {
     Reg n = select_stack.back();
     select_stack.pop_back();
+
+    if (!n.is_virt())
+      continue;
 
     std::set<int> avail_colors;
     if (is_gp_pass) {
@@ -300,7 +338,9 @@ std::map<Reg, int> ColoringRegAllocator::assign_colors() {
 
     for (Reg w : adj_list[n]) {
       Reg u = get_alias(w);
-      if (!u.is_virt() || colored_nodes.count(u))
+      if (!u.is_virt())
+        avail_colors.erase(u.id);
+      else if (colored_nodes.count(u))
         avail_colors.erase(color[u]);
     }
 
@@ -312,8 +352,16 @@ std::map<Reg, int> ColoringRegAllocator::assign_colors() {
     }
   }
 
-  for (Reg n : coalesced_nodes)
-    color[n] = color[get_alias(n)];
+  for (Reg n : coalesced_nodes) {
+    if (n.is_virt()) {
+      Reg u = get_alias(n);
+      color[n] = u.is_virt() ? color[u] : u.id;
+    }
+  }
+
+  // printf("color assignment: \n");
+  // for (auto &[r, id] : color)
+  //   std::cout << r << " --> " << id << '\n';
   return color;
 }
 
@@ -339,13 +387,8 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
             last_def = it;
             continue;
           }
-          if (use.count(r)) {
-            Reg tmp = f->new_reg(General);
-            insns.emplace(it, new LoadStack{tmp, obj, 0});
-            for (Reg *p : ins->reg_ptrs())
-              if (*p == r)
-                *p = tmp;
-          }
+          if (use.count(r))
+            insns.emplace(it, new LoadStack{r, obj, 0});
         }
 
         if (last_def != insns.end())
@@ -386,11 +429,29 @@ void ColoringRegAllocator::replace_virtual_regs(
   for (auto &bb : f->bbs) {
     for (auto &insn : bb->insns) {
       auto reg_ptrs = insn->reg_ptrs();
+
+      // auto ins = dynamic_cast<Move *>(insn.get());
+      // bool verbose = coalesced_moves.count(ins);
+      // if (verbose) {
+      //   printf("replacing coalesced move: ");
+      //   ins->emit(std::cout);
+      //   printf("\n\n");
+      // }
+
       for (auto p : reg_ptrs) {
         Reg old = *p;
         if (reg_map.count(old))
           *p = Reg{old.type, reg_map.find(old)->second};
+        // if (verbose) {
+        //   std::cout << old << " --> " << *p << '\n';
+        // }
       }
+
+      // if (verbose) {
+      //   printf("replaced coalesced move: ");
+      //   ins->emit(std::cout);
+      //   printf("\n\n");
+      // }
     }
   }
 }
@@ -400,7 +461,11 @@ void ColoringRegAllocator::do_reg_alloc(Function &func, bool is_gp_pass) {
 
   std::map<Reg, int> color;
   bool done = false;
+
+  // int i = 0;
   do {
+    // printf("function %s loop %d\n", f->name.c_str(), ++i);
+
     f->do_liveness_analysis();
     build();
     make_worklist();
@@ -419,6 +484,13 @@ void ColoringRegAllocator::do_reg_alloc(Function &func, bool is_gp_pass) {
 
     color = assign_colors();
     if (!spilled_nodes.empty()) {
+      // printf("%ld regs spilled\n", spilled_nodes.size());
+      // printf("spilled regs:\n");
+      // for (Reg n : spilled_nodes)
+      //   std::cout << ">>> " << n << '\n';
+      // printf("\n\n\n");
+      // f->emit(std::cout);
+
       add_spill_code(spilled_nodes);
       spilled_nodes.clear();
       colored_nodes.clear();
@@ -431,6 +503,9 @@ void ColoringRegAllocator::do_reg_alloc(Function &func, bool is_gp_pass) {
   } while (!done);
 
   replace_virtual_regs(color);
+
+  // printf("\n\nafter replacement\n\n");
+  // f->emit(std::cout);
 }
 
 } // namespace armv7

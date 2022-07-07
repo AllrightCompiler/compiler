@@ -14,7 +14,8 @@ namespace armv7 {
 inline bool is_power_of_2(int x) { return (x & (x - 1)) == 0; }
 
 template <typename Container = std::list<std::unique_ptr<Instruction>>>
-void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst, int imm) {
+void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
+                   int imm) {
   if (is_imm8m(imm))
     cont.emplace(it, new Move{dst, Operand2::from(imm)});
   else if (is_imm8m(~imm))
@@ -54,7 +55,11 @@ class ProgramTranslator {
     cmp_info.clear();
     lnot_info.clear();
 
+    // 新的入口块，用于prologue
     auto entry_bb = new armv7::BasicBlock;
+    entry_bb->label = ".entry." + dst_fn.name;
+    dst_fn.bbs.emplace_back(entry_bb);
+
     auto &params = src_fn.sig.param_types;
     int nr_params = params.size();
     int nr_gp_params, nr_fp_params;
@@ -64,13 +69,13 @@ class ProgramTranslator {
       auto type = ir_to_machine_reg_type(params[i].base_type);
       Reg dst = Reg{type, -(i + 1)};
       if (type != Fp) {
-        if (nr_gp_params++ < NR_GPRS) {
+        if (nr_gp_params++ < NR_ARG_GPRS) {
           entry_bb->push(new Move{dst, Operand2::from(Reg{type, r0 + i})});
         } else {
           stack_params.push_back(i);
         }
       } else {
-        if (nr_fp_params++ < NR_FPRS) {
+        if (nr_fp_params++ < NR_ARG_FPRS) {
           entry_bb->push(new Move{dst, Operand2::from(Reg{type, s0 + i})});
         } else {
           stack_params.push_back(i);
@@ -78,27 +83,15 @@ class ProgramTranslator {
       }
     }
 
-    int params_size = 0;
-    for (int i : stack_params) {
-      auto obj = new StackObject;
-      obj->size = 4; // 参数的size总是4
-      obj->offset = params_size;
-      params_size += obj->size;
-      dst_fn.param_objs.push_back(obj);
-      dst_fn.stack_objects.emplace_back(obj);
-
-      Reg dst = Reg::from(params[i].base_type, -(i + 1));
-      entry_bb->push(new LoadStack{dst, obj, 0});
-    }
-    entry_bb->label = ".entry." + dst_fn.name;
-    dst_fn.bbs.emplace_back(entry_bb);
-
     for (auto &ir_bb : src_fn.bbs) {
       auto bb = new armv7::BasicBlock;
       bb_map[ir_bb.get()] = bb;
       dst_fn.bbs.emplace_back(bb);
     }
     dst_fn.regs_used = src_fn.nr_regs;
+
+    auto prev_entry = bb_map[src_fn.bbs.begin()->get()];
+    BasicBlock::add_edge(entry_bb, prev_entry);
 
     int i = 1;
     auto dst_it = std::next(dst_fn.bbs.begin()); // skip entry
@@ -112,6 +105,20 @@ class ProgramTranslator {
       bb->label = dst.new_label();
       for (auto &ir_insn : (*src_it)->insns)
         translate_instruction(dst_fn, bb, ir_insn.get(), next_bb);
+    }
+
+    int params_size = 0;
+    for (int i : stack_params) {
+      auto obj = new StackObject;
+      obj->size = 4; // 参数的size总是4
+      obj->offset = params_size;
+      params_size += obj->size;
+      dst_fn.param_objs.push_back(obj);
+      dst_fn.stack_objects.emplace_back(obj);
+
+      Reg dst = Reg::from(params[i].base_type, -(i + 1));
+      // entry_bb->push(new LoadStack{dst, obj, 0});
+      dst_fn.defer_stack_param_load(dst, obj);
     }
   }
 
@@ -284,11 +291,11 @@ class ProgramTranslator {
       for (auto i : reg_args) {
         Reg arg_reg = Reg::from(call->args[i]);
         if (!arg_reg.is_float()) {
-          bb->push(new Move{Reg{arg_reg.type, r0 + nr_gp_args},
-                            Operand2::from(arg_reg)});
+          bb->push(
+              new Move{Reg{arg_reg.type, r0 + i}, Operand2::from(arg_reg)});
         } else {
           // TODO: move or explicit vmov?
-          bb->push(new Move{Reg{Fp, s0 + nr_fp_args}, Operand2::from(arg_reg)});
+          bb->push(new Move{Reg{Fp, s0 + i}, Operand2::from(arg_reg)});
         }
       }
       bb->push(new Call{call->func, nr_gp_args, nr_fp_args});
@@ -394,30 +401,33 @@ std::unique_ptr<Program> translate(const ir::Program &ir_program) {
   return std::unique_ptr<Program>(prog);
 }
 
+void Function::emit(std::ostream &os) {
+  os << name << ":\n";
+  for (auto &bb : bbs) {
+    // if (bb->insns.empty())
+    //   continue;
+
+    os << bb->label << ':';
+    if (bb->insns.empty()) {
+      next_instruction(os);
+      os << "nop";
+    }
+
+    for (auto &insn : bb->insns) {
+      next_instruction(os);
+      insn->emit(os);
+    }
+    os << "\n\n";
+  }
+}
+
 void Program::emit(std::ostream &os) {
   os << ".arch armv7ve\n";
   os << ".global main\n";
   os << ".section .text\n\n";
 
-  for (auto &[name, fn] : functions) {
-    os << name << ":\n";
-    for (auto &bb : fn.bbs) {
-      // if (bb->insns.empty())
-      //   continue;
-
-      os << bb->label << ':';
-      if (bb->insns.empty()) {
-        next_instruction(os);
-        os << "nop";
-      }
-
-      for (auto &insn : bb->insns) {
-        next_instruction(os);
-        insn->emit(os);
-      }
-      os << "\n\n";
-    }
-  }
+  for (auto &[_, f] : functions)
+    f.emit(os);
 }
 
 void emit_global_array(std::ostream &os, const std::shared_ptr<Var> &var) {
@@ -442,7 +452,8 @@ void emit_global_array(std::ostream &os, const std::shared_ptr<Var> &var) {
     os << "    .space " << (nr_elems - cur_index) * 4 << ", 0\n";
 }
 
-void emit_global_var(std::ostream &os, const std::string &name, const std::shared_ptr<Var> &var) {
+void emit_global_var(std::ostream &os, const std::string &name,
+                     const std::shared_ptr<Var> &var) {
   os << ".align\n";
   os << name << ":\n";
   if (var->type.is_array()) {
@@ -488,7 +499,7 @@ void emit_global(std::ostream &os, const ir::Program &ir_program) {
     }
 
     for (auto &[name, var] : glob_vars)
-      if (var->type.is_const) 
+      if (var->type.is_const)
         emit_global_var(os, name, var);
     os << "\n\n";
   }
@@ -579,6 +590,22 @@ bool Function::check_and_resolve_stack_store() {
     }
   }
   return ok;
+}
+
+void Function::defer_stack_param_load(Reg r, StackObject *obj) {
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end(); ++it) {
+      auto ins = it->get();
+      auto use = ins->use();
+      auto ptrs = ins->reg_ptrs();
+      if (use.count(r)) {
+        Reg tmp = new_reg(r.type);
+        ins->replace_reg(r, tmp);
+        insns.emplace(it, new LoadStack{tmp, obj, 0});
+      }
+    }
+  }
 }
 
 void Function::emit_prologue_epilogue() {
@@ -684,7 +711,8 @@ void Function::resolve_stack_ops(int frame_size) {
       auto ins = it->get();
       TypeCase(load_addr, LoadStackAddr *, ins) {
         Reg dst = load_addr->dst;
-        int offset = load_addr->offset + get_obj_offset(load_addr->base) - sp_offset;
+        int offset =
+            load_addr->offset + get_obj_offset(load_addr->base) - sp_offset;
         int imm = std::abs(offset);
         bool sub = offset < 0;
 
@@ -701,6 +729,7 @@ void Function::resolve_stack_ops(int frame_size) {
         Reg dst = load->dst;
         int offset = load->offset + get_obj_offset(load->base) - sp_offset;
         // TODO: 目标为浮点寄存器时可能无法生成有效的立即数偏移
+        // 也需要在寄存器分配循环中做检查
         if (dst.is_float()) {
           assert(is_valid_ldst_offset(offset));
           it->reset(new Load{dst, reg_sp, offset});
@@ -708,9 +737,16 @@ void Function::resolve_stack_ops(int frame_size) {
           if (is_valid_ldst_offset(offset)) {
             it->reset(new Load{dst, reg_sp, offset});
           } else {
-            assert(0);
-            // TODO: 提供ldr Rd, [R1, ±R2]的指令形式
-            // emit_load_imm(insns, it, dst, offset);
+            // Rd = loadimm #offset
+            // add Rd, sp, Rd
+            // ldr Rd, [Rd]
+
+            // TODO:
+            // Rd = loadimm #offset
+            // ldr Rd, [sp, Rd]
+            emit_load_imm(insns, it, dst, offset);
+            insns.emplace(it, new RType{RType::Add, dst, reg_sp, dst});
+            it->reset(new Load{dst, dst, 0});
           }
         }
       }
