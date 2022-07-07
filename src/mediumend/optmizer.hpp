@@ -32,11 +32,10 @@ inline void run_medium(ir::Program *prog) {
 
   // 纯函数可以用来做GVN和无用代码移除
   mark_pure_func(prog);
-  remove_uneffective_inst(prog);
-
-  // gvn_gcm(prog);
 
   function_inline(prog);
+  gvn_gcm(prog);
+  remove_uneffective_inst(prog);
 
   // 下面这两步和SCCP感觉是等效的？
   constant_propagation(prog);

@@ -94,6 +94,15 @@ Function::~Function() {
   }
 }
 
+void BasicBlock::insert_after_phi(Instruction *insn) {
+  auto it = insns.begin();
+  for (; it != insns.end(); it++) {
+    TypeCase(phi, ir::insns::Phi *, it->get()) {
+    } else break;
+  }
+  insns.emplace(it, insn);
+}
+
 namespace insns {
 
 ostream &write_reg(ostream &os, const Output &ins) {

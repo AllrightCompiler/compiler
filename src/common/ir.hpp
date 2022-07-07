@@ -61,6 +61,7 @@ struct BasicBlock {
 
   void push(Instruction *insn) { insns.emplace_back(insn); }
   void push_front(Instruction *insn) { insns.emplace_front(insn); }
+  void insert_after_phi(Instruction *insn);
 };
 
 struct FunctionSignature {
