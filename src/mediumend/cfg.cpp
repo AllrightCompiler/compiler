@@ -2,6 +2,7 @@
 #include "common/ir.hpp"
 
 #include <cassert>
+#include<iostream>
 
 namespace mediumend {
 
@@ -306,6 +307,55 @@ void CFG::compute_rpo() {
   rpo.clear();
   rpo_dfs(func->bbs.front().get());
   std::reverse(rpo.begin(), rpo.end());
+}
+
+void CFG::loop_dfs(BasicBlock *header) {
+  // dfs on dom tree
+  for (auto next : dom[header]) {
+    loop_dfs(next);
+  }
+  std::vector<BasicBlock *> bbs;
+  for (auto p : prev[header]) {
+    if (domby[p].count(header)) { // find back edge to header
+      bbs.emplace_back(p);
+    }
+  }
+  if (!bbs.empty()) { // form 1 loop ( TODO: nested loops with same header? )
+    Loop *new_loop = new Loop(header);
+    while (bbs.size() > 0) {
+      auto bb = bbs.back();
+      bbs.pop_back();
+      if (!loop.count(bb)) {
+        loop[bb] = new_loop;
+        if (bb != header) {
+          bbs.insert(bbs.end(), prev[bb].begin(), prev[bb].end());
+        }
+      } else {
+        Loop *inner_loop = loop[bb];
+        while (inner_loop->outer) inner_loop = inner_loop->outer;
+        if (inner_loop == new_loop) continue;
+        inner_loop->outer = new_loop;
+        bbs.insert(bbs.end(), prev[inner_loop->header].begin(), prev[inner_loop->header].end());
+      }
+    }
+  }
+}
+
+void get_loop_level(Loop *loop) {
+  if (loop->level != -1) return;
+  if (loop->outer == nullptr) loop->level = 1;
+  else {
+    get_loop_level(loop->outer);
+    loop->level = loop->outer->level + 1;
+  }
+}
+
+void CFG::loop_analysis() {
+  loop.clear();
+  loop_dfs(func->bbs.front().get());
+  for (auto pair : loop) {
+    get_loop_level(pair.second);
+  }
 }
 
 } // namespace mediumend

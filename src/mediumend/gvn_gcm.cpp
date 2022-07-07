@@ -301,6 +301,13 @@ void gvn_gcm(Function *f) {
       // TODO: more inst types
     }
   }
+
+  // Global Code Motion
+  
+  f->cfg->loop_analysis();
+
+  
+
 }
 
 void gvn_gcm(ir::Program *prog) {
