@@ -7,31 +7,41 @@ namespace mediumend {
 
 using std::vector;
 
-void compute_use_def_list(ir::Function *func){
-  auto &bbs = func->bbs;
-  for (auto &bb : bbs) {
-    auto &insns = bb->insns;
-    for (auto &inst : insns) {
-      inst.get()->add_use_def(func->use_list, func->def_list);
+void compute_use_def_list(ir::Program *prog){
+  for(auto &each : prog->functions){
+    auto func = &each.second;
+    func->def_list.clear();
+    func->use_list.clear();
+    auto &bbs = func->bbs;
+    for (auto &bb : bbs) {
+      auto &insns = bb->insns;
+      for (auto &inst : insns) {
+        inst.get()->add_use_def(func->use_list, func->def_list);
+      }
     }
   }
 }
 
-void mark_global_addr_reg(ir::Function *func){
-  auto &bbs = func->bbs;
-  for (auto &bb : bbs) {
-    auto &insns = bb->insns;
-    for (auto &inst : insns) {
-      TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
-        func->global_addr.insert(loadaddr->dst);
-      }
-      TypeCase(get_ptr, ir::insns::GetElementPtr *, inst.get()){
-        if(func->global_addr.count(get_ptr->base)){
-          func->global_addr.insert(get_ptr->dst);
+void mark_global_addr_reg(ir::Program *prog){
+  for(auto &each : prog->functions){
+    auto func = &each.second;
+    func->global_addr.clear();
+    auto &bbs = func->bbs;
+    for (auto &bb : bbs) {
+      auto &insns = bb->insns;
+      for (auto &inst : insns) {
+        TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
+          func->global_addr.insert(loadaddr->dst);
+        }
+        TypeCase(get_ptr, ir::insns::GetElementPtr *, inst.get()){
+          if(func->global_addr.count(get_ptr->base)){
+            func->global_addr.insert(get_ptr->dst);
+          }
         }
       }
     }
   }
+  
 }
 
 CFG::CFG(ir::Function *func) : func(func) {}
@@ -89,6 +99,15 @@ void CFG::remove_unreachable_bb() {
   }
   for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
     if (remove_set.find(iter->get()) != remove_set.end()) {
+      for(auto suc : succ[iter->get()]){
+        for(auto &inst : suc->insns){
+          TypeCase(phi, ir::insns::Phi *, inst.get()){
+            phi->incoming.erase(iter->get());
+          } else {
+            break;
+          }
+        }
+      }
       this->remove_bb_in_cfg(iter->get());
       iter = func->bbs.erase(iter);
     } else {

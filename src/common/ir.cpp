@@ -238,6 +238,8 @@ ostream &operator<<(ostream &os, const Instruction &insn) {
     os << *branch;
   } else TypeCase(phi, const Phi *, ins) {
     os << *phi;
+  } else {
+    assert(false);
   }
   return os;
 }

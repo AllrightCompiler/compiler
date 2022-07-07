@@ -22,12 +22,8 @@ ConstValue const_compute(ir::Instruction *inst, ConstValue op1, ConstValue op2);
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){
     func.second.cfg = new CFG(&func.second);
-    func.second.cfg->build();
-    func.second.cfg->remove_unreachable_bb();
-    compute_use_def_list(&func.second);
-    func.second.cfg->compute_dom();
-    mark_global_addr_reg(&func.second);
   }
+  compute_use_def_list(prog);
   main_global_var_to_local(prog);
   mem2reg(prog);
 
@@ -40,13 +36,7 @@ inline void run_medium(ir::Program *prog) {
 
   // gvn_gcm(prog);
 
-  // function_inline(prog);
-  // for (auto &func : prog->functions){
-  //   func.second.cfg->build();
-  //   func.second.cfg->remove_unreachable_bb();
-  //   compute_use_def_list(&func.second);
-  //   func.second.cfg->compute_dom();
-  // }
+  function_inline(prog);
 
   // 下面这两步和SCCP感觉是等效的？
   constant_propagation(prog);
@@ -56,7 +46,6 @@ inline void run_medium(ir::Program *prog) {
   // 移除无用指令后可能有的函数不会被调用，pure function / unreachable BB里的function
   remove_unused_function(prog);
   clean_useless_cf(prog);
-  
 }
 
 } // namespace mediumend

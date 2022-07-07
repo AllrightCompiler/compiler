@@ -14,6 +14,7 @@ using std::vector;
 using std::string;
 
 void main_global_var_to_local(ir::Program *prog){
+  mark_global_addr_reg(prog);
   unordered_set<string> used_vars; // 变量被除了main函数以外的函数使用过
   unordered_set<string> main_used_vars; // 变量被除了main函数以外的函数使用过
   for(auto &func : prog->functions){
@@ -72,6 +73,9 @@ void mem2reg(ir::Program *prog) {
   for(auto &each : prog->functions){
     Function* func = &each.second;
     CFG *cfg = func->cfg;
+    cfg->build();
+    cfg->remove_unreachable_bb();
+    cfg->compute_dom();
     auto df = cfg->compute_df();
     unordered_map<Reg, BasicBlock *> alloc_set;
     unordered_map<Reg, ScalarType> alloc2type;
@@ -210,9 +214,15 @@ void simplification_phi(ir::Program *prog){
             }
           }
           if(inst->incoming.size() == 1){
-            while(func->use_list[inst->dst].size()){
-              auto &uses = func->use_list[inst->dst].front();
-              uses->change_use(func->use_list, inst->dst, inst->incoming.begin()->second);
+            auto &dst_use_list = func->use_list[inst->dst];
+            while(dst_use_list.size()){
+              auto uses = dst_use_list.front();
+              auto dmy = dynamic_cast<ir::Instruction *>(uses);
+              if(!dmy){
+                assert(false);
+              }
+              auto reg = inst->incoming.begin()->second;
+              uses->change_use(func->use_list, inst->dst, reg);
             }
             iter = bb->insns.erase(iter);
             continue;

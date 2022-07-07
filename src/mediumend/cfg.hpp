@@ -9,9 +9,9 @@ using std::unordered_map;
 using std::unordered_set;
 using std::vector;
 
-void compute_use_def_list(ir::Function *);
+void compute_use_def_list(ir::Program *);
 
-void mark_global_addr_reg(ir::Function *);
+void mark_global_addr_reg(ir::Program *);
 
 class CFG{
 private:

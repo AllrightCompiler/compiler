@@ -207,6 +207,10 @@ void IrGen::visit_function(const ast::Function &node) {
     emit(new insns::Call{new_reg(String), ".init", {}});
 
   visit_statement(*node.body());
+  auto last_inst = dynamic_cast<ir::insns::Return *>(cur_func->bbs.back()->insns.back().get());
+  if(!last_inst){
+    emit(new insns::Return{std::nullopt});
+  }
   cur_func->nr_regs = local_regs;
   cur_func = nullptr;
   cur_bb = init_bb;

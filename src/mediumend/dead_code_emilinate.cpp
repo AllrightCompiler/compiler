@@ -193,6 +193,9 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
   auto &succ = func->cfg->succ;
   auto &prev = func->cfg->prev;
   vector<BasicBlock *> stack;
+  if(func->bbs.empty()){
+    return false;
+  }
   stack.push_back(func->bbs.front().get());
   vector<BasicBlock *> order;
   visit.insert(func->bbs.front().get());
@@ -280,6 +283,8 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
                     phi->incoming[bb] = phi->incoming[target];
                     phi->incoming.erase(target);
                   }
+                } else {
+                  break;
                 }
               }
             }
@@ -318,5 +323,8 @@ void clean_useless_cf(ir::Program *prog){
   }
 }
 
+void eliminate_useless_store(ir::Program *prog){
+
+}
 
 }
