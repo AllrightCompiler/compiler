@@ -10,30 +10,32 @@ namespace armv7 {
 std::set<Reg> ColoringRegAllocator::adjacent(Reg n) const {
   // adjList[n] \ (selectStack ∪ coalescedNodes)
   std::set<Reg> res;
-  auto &nodes = adj_list.find(n)->second;
+  auto it = adj_list.find(n);
+  if (it == adj_list.end())
+    return {};
+  auto &nodes = it->second;
   auto pred = [this](Reg r) {
     return !coalesced_nodes.count(r) &&
            (std::find(select_stack.begin(), select_stack.end(), r) ==
             select_stack.end());
   };
-  // std::copy_if(nodes.begin(), nodes.end(), res.begin(), pred);
-  for (Reg n : nodes)
-    if (pred(n))
-      res.insert(n);
+  std::copy_if(nodes.begin(), nodes.end(), std::inserter(res, res.begin()),
+               pred);
   return res;
 }
 
 std::set<Move *> ColoringRegAllocator::node_moves(Reg n) const {
   // moveList[n] ∩ (activeMoves ∪ worklistMoves)
   std::set<Move *> res;
-  auto &moves = move_list.find(n)->second;
+  auto it = move_list.find(n);
+  if (it == move_list.end())
+    return {};
+  auto &moves = it->second;
   auto pred = [this](Move *m) {
     return active_moves.count(m) || worklist_moves.count(m);
   };
-  // std::copy_if(moves.begin(), moves.end(), res.begin(), pred);
-  for (auto m : moves)
-    if (pred(m))
-      res.insert(m);
+  std::copy_if(moves.begin(), moves.end(), std::inserter(res, res.begin()),
+               pred);
   return res;
 }
 
@@ -86,7 +88,7 @@ void ColoringRegAllocator::build() {
   for (int i = 0; i <= 12; ++i)
     degree[Reg{General, i}] = inf;
   degree[Reg{General, lr}] = inf;
-    
+
   for (int i = 0; i < NR_FPRS; ++i)
     degree[Reg{Fp, i}] = inf;
 
@@ -140,7 +142,8 @@ void ColoringRegAllocator::make_worklist() {
   }
 
   for (Reg n : vregs) {
-    // std::cout << "node " << n << " degree=" << degree[n] << " K=" << K << '\n';
+    // std::cout << "node " << n << " degree=" << degree[n] << " K=" << K <<
+    // '\n';
     if (degree[n] >= K)
       spill_worklist.insert(n);
     else if (move_related(n))
@@ -162,13 +165,14 @@ void ColoringRegAllocator::simplify() {
 }
 
 void ColoringRegAllocator::decrement_degree(Reg m) {
-  // std::cout << "DecrementDegree: test " << m << " degree=" << degree[m] << '\n';
+  // std::cout << "DecrementDegree: test " << m << " degree=" << degree[m] <<
+  // '\n';
   if (degree[m]-- == K) {
     auto nodes = adjacent(m);
     nodes.insert(m);
     enable_moves(nodes);
     // std::cout << "DecrementDegree: remove " << m << " from spillWorklist\n";
-    
+
     // NOTE: 这里按照原论文应该移除。实际效果需要进一步确认
     // spill_worklist.erase(m);
     if (move_related(m))
@@ -304,13 +308,14 @@ void ColoringRegAllocator::select_spill() {
   // printf("\n");
 
   // TODO: heuristic
-  // NOTE: 现在只有这个heuristic勉强能用，实际上选择了编号最*小*的虚拟节点(负数的原因)
+  // NOTE:
+  // 现在只有这个heuristic勉强能用，实际上选择了编号最*小*的虚拟节点(负数的原因)
   // 使用度数仍然会挂掉，问题没有太好的解决
   Reg u = *std::prev(spill_worklist.end());
   // Reg u = *std::max_element(
   //     spill_worklist.begin(), spill_worklist.end(),
   //     [this](const Reg &a, const Reg &b) { return degree[a] < degree[b]; });
-  
+
   // std::cout << "<<< spill target: " << u << '\n';
   spill_worklist.erase(u);
   simplify_worklist.insert(u);
