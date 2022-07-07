@@ -54,6 +54,11 @@ public:
         visit.erase(bb);
     }
 
+    inline int get_loop_level(BasicBlock *bb) const {
+        if (!loop.count(bb)) return 0;
+        return loop.at(bb)->level;
+    }
+
     void build();
     
     void remove_unreachable_bb();

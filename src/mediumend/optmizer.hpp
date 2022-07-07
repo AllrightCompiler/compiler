@@ -38,6 +38,7 @@ inline void run_medium(ir::Program *prog) {
   remove_uneffective_inst(prog);
 
   gvn_gcm(prog);
+  remove_uneffective_inst(prog);
 
   // 下面这两步和SCCP感觉是等效的？
   constant_propagation(prog);

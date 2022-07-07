@@ -12,6 +12,8 @@ using ir::BasicBlock;
 using ir::Reg;
 using ir::Instruction;
 using std::list;
+using std::unique_ptr;
+using mediumend::CFG;
 
 // try to swap imm to src2 (only for ops with commutativity)
 void swapBinaryOprands(ir::insns::Binary *binary) {
@@ -222,6 +224,119 @@ void copy_propagation(unordered_map<Reg, list<Instruction *>> &use_list, Reg dst
   }
 }
 
+// Least Common Ancestor (on dom tree)
+BasicBlock *find_lca(const unordered_map<BasicBlock *, int> &domlevel,
+                    const unordered_map<BasicBlock *, BasicBlock *> &idom,
+                    BasicBlock *a, BasicBlock *b) {
+  if (a == nullptr) return b;
+  while (domlevel.at(a) > domlevel.at(b)) a = idom.at(a);
+  while (domlevel.at(b) > domlevel.at(a)) b = idom.at(b);
+  while (a != b) {
+    a = idom.at(a);
+    b = idom.at(b);
+  }
+  return a;
+}
+
+BasicBlock *find_bb_of_inst(const list<unique_ptr<BasicBlock>> &bbs, Instruction *inst) {
+  for (auto &bb : bbs) {
+    for (auto it = bb->insns.begin(); it != bb->insns.end(); it++) {
+      if (it->get() == inst) return bb.get();
+    }
+  }
+  assert(false);
+}
+
+// 3. Schedule (select basic blocks for) all instructions
+// early, based on existing control and data depend-
+// ences. We place instructions in the first block
+// where they are dominated by their inputs. This
+// schedule has a lot of speculative code, with ex-
+// tremely long live ranges.
+void schedule_early(unordered_set<ir::Instruction *> &visited,
+                    unordered_map<ir::Instruction *, BasicBlock *> &placement,
+                    list<unique_ptr<BasicBlock>> &bbs,
+                    const unordered_map<Reg, Instruction *> &def_list,
+                    const unordered_map<BasicBlock *, int> &domlevel,
+                    ir::BasicBlock *root_bb, ir::Instruction *inst) {
+  if (visited.count(inst)) return;
+  visited.insert(inst);
+  TypeCase(binary, ir::insns::Binary *, inst) {
+    placement[binary] = root_bb;
+    ir::Instruction *i1 = def_list.at(binary->src1);
+    ir::Instruction *i2 = def_list.at(binary->src2);
+    schedule_early(visited, placement, bbs, def_list, domlevel, root_bb, i1);
+    schedule_early(visited, placement, bbs, def_list, domlevel, root_bb, i2);
+    if (domlevel.at(placement[i1]) > domlevel.at(placement[binary])) {
+      placement[binary] = placement[i1];
+    }
+    if (domlevel.at(placement[i2]) > domlevel.at(placement[binary])) {
+      placement[binary] = placement[i2];
+    }
+  } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
+    placement[loadimm] = root_bb;
+  } else {
+    placement[inst] = find_bb_of_inst(bbs, inst);
+  }
+  // TODO: more inst types
+}
+
+// 4. Schedule all instructions late. We place instruc-
+// tions in the last block where they dominate all
+// their uses.
+// 5. Between the early schedule and the late schedule
+// we have a safe range to place computations. We
+// choose the block that is in the shallowest loop nest
+// possible, and then is as control dependent as possible.
+void schedule_late(unordered_set<ir::Instruction *> &visited,
+                  unordered_map<ir::Instruction *, BasicBlock *> &placement,
+                  const CFG *cfg,
+                  list<unique_ptr<BasicBlock>> &bbs,
+                  const unordered_map<Reg, list<Instruction *>> &use_list,
+                  ir::Instruction *inst) {
+  if (visited.count(inst)) return;
+  visited.insert(inst);
+  TypeCase(output, ir::insns::Output *, inst) {
+    // Find latest legal block for instruction
+    BasicBlock *lca = nullptr, *use;
+    for (auto i : use_list.at(output->dst)) {
+      schedule_late(visited, placement, cfg, bbs, use_list, i);
+      TypeCase(phi, ir::insns::Phi *, i) {
+        for (auto pair : phi->incoming) {
+          if (pair.second == output->dst) {
+            use = pair.first;
+          }
+        }
+      } else {
+        use = placement[i];
+      }
+      lca = find_lca(cfg->domlevel, cfg->idom, lca, use);
+    }
+    // Pick final position
+    if (lca == nullptr) return; // no use
+    BasicBlock *best = lca;
+    if (lca != placement[inst]) {
+      do {
+        lca = cfg->idom.at(lca);
+        if (cfg->get_loop_level(lca) < cfg->get_loop_level(best)) {
+          best = lca;
+        }
+      } while (lca != placement[inst]);
+    }
+    auto bb = find_bb_of_inst(bbs, inst);
+    auto it = bb->insns.begin();
+    while (it != bb->insns.end()) {
+      if (it->get() == inst) break;
+      it++;
+    }
+    assert(it != bb->insns.end());
+    it->release(); // important! otherwise inst will be auto deleted
+    bb->insns.erase(it);
+    best->insert_after_phi(inst);
+    placement[inst] = best;
+  }
+}
+
 void gvn_gcm(Function *f) {
   // Global Value Numbering
 
@@ -303,11 +418,22 @@ void gvn_gcm(Function *f) {
   }
 
   // Global Code Motion
-  
+
   f->cfg->loop_analysis();
-
   
-
+  unordered_set<ir::Instruction *> visited;
+  unordered_map<ir::Instruction *, BasicBlock *> placement;
+  for (auto &bb : f->bbs) {
+    for (auto &insn : bb->insns) {
+      schedule_early(visited, placement, f->bbs, f->def_list, f->cfg->domlevel, f->bbs.front().get(), insn.get());
+    }
+  }
+  visited.clear();
+  for (auto &bb : f->bbs) {
+    for (auto &insn : bb->insns) {
+      schedule_late(visited, placement, f->cfg, f->bbs, f->use_list, insn.get());
+    }
+  }
 }
 
 void gvn_gcm(ir::Program *prog) {

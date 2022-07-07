@@ -341,11 +341,11 @@ void CFG::loop_dfs(BasicBlock *header) {
   }
 }
 
-void get_loop_level(Loop *loop) {
+void calc_loop_level(Loop *loop) {
   if (loop->level != -1) return;
   if (loop->outer == nullptr) loop->level = 1;
   else {
-    get_loop_level(loop->outer);
+    calc_loop_level(loop->outer);
     loop->level = loop->outer->level + 1;
   }
 }
@@ -354,7 +354,7 @@ void CFG::loop_analysis() {
   loop.clear();
   loop_dfs(func->bbs.front().get());
   for (auto pair : loop) {
-    get_loop_level(pair.second);
+    calc_loop_level(pair.second);
   }
 }
 
