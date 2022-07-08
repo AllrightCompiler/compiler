@@ -224,6 +224,9 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     TypeCase(jmp, ir::insns::Jump *, inst.get()){
       auto target = jmp->target;
       if(bb->insns.size() == 1) {
+        if(auto phi = dynamic_cast<ir::insns::Phi *>(target->insns.front().get())){
+          continue;
+        }
         for(auto &pre : prev[bb]){
           auto &last = pre->insns.back();
           TypeCase(br, ir::insns::Branch *, last.get()){
