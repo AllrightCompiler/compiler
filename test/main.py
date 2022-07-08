@@ -98,7 +98,9 @@ def test(config: Config, testcase: str) -> bool:
                 return False
             if proc.returncode != answer_exitcode \
                     or open(output).read().splitlines() != answer_content:
-                print('.', end='', flush=True)
+                print('\033[0;31mWrong Answer\033[0m')
+                return False
+            print('.', end='', flush=True)
             t = get_time(time)
             if t is None:
                 timing = False
