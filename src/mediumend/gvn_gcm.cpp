@@ -218,7 +218,7 @@ Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
 // reg_dst = reg_src
 // change all reg_dst -> reg_src
 void copy_propagation(unordered_map<Reg, list<Instruction *>> &use_list, Reg dst, Reg src) {
-  while (use_list.size() > 0) {
+  while (use_list[dst].size() > 0) {
     auto inst = use_list[dst].front();
     inst->change_use(use_list, dst, src);
   }
