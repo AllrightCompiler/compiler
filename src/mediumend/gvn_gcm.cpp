@@ -420,19 +420,21 @@ void gvn_gcm(Function *f) {
   // Global Code Motion
 
   f->cfg->loop_analysis();
+
+  vector<ir::Instruction *> all_insts;
+
+  for (auto &bb : f->bbs)
+    for (auto &insn : bb->insns)
+      all_insts.push_back(insn.get());
   
   unordered_set<ir::Instruction *> visited;
   unordered_map<ir::Instruction *, BasicBlock *> placement;
-  for (auto &bb : f->bbs) {
-    for (auto &insn : bb->insns) {
-      schedule_early(visited, placement, f->bbs, f->def_list, f->cfg->domlevel, f->bbs.front().get(), insn.get());
-    }
+  for (auto inst : all_insts) {
+    schedule_early(visited, placement, f->bbs, f->def_list, f->cfg->domlevel, f->bbs.front().get(), inst);
   }
   visited.clear();
-  for (auto &bb : f->bbs) {
-    for (auto &insn : bb->insns) {
-      schedule_late(visited, placement, f->cfg, f->bbs, f->use_list, insn.get());
-    }
+  for (auto inst : all_insts) {
+    schedule_late(visited, placement, f->cfg, f->bbs, f->use_list, inst);
   }
 }
 
