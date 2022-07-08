@@ -59,10 +59,29 @@ struct Instruction : Display {
   virtual void change_use(Reg , Reg ) {};
 };
 
+class Loop {
+public:
+    Loop *outer;
+    BasicBlock *header;
+    int level;
+    Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1) {}
+};
+
 struct BasicBlock {
   Function *func;
   string label;
   list<unique_ptr<Instruction>> insns;
+  // edge in cfg
+  unordered_set<BasicBlock *> prev, succ;
+  // edge of dom tree
+  unordered_set<BasicBlock *> dom;
+  // edge of dom tree (reverse)
+  BasicBlock *idom;
+  // dom by (recursive)
+  unordered_set<BasicBlock *> domby;
+  Loop *loop;
+  bool visit;
+  int domlevel;
 
   // modify use-def
   void push_back(Instruction *insn);
@@ -74,7 +93,13 @@ struct BasicBlock {
   bool remove(Instruction *insn);
   // modify use-def
   std::vector<Instruction *> remove_if(std::function<bool(Instruction *)> f);
+  int get_loop_level() const { return !loop ? 0 : loop->level; }
+  void rpo_dfs(vector<BasicBlock *> &rpo);
+  void loop_dfs();
+  void clear_visit() { visit = false; }
 };
+
+void calc_loop_level(Loop *loop);
 
 struct FunctionSignature {
   optional<ScalarType> ret_type;
@@ -98,6 +123,24 @@ struct Function {
     return ir::Reg{t, ++nr_regs};
   }
   ~Function();
+  void clear_visit(){
+    for (auto &bb : bbs) {
+      bb->clear_visit();
+    }
+  }
+  void clear_graph(){
+    for (auto &bb : bbs) {
+      bb->prev.clear();
+      bb->succ.clear();
+    }
+  }
+  void clear_dom(){
+    for (auto &bb : bbs) {
+      bb->dom.clear();
+      bb->domby.clear();
+      bb->idom = nullptr;
+    }
+  }
 };
 
 struct LibFunction {

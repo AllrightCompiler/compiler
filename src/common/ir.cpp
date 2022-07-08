@@ -329,6 +329,60 @@ ostream &operator<<(ostream &os, const Program &p) {
     os << f;
   return os;
 }
+
+void BasicBlock::rpo_dfs(vector<BasicBlock *> &rpo) {
+  if (visit) return;
+  visit = true;
+  for (auto next : succ) {
+    next->rpo_dfs(rpo);
+  }
+  rpo.emplace_back(this);
+}
+
+void BasicBlock::loop_dfs() {
+  // dfs on dom tree
+  for (auto next : dom) {
+    next->loop_dfs();
+  }
+  std::vector<BasicBlock *> bbs;
+  for (auto p : prev) {
+    if (p->domby.count(this)) { // find back edge to header
+      bbs.emplace_back(p);
+    }
+  }
+  if (!bbs.empty()) { // form 1 loop ( TODO: nested loops with same header? )
+    Loop *new_loop = new Loop(this);
+    while (bbs.size() > 0) {
+      auto bb = bbs.back();
+      bbs.pop_back();
+      if (!bb->loop) {
+        bb->loop = new_loop;
+        if (bb != this) {
+          bbs.insert(bbs.end(), bb->prev.begin(), bb->prev.end());
+        }
+      } else {
+        Loop *inner_loop = bb->loop;
+        while (inner_loop->outer) inner_loop = inner_loop->outer;
+        if (inner_loop == new_loop) continue;
+        inner_loop->outer = new_loop;
+        bbs.insert(bbs.end(), inner_loop->header->prev.begin(), inner_loop->header->prev.end());
+      }
+    }
+  }
+}
+
+void calc_loop_level(Loop *loop) {
+  if(!loop){
+    return;
+  }
+  if (loop->level != -1) return;
+  if (loop->outer == nullptr) loop->level = 1;
+  else {
+    calc_loop_level(loop->outer);
+    loop->level = loop->outer->level + 1;
+  }
+}
+
 namespace insns {
 
 void Output::add_use_def(){
@@ -553,7 +607,6 @@ void GetElementPtr::change_use(Reg old_reg, Reg new_reg){
     }
   }
 }
-
 
 }
 } // namespace ir

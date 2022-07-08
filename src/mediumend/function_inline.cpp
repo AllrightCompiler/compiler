@@ -46,11 +46,9 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     auto ret_bb = new BasicBlock();
     ret_bb->label = name + "_ret";
     ret_bb->func = caller;
-    auto &succ = caller->cfg->succ;
-    auto &prev = caller->cfg->prev;
-    for(auto suc : succ[inst_bb]){
-      prev[suc].erase(inst_bb);
-      prev[suc].insert(ret_bb);
+    for(auto suc : inst_bb->succ){
+      suc->prev.erase(inst_bb);
+      suc->prev.insert(ret_bb);
       for(auto &ins : suc->insns){
         TypeCase(phi, ir::insns::Phi *, ins.get()){
           for(auto &[bb, reg] : phi->incoming){
@@ -91,6 +89,9 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         inst_iter++;
         break;
       }
+    }
+    for (auto it = inst_iter; it != inst_bb->insns.end(); it++) {
+      it->get()->bb = ret_bb;
     }
     ret_bb->insns.splice(ret_bb->insns.end(), inst_bb->insns, inst_iter, inst_bb->insns.end());
     for(auto each : callee->def_list){

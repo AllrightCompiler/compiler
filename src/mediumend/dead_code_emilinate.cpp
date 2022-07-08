@@ -183,26 +183,23 @@ void remove_uneffective_inst(ir::Program *prog){
 
 // Clean Alogritm: Engineering a Compiler, Chap 10.2
 bool eliminate_useless_cf_one_pass(ir::Function *func){
-  func->cfg->clear_visit();
-  auto &visit = func->cfg->visit;
-  auto &succ = func->cfg->succ;
-  auto &prev = func->cfg->prev;
+  func->clear_visit();
   vector<BasicBlock *> stack;
   if(func->bbs.empty()){
     return false;
   }
   stack.push_back(func->bbs.front().get());
   vector<BasicBlock *> order;
-  visit.insert(func->bbs.front().get());
+  func->bbs.front().get()->visit = true;
   while(stack.size()){
     auto bb = stack.back();
     stack.pop_back();
     order.push_back(bb);
-    auto &succ_bb = succ[bb];
+    auto &succ_bb = bb->succ;
     for(auto next : succ_bb){
-      if(!visit.count(next)){
+      if(!next->visit){
         stack.push_back(next);
-        visit.insert(next);
+        next->visit = true;
       }
     }
   }
@@ -222,7 +219,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
         if(auto phi = dynamic_cast<ir::insns::Phi *>(target->insns.front().get())){
           continue;
         }
-        for(auto &pre : prev[bb]){
+        for(auto &pre : bb->prev){
           auto &last = pre->insns.back();
           TypeCase(br, ir::insns::Branch *, last.get()){
             if(br->true_target == bb){
@@ -237,10 +234,10 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
               j->target = target;
             }
           }
-          succ[pre].erase(bb);
-          succ[pre].insert(target);
-          prev[target].erase(bb);
-          prev[target].insert(pre);
+          pre->succ.erase(bb);
+          pre->succ.insert(target);
+          target->prev.erase(bb);
+          target->prev.insert(pre);
           for(auto &ins : target->insns){
             TypeCase(phi, ir::insns::Phi *, ins.get()){
               if(phi->incoming.count(bb)){
@@ -267,14 +264,14 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
         ret = true;
         continue;
       }
-      if(prev[target].size() == 1){
-        succ[bb].erase(target);
-        succ[bb].insert(succ[target].begin(), succ[target].end());
+      if(target->prev.size() == 1){
+        bb->succ.erase(target);
+        bb->succ.insert(target->succ.begin(), target->succ.end());
         bb->insns.pop_back();
         bb->insns.splice(bb->insns.end(), target->insns);
         for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
           if(iter->get() == target){
-            for(auto suc : succ[target]){
+            for(auto suc : target->succ){
               for(auto &inst : suc->insns){
                 TypeCase(phi, ir::insns::Phi *, inst.get()){
                   if(phi->incoming.count(target)){
@@ -290,18 +287,18 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
             break;
           }
         }
-        succ[target].clear();
+        target->succ.clear();
         ret = true;
         continue;
       }
       if(target->insns.size() == 1){
         TypeCase(br, ir::insns::Branch *, target->insns.back().get()){
-          succ[bb].erase(target);
-          prev[target].erase(bb);
-          succ[bb].insert(br->true_target);
-          succ[bb].insert(br->false_target);
-          prev[br->true_target].insert(bb);
-          prev[br->false_target].insert(bb);
+          bb->succ.erase(target);
+          target->prev.erase(bb);
+          bb->succ.insert(br->true_target);
+          bb->succ.insert(br->false_target);
+          br->true_target->prev.insert(bb);
+          br->false_target->prev.insert(bb);
           bb->insns.back().reset(new ir::insns::Branch(br->val, br->true_target, br->false_target));
           ret = true;
           continue;

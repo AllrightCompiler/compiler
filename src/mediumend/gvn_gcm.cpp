@@ -225,15 +225,13 @@ void copy_propagation(unordered_map<Reg, list<Instruction *> > &use_list, Reg ds
 }
 
 // Least Common Ancestor (on dom tree)
-BasicBlock *find_lca(const unordered_map<BasicBlock *, int> &domlevel,
-                    const unordered_map<BasicBlock *, BasicBlock *> &idom,
-                    BasicBlock *a, BasicBlock *b) {
+BasicBlock *find_lca(BasicBlock *a, BasicBlock *b) {
   if (a == nullptr) return b;
-  while (domlevel.at(a) > domlevel.at(b)) a = idom.at(a);
-  while (domlevel.at(b) > domlevel.at(a)) b = idom.at(b);
+  while (a->domlevel > b->domlevel) a = a->idom;
+  while (b->domlevel > a->domlevel) b = b->idom;
   while (a != b) {
-    a = idom.at(a);
-    b = idom.at(b);
+    a = a->idom;
+    b = b->idom;
   }
   return a;
 }
@@ -248,7 +246,6 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
                     unordered_map<ir::Instruction *, BasicBlock *> &placement,
                     list<unique_ptr<BasicBlock>> &bbs,
                     const unordered_map<Reg, Instruction *> &def_list,
-                    const unordered_map<BasicBlock *, int> &domlevel,
                     ir::BasicBlock *root_bb, ir::Instruction *inst) {
   if (visited.count(inst)) return;
   visited.insert(inst);
@@ -256,12 +253,12 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     placement[binary] = root_bb;
     ir::Instruction *i1 = def_list.at(binary->src1);
     ir::Instruction *i2 = def_list.at(binary->src2);
-    schedule_early(visited, placement, bbs, def_list, domlevel, root_bb, i1);
-    schedule_early(visited, placement, bbs, def_list, domlevel, root_bb, i2);
-    if (domlevel.at(placement[i1]) > domlevel.at(placement[binary])) {
+    schedule_early(visited, placement, bbs, def_list, root_bb, i1);
+    schedule_early(visited, placement, bbs, def_list, root_bb, i2);
+    if (placement[i1]->domlevel > placement[binary]->domlevel) {
       placement[binary] = placement[i1];
     }
-    if (domlevel.at(placement[i2]) > domlevel.at(placement[binary])) {
+    if (placement[i2]->domlevel > placement[binary]->domlevel) {
       placement[binary] = placement[i2];
     }
   } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
@@ -292,26 +289,29 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
   } else TypeCase(output, ir::insns::Output *, inst) {
     // Find latest legal block for instruction
     BasicBlock *lca = nullptr, *use;
-    for (auto i : use_list.at(output->dst)) {
-      schedule_late(visited, placement, cfg, bbs, use_list, i);
-      TypeCase(phi, ir::insns::Phi *, i) {
-        for (auto pair : phi->incoming) {
-          if (pair.second == output->dst) {
-            use = pair.first;
+    if(use_list.count(output->dst)) {
+      for (auto i : use_list.at(output->dst)) {
+        schedule_late(visited, placement, cfg, bbs, use_list, i);
+        TypeCase(phi, ir::insns::Phi *, i) {
+          for (auto pair : phi->incoming) {
+            if (pair.second == output->dst) {
+              use = pair.first;
+            }
           }
+        } else {
+          use = placement[i];
         }
-      } else {
-        use = placement[i];
+        lca = find_lca(lca, use);
       }
-      lca = find_lca(cfg->domlevel, cfg->idom, lca, use);
     }
+    
     // Pick final position
     if (lca == nullptr) return; // no use
     BasicBlock *best = lca;
     if (lca != placement[inst]) {
       do {
-        lca = cfg->idom.at(lca);
-        if (cfg->get_loop_level(lca) < cfg->get_loop_level(best)) {
+        lca = lca->idom;
+        if (lca->get_loop_level() < best->get_loop_level()) {
           best = lca;
         }
       } while (lca != placement[inst]);
@@ -415,7 +415,7 @@ void gvn_gcm(Function *f) {
   unordered_set<ir::Instruction *> visited;
   unordered_map<ir::Instruction *, BasicBlock *> placement;
   for (auto inst : all_insts) {
-    schedule_early(visited, placement, f->bbs, f->def_list, f->cfg->domlevel, f->bbs.front().get(), inst);
+    schedule_early(visited, placement, f->bbs, f->def_list, f->bbs.front().get(), inst);
   }
   visited.clear();
   for (auto inst : all_insts) {
