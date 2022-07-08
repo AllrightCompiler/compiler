@@ -310,7 +310,7 @@ antlrcpp::Any
 AstVisitor::visitUnaryAdd(SysYParser::UnaryAddContext *const ctx) {
   auto const operand = ctx->unaryExp()->accept(this).as<Expression *>();
   auto const ret =
-      new UnaryExpr(UnaryOp::Not, std::unique_ptr<Expression>(operand));
+      new UnaryExpr(UnaryOp::Add, std::unique_ptr<Expression>(operand));
   return static_cast<Expression *>(ret);
 }
 
