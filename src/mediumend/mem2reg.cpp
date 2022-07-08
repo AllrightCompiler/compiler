@@ -192,8 +192,13 @@ void mem2reg(ir::Program *prog) {
         }
         for(auto &inst : succ->insns){
           TypeCase(phi, ir::insns::Phi *, inst.get()) {
-            if(alloc_map[bb].count(phi2mem[phi])){
-              phi->incoming[bb] = alloc_map[bb][phi2mem[phi]];
+            BasicBlock *pos = bb;
+            Reg reg = phi2mem[phi];
+            while(pos && !alloc_map[pos].count(reg)){
+              pos = cfg->idom[pos];
+            }
+            if(pos){
+              phi->incoming[bb] = alloc_map[pos][phi2mem[phi]];
             }
           } else {
             break;
