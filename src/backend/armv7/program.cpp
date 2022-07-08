@@ -198,17 +198,17 @@ class ProgramTranslator {
         }
         break;
       case UnaryOp::Not: {
-        // 根据语法特性，!expr将不会参与常规计算，暂不生成实际代码而只生成标记
-        // if (!dst.is_float()) {
-        //   // bb->push(new Move{dst, Operand2::from(0)});
-        //   // bb->push(new Compare{src, Operand2::from(0)});
-        //   // bb->push(ExCond::Eq, new Move{dst, Operand2::from(1)});
-        //   // alternative: clz dst, src; lsr dst, dst, #5
-        //   bb->push(new CountLeadingZero{dst, src});
-        //   bb->push(new Move{dst, Operand2::from(LSR, dst, 5)});
-        // } else {
-        //   // TODO: emit vcmp vmrs etc.
-        // }
+        if (!dst.is_float()) {
+          // bb->push(new Move{dst, Operand2::from(0)});
+          // bb->push(new Compare{src, Operand2::from(0)});
+          // bb->push(ExCond::Eq, new Move{dst, Operand2::from(1)});
+          // alternative: clz dst, src; lsr dst, dst, #5
+          bb->push(new CountLeadingZero{dst, src});
+          bb->push(new Move{dst, Operand2::from(LSR, dst, 5)});
+        } else {
+          // TODO: emit vcmp vmrs etc.
+        }
+
         if (cmp_info.count(src)) {
           auto &cmp = cmp_info[src];
           cmp_info[dst].cond = logical_not(cmp.cond);
