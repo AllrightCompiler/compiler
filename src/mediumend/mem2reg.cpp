@@ -81,7 +81,7 @@ void mem2reg(ir::Program *prog) {
     unordered_map<Reg, ScalarType> alloc2type;
     unordered_map<Reg, vector<BasicBlock *>> defs;
     unordered_map<Reg, vector<Reg>> defs_reg;
-    unordered_map<Reg, Reg> alloc_map;
+    unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
     unordered_map<ir::insns::Phi *, Reg> phi2mem;
 
     for (auto &bb : func->bbs) {
@@ -152,11 +152,20 @@ void mem2reg(ir::Program *prog) {
         }
         TypeCase(inst, ir::insns::Load *, iter->get()) {
           if(alloc_set.find(inst->addr) != alloc_set.end()) {
-            assert(alloc_map.find(inst->addr) != alloc_map.end());
+            BasicBlock *pos = bb;
+            while(pos && !alloc_map[pos].count(inst->addr)){
+              pos = cfg->idom[pos];
+            }
+            Reg reg;
+            if(!pos){
+              reg = Reg(ScalarType::Int, 0);
+            } else {
+              reg = alloc_map[pos][inst->addr];
+            }
             auto &all_use = func->use_list[inst->dst];
             while(!all_use.empty()){
               auto &uses= all_use.front();
-              uses->change_use(func->use_list, inst->dst, alloc_map[inst->addr]);
+              uses->change_use(func->use_list, inst->dst, reg);
             }
             iter = bb->insns.erase(iter);
             continue;
@@ -164,14 +173,14 @@ void mem2reg(ir::Program *prog) {
         }
         TypeCase(inst, ir::insns::Store *, iter->get()) {
           if(alloc_set.find(inst->addr) != alloc_set.end()) {
-            alloc_map[inst->addr] = inst->val;
+            alloc_map[bb][inst->addr] = inst->val;
             inst->remove_use_def(func->use_list, func->def_list);
             iter = bb->insns.erase(iter);
             continue;
           }
         }
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
-          alloc_map[phi2mem[inst]] = inst->dst;
+          alloc_map[bb][phi2mem[inst]] = inst->dst;
         }
         iter++;
         continue;
@@ -183,8 +192,8 @@ void mem2reg(ir::Program *prog) {
         }
         for(auto &inst : succ->insns){
           TypeCase(phi, ir::insns::Phi *, inst.get()) {
-            if(alloc_map.count(phi2mem[phi])){
-              phi->incoming[bb] = alloc_map[phi2mem[phi]];
+            if(alloc_map[bb].count(phi2mem[phi])){
+              phi->incoming[bb] = alloc_map[bb][phi2mem[phi]];
             }
           } else {
             break;

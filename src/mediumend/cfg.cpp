@@ -171,13 +171,14 @@ void CFG::compute_dom() {
   }
 
   idom[entry] = nullptr;
-  for (auto &bb : func->bbs) {
-    auto &domby_bb = domby[bb.get()];
+  for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
+    auto bb = iter->get();
+    auto &domby_bb = domby[bb];
     for (BasicBlock *d : domby_bb) {
-      if (d != bb.get()) {
+      if (d != bb) {
         bool all_true = true;
         for (auto &pre : domby_bb) {
-          if (pre == bb.get() || pre == d ||
+          if (pre == bb || pre == d ||
               domby[pre].find(d) == domby[pre].end()) {
             continue;
           }
@@ -185,8 +186,8 @@ void CFG::compute_dom() {
           break;
         }
         if (all_true) {
-          idom[bb.get()] = d;
-          dom[d].insert(bb.get());
+          idom[bb] = d;
+          dom[d].insert(bb);
           break;
         }
       }

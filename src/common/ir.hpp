@@ -47,7 +47,10 @@ struct Storage {
   Reg reg; // reg的type字段无效，此reg表示变量的地址。全局变量的此字段无效。
 };
 
+struct BasicBlock;
+
 struct Instruction : Display {
+  BasicBlock *bb;
   virtual void print(std::ostream &, unsigned) const override;
   virtual ~Instruction();
   virtual void add_use_def(unordered_map<Reg, list<Instruction *>> &, unordered_map<Reg, Instruction *> &) {};
