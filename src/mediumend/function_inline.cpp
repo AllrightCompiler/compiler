@@ -45,11 +45,9 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     auto &paras = callee->sig.param_types;
     auto ret_bb = new BasicBlock();
     ret_bb->label = name + "_ret";
-    auto &succ = caller->cfg->succ;
-    auto &prev = caller->cfg->prev;
-    for(auto suc : succ[inst_bb]){
-      prev[suc].erase(inst_bb);
-      prev[suc].insert(ret_bb);
+    for(auto suc : inst_bb->succ){
+      suc->prev.erase(inst_bb);
+      suc->prev.insert(ret_bb);
       for(auto &ins : suc->insns){
         TypeCase(phi, ir::insns::Phi *, ins.get()){
           for(auto &[bb, reg] : phi->incoming){

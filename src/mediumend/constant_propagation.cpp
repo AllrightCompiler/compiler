@@ -83,7 +83,7 @@ void constant_propagation(ir::Program *prog) {
         }
       }
       if(add_res){
-        for(auto suc : func->cfg->succ[bb]){
+        for(auto suc : bb->succ){
           stack.insert(suc);
         }
       }
@@ -94,7 +94,7 @@ void constant_propagation(ir::Program *prog) {
       for(auto &inst : bb->insns){
         if(auto phi = dynamic_cast<ir::insns::Phi *>(inst.get())){
           for(auto iter = phi->incoming.begin(); iter != phi->incoming.end();){
-            if(func->cfg->prev.find(iter->first) == func->cfg->prev.end()){
+            if(!bb->prev.count(iter->first)){
               iter = phi->incoming.erase(iter);
             } else iter++;
           }

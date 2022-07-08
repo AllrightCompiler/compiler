@@ -137,8 +137,8 @@ void mem2reg(ir::Program *prog) {
     // mem2reg第二阶段，寄存器重命名
     vector<BasicBlock *> stack;
     stack.push_back(func->bbs.front().get());
-    cfg->clear_visit();
-    cfg->visit.insert(func->bbs.front().get());
+    func->clear_visit(); 
+    func->bbs.front().get()->visit = true;
     while(stack.size()){
       auto bb = stack.back();
       stack.pop_back();
@@ -154,7 +154,7 @@ void mem2reg(ir::Program *prog) {
           if(alloc_set.find(inst->addr) != alloc_set.end()) {
             BasicBlock *pos = bb;
             while(pos && !alloc_map[pos].count(inst->addr)){
-              pos = cfg->idom[pos];
+              pos = pos->idom;
             }
             Reg reg;
             if(!pos){
@@ -185,9 +185,9 @@ void mem2reg(ir::Program *prog) {
         iter++;
         continue;
       }
-      for(auto &succ : cfg->succ[bb]){
-        if(!cfg->visit.count(succ)){
-          cfg->visit.insert(succ);
+      for(auto &succ : bb->succ){
+        if(!succ->visit){
+          succ->visit = true;
           stack.push_back(succ);
         }
         for(auto &inst : succ->insns){
@@ -195,7 +195,7 @@ void mem2reg(ir::Program *prog) {
             BasicBlock *pos = bb;
             Reg reg = phi2mem[phi];
             while(pos && !alloc_map[pos].count(reg)){
-              pos = cfg->idom[pos];
+              pos = pos->idom;
             }
             if(pos){
               phi->incoming[bb] = alloc_map[pos][phi2mem[phi]];
@@ -215,12 +215,11 @@ void mem2reg(ir::Program *prog) {
 void simplification_phi(ir::Program *prog){
   for(auto &f : prog->functions){
     Function* func = &f.second;
-    auto &prev = func->cfg->prev;
     for(auto &bb : func->bbs){
       for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
           for(auto in_iter = inst->incoming.begin(); in_iter != inst->incoming.end();){
-            if(!prev[bb.get()].count(in_iter->first)){
+            if(!bb.get()->prev.count(in_iter->first)){
               func->use_list[in_iter->second].remove(inst);
               in_iter = inst->incoming.erase(in_iter);
             } else {
