@@ -353,7 +353,7 @@ class ProgramTranslator {
           val = lnot_info[val].src;
         }
 
-        bool use_cbz_cbnz = true;
+        bool use_cbz_cbnz = false;
         if (!val.is_float() && use_cbz_cbnz) {
           // emit cbz/cbnz
           auto emit_cond_branch = [flip_cond, bb](Reg val, BasicBlock *target,
