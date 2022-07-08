@@ -353,7 +353,7 @@ class ProgramTranslator {
           val = lnot_info[val].src;
         }
 
-        bool use_cbz_cbnz = true;
+        bool use_cbz_cbnz = false;
         if (!val.is_float() && use_cbz_cbnz) {
           // emit cbz/cbnz
           auto emit_cond_branch = [flip_cond, bb](Reg val, BasicBlock *target,
@@ -641,7 +641,11 @@ void Function::emit_prologue_epilogue() {
   auto exit = new BasicBlock;
   exit->label = ".exit." + name;
 
-  int stack_obj_size = round_up_to_imm8m(4 * normal_objs.size());
+  int stack_obj_size = 0;
+  for (auto obj : normal_objs)
+    stack_obj_size += obj->size;
+  stack_obj_size = round_up_to_imm8m(stack_obj_size);
+  
   // emit prologue
   auto &prologue = entry->insns;
   // 每次都插入在头部，先生成后面的

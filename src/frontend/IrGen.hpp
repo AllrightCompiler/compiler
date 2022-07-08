@@ -4,6 +4,8 @@
 
 #include "frontend/ast.hpp"
 
+#include <set>
+
 namespace frontend {
 
 struct BranchTargets {
@@ -43,13 +45,14 @@ class IrGen {
 
   void emit(ir::Instruction *insn) { cur_bb->push(insn); }
   BranchTargets emit_branch(ir::Reg val);
+  void emit_array_init(ir::Reg base_reg, ir::Reg val_reg, int index);
 
   void visit_declaration(const ast::Declaration &);
   void visit_function(const ast::Function &);
   void visit_statement(const ast::Statement &);
   void visit_initializer(const std::vector<std::unique_ptr<ast::Initializer>> &,
                          const std::shared_ptr<Var> &, ir::Reg base_reg,
-                         int depth, int &index);
+                         int depth, int &index, std::set<int> &);
 
   void visit_if(const ast::IfElse &);
   void visit_while(const ast::While &);
