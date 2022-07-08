@@ -296,7 +296,9 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
                   ir::Instruction *inst) {
   if (visited.count(inst)) return;
   visited.insert(inst);
-  TypeCase(output, ir::insns::Output *, inst) {
+  TypeCase(phi, ir::insns::Phi *, inst) {
+    return;
+  } else TypeCase(output, ir::insns::Output *, inst) {
     // Find latest legal block for instruction
     BasicBlock *lca = nullptr, *use;
     for (auto i : use_list.at(output->dst)) {
