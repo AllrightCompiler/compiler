@@ -160,7 +160,7 @@ void remove_uneffective_inst(ir::Program *prog){
       auto inst = stack.back();
       stack.pop_back();
       auto regs = get_inst_use_reg(inst);
-      inst->remove_use_def(func->use_list, func->def_list);
+      inst->remove_use_def();
       for(auto reg : regs){
         if(func->use_list[reg].size() == 0){
           auto output = func->def_list[reg];
@@ -174,14 +174,9 @@ void remove_uneffective_inst(ir::Program *prog){
       remove_inst_set.insert(inst);
     }
     for(auto &bb : bbs){
-      auto &insns = bb->insns;
-      for(auto iter = insns.begin(); iter != insns.end();){
-        if(remove_inst_set.find(iter->get()) != remove_inst_set.end()){
-          iter = insns.erase(iter);
-        }else{
-          iter++;
-        }
-      }
+      bb->remove_if([=](ir::Instruction *ir) {
+        return remove_inst_set.count(ir);
+      });
     }
   }
 }

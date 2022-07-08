@@ -45,6 +45,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     auto &paras = callee->sig.param_types;
     auto ret_bb = new BasicBlock();
     ret_bb->label = name + "_ret";
+    ret_bb->func = caller;
     auto &succ = caller->cfg->succ;
     auto &prev = caller->cfg->prev;
     for(auto suc : succ[inst_bb]){
@@ -70,6 +71,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         for(auto riter = callee->bbs.rbegin(); riter != callee->bbs.rend(); ++riter){
           auto copy = new BasicBlock;
           copy->label = name + "_" + riter->get()->label;
+          copy->func = caller;
           bb2bb[riter->get()] = copy;
           caller->bbs.insert(iter, std::unique_ptr<BasicBlock>(copy));
         }
@@ -82,7 +84,8 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
       if(inst_iter->get() == inst){
         if(prog->functions[inst->func].sig.ret_type.has_value()){
           ret_phi = new ir::insns::Phi(inst->dst);
-          ret_bb->push(ret_phi);
+          ret_bb->insns.emplace_back(ret_phi);
+          ret_phi->bb = ret_bb;
         }
         inst_iter->reset(new ir::insns::Jump(bb2bb[callee->bbs.front().get()]));
         inst_iter++;
@@ -144,12 +147,11 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         } else {
           assert(false);
         }
-        inst_copy->add_use_def(caller->use_list, caller->def_list);
-        mapped_bb->push(inst_copy);
+        mapped_bb->push_back(inst_copy);
       }
     }
     if(ret_phi){
-      ret_phi->add_use_def(caller->use_list, caller->def_list);
+      ret_phi->add_use_def();
     }
     caller->cfg->build();
   }

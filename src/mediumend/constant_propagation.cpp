@@ -32,10 +32,10 @@ void constant_propagation(ir::Program *prog) {
         TypeCase(unary, ir::insns::Unary *, ins.get()) {
           if (const_map.find(unary->src) != const_map.end()) {
             Reg reg = unary->dst;
-            unary->remove_use_def(func->use_list, func->def_list);
+            unary->remove_use_def();
             ConstValue new_val = const_compute(unary, const_map[unary->src]);
             ins.reset(new ir::insns::LoadImm(reg, new_val));
-            ins->add_use_def(func->use_list, func->def_list);
+            ins->add_use_def();
             add_res = true;
           }
           continue;
@@ -43,11 +43,11 @@ void constant_propagation(ir::Program *prog) {
         TypeCase(binary, ir::insns::Binary *, ins.get()) {
           if (const_map.find(binary->src1) != const_map.end() && const_map.find(binary->src2) != const_map.end()) {
             Reg reg = binary->dst;
-            binary->remove_use_def(func->use_list, func->def_list);
+            binary->remove_use_def();
             ConstValue new_val = const_compute(binary, const_map[binary->src1], const_map[binary->src2]);
             auto new_ins = new ir::insns::LoadImm(reg, new_val);
             ins.reset(new_ins);
-            ins->add_use_def(func->use_list, func->def_list);
+            ins->add_use_def();
             const_map[new_ins->dst] = new_ins->imm;
             add_res = true;
           }
@@ -56,11 +56,11 @@ void constant_propagation(ir::Program *prog) {
         TypeCase(convey, ir::insns::Convert *, ins.get()){
           if(const_map.find(convey->src) != const_map.end()){
             Reg reg = convey->dst;
-            convey->remove_use_def(func->use_list, func->def_list);
+            convey->remove_use_def();
             ConstValue new_val = const_compute(convey, const_map[convey->src]);
             auto new_ins = new ir::insns::LoadImm(reg, new_val);
             ins.reset(new_ins);
-            ins->add_use_def(func->use_list, func->def_list);
+            ins->add_use_def();
             const_map[new_ins->dst] = new_ins->imm;
             add_res = true;
           }
@@ -68,7 +68,7 @@ void constant_propagation(ir::Program *prog) {
         }
         TypeCase(br, ir::insns::Branch *, ins.get()) {
           if (const_map.find(br->val) != const_map.end()) {
-            br->remove_use_def(func->use_list, func->def_list);
+            br->remove_use_def();
             ir::BasicBlock *target;
             if(const_map[br->val].iv) {
               target = br->true_target;

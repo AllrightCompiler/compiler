@@ -217,10 +217,10 @@ Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
 
 // reg_dst = reg_src
 // change all reg_dst -> reg_src
-void copy_propagation(unordered_map<Reg, list<Instruction *>> &use_list, Reg dst, Reg src) {
+void copy_propagation(unordered_map<Reg, list<Instruction *> > &use_list, Reg dst, Reg src) {
   while (use_list[dst].size() > 0) {
     auto inst = use_list[dst].front();
-    inst->change_use(use_list, dst, src);
+    inst->change_use(dst, src);
   }
 }
 
@@ -236,15 +236,6 @@ BasicBlock *find_lca(const unordered_map<BasicBlock *, int> &domlevel,
     b = idom.at(b);
   }
   return a;
-}
-
-BasicBlock *find_bb_of_inst(const list<unique_ptr<BasicBlock>> &bbs, Instruction *inst) {
-  for (auto &bb : bbs) {
-    for (auto it = bb->insns.begin(); it != bb->insns.end(); it++) {
-      if (it->get() == inst) return bb.get();
-    }
-  }
-  assert(false);
 }
 
 // 3. Schedule (select basic blocks for) all instructions
@@ -276,7 +267,7 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
   } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
     placement[loadimm] = root_bb;
   } else {
-    placement[inst] = find_bb_of_inst(bbs, inst);
+    placement[inst] = inst->bb;
   }
   // TODO: more inst types
 }
@@ -325,15 +316,7 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
         }
       } while (lca != placement[inst]);
     }
-    auto bb = find_bb_of_inst(bbs, inst);
-    auto it = bb->insns.begin();
-    while (it != bb->insns.end()) {
-      if (it->get() == inst) break;
-      it++;
-    }
-    assert(it != bb->insns.end());
-    it->release(); // important! otherwise inst will be auto deleted
-    bb->insns.erase(it);
+    inst->bb->remove(inst);
     best->insert_after_phi(inst);
     placement[inst] = best;
   }
@@ -365,7 +348,7 @@ void gvn_gcm(Function *f) {
           }
         }
         for (auto reg_pair : regsToChange) {
-          phi->change_use(f->use_list, reg_pair.first, reg_pair.second);
+          phi->change_use(reg_pair.first, reg_pair.second);
         }
         // check meaningless
         bool meaningless = true;
@@ -380,8 +363,8 @@ void gvn_gcm(Function *f) {
       TypeCase(binary, ir::insns::Binary *, insn.get()) {
         Reg new_reg1 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src1]);
         Reg new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src2]);
-        if (!(binary->src1 == new_reg1)) binary->change_use(f->use_list, binary->src1, new_reg1);
-        if (!(binary->src2 == new_reg2)) binary->change_use(f->use_list, binary->src2, new_reg2);
+        if (!(binary->src1 == new_reg1)) binary->change_use(binary->src1, new_reg1);
+        if (!(binary->src2 == new_reg2)) binary->change_use(binary->src2, new_reg2);
         // try to simplify binary Instruction
         Reg src1 = binary->src1, src2 = binary->src2;
         if (constMap.count(src1) && !constMap.count(src2)) {
@@ -402,9 +385,9 @@ void gvn_gcm(Function *f) {
             }
             if (!find) { // replace binary with loadimm
               auto new_ins = new ir::insns::LoadImm(binary->dst, constval);
-              binary->remove_use_def(f->use_list, f->def_list);
+              binary->remove_use_def();
               insn.reset(new_ins);
-              new_ins->add_use_def(f->use_list, f->def_list);
+              new_ins->add_use_def();
               hashTable[insn.get()] = binary->dst;
               vnSet.insert(insn.get());
               constMap[binary->dst] = constval;

@@ -94,6 +94,18 @@ Function::~Function() {
   }
 }
 
+void BasicBlock::push_back(Instruction *insn) {
+  insns.emplace_back(insn);
+  insn->bb = this;
+  insn->add_use_def();
+}
+
+void BasicBlock::push_front(Instruction *insn) {
+  insns.emplace_front(insn);
+  insn->bb = this;
+  insn->add_use_def();
+}
+
 void BasicBlock::insert_after_phi(Instruction *insn) {
   auto it = insns.begin();
   for (; it != insns.end(); it++) {
@@ -101,6 +113,35 @@ void BasicBlock::insert_after_phi(Instruction *insn) {
     } else break;
   }
   insns.emplace(it, insn);
+  insn->bb = this;
+  // insn->add_use_def();
+}
+
+bool BasicBlock::remove(Instruction *insn) {
+  for (auto it = insns.begin(); it != insns.end(); it++) {
+    if (it->get() == insn) {
+      it->release();  // important! otherwise inst will be auto deleted
+      // insn->remove_use_def();
+      insn->bb = nullptr;
+      insns.erase(it);
+      return true;
+    }
+  }
+  return false;
+}
+
+std::vector<Instruction *> BasicBlock::remove_if(std::function<bool(Instruction *)> f) {
+  std::vector<Instruction *> ret;
+  for (auto it = insns.begin(); it != insns.end(); ) {
+    if (f(it->get())) {
+      auto insn = it->release();
+      insn->remove_use_def();
+      insn->bb = nullptr;
+      it = insns.erase(it);
+      ret.push_back(insn);
+    } else it++;
+  }
+  return ret;
 }
 
 namespace insns {
@@ -290,225 +331,225 @@ ostream &operator<<(ostream &os, const Program &p) {
 }
 namespace insns {
 
-void Output::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  def_list[dst] = this;
+void Output::add_use_def(){
+  bb->func->def_list[dst] = this;
 }
 
-void Output::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  def_list.erase(dst);
+void Output::remove_use_def(){
+  bb->func->def_list.erase(dst);
 }
 
-void Load::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::add_use_def(use_list, def_list);
-  use_list[addr].push_back(this);
+void Load::add_use_def(){
+  Output::add_use_def();
+  bb->func->use_list[addr].push_back(this);
 }
 
-void Load::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::remove_use_def(use_list, def_list);
-  use_list[addr].remove(this);
+void Load::remove_use_def(){
+  Output::remove_use_def();
+  bb->func->use_list[addr].remove(this);
 }
 
-void Load::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Load::change_use(Reg old_reg, Reg new_reg){
   if(addr == old_reg){
     addr = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
 }
 
-void Store::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  use_list[val].push_back(this);
-  use_list[addr].push_back(this);
+void Store::add_use_def(){
+  bb->func->use_list[val].push_back(this);
+  bb->func->use_list[addr].push_back(this);
 }
 
-void Store::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  use_list[val].remove(this);
-  use_list[addr].remove(this);
+void Store::remove_use_def(){
+  bb->func->use_list[val].remove(this);
+  bb->func->use_list[addr].remove(this);
 }
 
-void Store::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Store::change_use(Reg old_reg, Reg new_reg){
   if(val == old_reg){
     val = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
   if(addr == old_reg){
     addr = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
 }
 
-void Convert::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::add_use_def(use_list, def_list);
-  use_list[src].push_back(this);
+void Convert::add_use_def(){
+  Output::add_use_def();
+  bb->func->use_list[src].push_back(this);
 }
 
-void Convert::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::remove_use_def(use_list, def_list);
-  use_list[src].remove(this);
+void Convert::remove_use_def(){
+  Output::remove_use_def();
+  bb->func->use_list[src].remove(this);
 }
 
-void Convert::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Convert::change_use(Reg old_reg, Reg new_reg){
   if(src == old_reg){
     src = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
 }
 
-void Call::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::add_use_def(use_list, def_list);
+void Call::add_use_def(){
+  Output::add_use_def();
   for(auto &reg : args){
-    use_list[reg].push_back(this);
+    bb->func->use_list[reg].push_back(this);
   }
 }
 
-void Call::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::remove_use_def(use_list, def_list);
+void Call::remove_use_def(){
+  Output::remove_use_def();
   for(auto &reg : args){
-    use_list[reg].remove(this);
+    bb->func->use_list[reg].remove(this);
   }
 }
 
-void Call::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Call::change_use(Reg old_reg, Reg new_reg){
   for(auto &reg : args){
     if(reg == old_reg){
       reg = new_reg;
-      use_list[new_reg].push_back(this);
-      use_list[old_reg].remove(this);
+      bb->func->use_list[new_reg].push_back(this);
+      bb->func->use_list[old_reg].remove(this);
     }
   }
 }
 
-void Unary::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::add_use_def(use_list, def_list);
-  use_list[src].push_back(this);
+void Unary::add_use_def(){
+  Output::add_use_def();
+  bb->func->use_list[src].push_back(this);
 }
 
-void Unary::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::remove_use_def(use_list, def_list);
-  use_list[src].remove(this);
+void Unary::remove_use_def(){
+  Output::remove_use_def();
+  bb->func->use_list[src].remove(this);
 }
 
-void Unary::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Unary::change_use(Reg old_reg, Reg new_reg){
   if(src == old_reg){
     src = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
 }
 
-void Binary::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::add_use_def(use_list, def_list);
-  use_list[src1].push_back(this);
-  use_list[src2].push_back(this);
+void Binary::add_use_def(){
+  Output::add_use_def();
+  bb->func->use_list[src1].push_back(this);
+  bb->func->use_list[src2].push_back(this);
 }
 
-void Binary::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::remove_use_def(use_list, def_list);
-  use_list[src1].remove(this);
-  use_list[src2].remove(this);
+void Binary::remove_use_def(){
+  Output::remove_use_def();
+  bb->func->use_list[src1].remove(this);
+  bb->func->use_list[src2].remove(this);
 }
 
-void Binary::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Binary::change_use(Reg old_reg, Reg new_reg){
   if(src1 == old_reg){
     src1 = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
   if(src2 == old_reg){
     src2 = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
 }
 
-void Phi::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::add_use_def(use_list, def_list);
+void Phi::add_use_def(){
+  Output::add_use_def();
   for(auto &[bb, reg] : incoming){
-    use_list[reg].push_back(this);
+    bb->func->use_list[reg].push_back(this);
   }
 }
 
-void Phi::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::remove_use_def(use_list, def_list);
+void Phi::remove_use_def(){
+  Output::remove_use_def();
   for(auto &[bb, reg] : incoming){
-    use_list[reg].remove(this);
+    bb->func->use_list[reg].remove(this);
   }
 }
 
-void Phi::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Phi::change_use(Reg old_reg, Reg new_reg){
   for(auto &[bb, reg] : incoming){
     if(reg == old_reg){
       reg = new_reg;
-      use_list[new_reg].push_back(this);
-      use_list[old_reg].remove(this);
+      bb->func->use_list[new_reg].push_back(this);
+      bb->func->use_list[old_reg].remove(this);
     }
   }
 }
 
-void Return::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Return::add_use_def(){
   if(val.has_value())
-    use_list[val.value()].push_back(this);
+    bb->func->use_list[val.value()].push_back(this);
 }
 
-void Return::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
+void Return::remove_use_def(){
   if(val.has_value())
-    use_list[val.value()].remove(this);
+    bb->func->use_list[val.value()].remove(this);
 }
 
-void Return::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Return::change_use(Reg old_reg, Reg new_reg){
   if(val.has_value() && val.value() == old_reg){
     val = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
 }
 
-void Branch::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  use_list[val].push_back(this);
+void Branch::add_use_def(){
+  bb->func->use_list[val].push_back(this);
 }
 
-void Branch::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  use_list[val].remove(this);
+void Branch::remove_use_def(){
+  bb->func->use_list[val].remove(this);
 }
 
-void Branch::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void Branch::change_use(Reg old_reg, Reg new_reg){
   if(val == old_reg){
     val = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
 }
 
-void GetElementPtr::add_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::add_use_def(use_list, def_list);
-  use_list[base].push_back(this);
+void GetElementPtr::add_use_def(){
+  Output::add_use_def();
+  bb->func->use_list[base].push_back(this);
   for(auto &idx : indices){
-    use_list[idx].push_back(this);
+    bb->func->use_list[idx].push_back(this);
   }
 }
 
-void GetElementPtr::remove_use_def(unordered_map<Reg, list<Instruction *>> &use_list, unordered_map<Reg, Instruction*> &def_list){
-  Output::remove_use_def(use_list, def_list);
-  use_list[base].remove(this);
+void GetElementPtr::remove_use_def(){
+  Output::remove_use_def();
+  bb->func->use_list[base].remove(this);
   for(auto &idx : indices){
-    use_list[idx].remove(this);
+    bb->func->use_list[idx].remove(this);
   }
 }
 
-void GetElementPtr::change_use(unordered_map<Reg, list<Instruction *>> &use_list, Reg old_reg, Reg new_reg){
+void GetElementPtr::change_use(Reg old_reg, Reg new_reg){
   if(base == old_reg){
     base = new_reg;
-    use_list[new_reg].push_back(this);
-    use_list[old_reg].remove(this);
+    bb->func->use_list[new_reg].push_back(this);
+    bb->func->use_list[old_reg].remove(this);
   }
   for(auto &idx : indices){
     if(idx == old_reg){
       idx = new_reg;
-      use_list[new_reg].push_back(this);
-      use_list[old_reg].remove(this);
+      bb->func->use_list[new_reg].push_back(this);
+      bb->func->use_list[old_reg].remove(this);
     }
   }
 }

@@ -43,7 +43,10 @@ class IrGen {
   ir::BasicBlock *new_bb();
   ir::Reg scalar_cast(ir::Reg src, ScalarType dst_type);
 
-  void emit(ir::Instruction *insn) { cur_bb->push(insn); }
+  void emit(ir::Instruction *insn) {
+    cur_bb->insns.emplace_back(insn);
+    insn->bb = cur_bb;
+  }
   BranchTargets emit_branch(ir::Reg val);
   void emit_array_init(ir::Reg base_reg, ir::Reg val_reg, int index);
 

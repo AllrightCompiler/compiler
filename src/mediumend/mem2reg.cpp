@@ -1,5 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+#include "mediumend/optmizer.hpp"
 
 #include <cassert>
 
@@ -48,20 +49,19 @@ void main_global_var_to_local(ir::Program *prog){
     global_addr_to_local_reg[each] = reg;
     if(var->val.has_value()){
       Reg val_reg = func.new_reg(var->type.base_type);
-      entry->push_front(new ir::insns::LoadImm(val_reg, var->val.value()));
-      entry->push_front(new ir::insns::Store(reg, val_reg));
+      entry->insns.emplace_front(new ir::insns::LoadImm(val_reg, var->val.value()));
+      entry->insns.front().get()->bb = entry.get();
+      entry->insns.emplace_front(new ir::insns::Store(reg, val_reg));
+      entry->insns.front().get()->bb = entry.get();
     }
-    entry->push_front(new ir::insns::Alloca(reg, var->type));
+    entry->insns.emplace_front(new ir::insns::Alloca(reg, var->type));
+    entry->insns.front().get()->bb = entry.get();
   }
   for(auto &bb : func.bbs){
     for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
       TypeCase(loadaddr, ir::insns::LoadAddr *, iter->get()){
         if(!used_vars.count(loadaddr->var_name)){
-          while(func.use_list[loadaddr->dst].size()){
-            auto &use = func.use_list[loadaddr->dst].front();
-            use->change_use(func.use_list, loadaddr->dst, global_addr_to_local_reg[loadaddr->var_name]);
-          }
-          iter = bb->insns.erase(iter);
+          copy_propagation(func.use_list, loadaddr->dst, global_addr_to_local_reg[loadaddr->var_name]);
         }
       }
       ++iter;
@@ -115,7 +115,8 @@ void mem2reg(ir::Program *prog) {
           if (F.find(Y) == F.end()) {
             Reg r = func->new_reg(alloc2type[v.first]);
             auto phi = new ir::insns::Phi(r);
-            Y->push_front(phi); // add phi
+            Y->insns.emplace_front(phi); // add phi
+            phi->bb = Y;
             phi2mem[phi] = v.first;
             F.insert(Y);
             bool find = false;
@@ -145,7 +146,7 @@ void mem2reg(ir::Program *prog) {
       for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
         TypeCase(inst, ir::insns::Alloca *, iter->get()) {
           if(!inst->type.is_array()){
-            inst->remove_use_def(func->use_list, func->def_list);
+            inst->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }
@@ -162,11 +163,7 @@ void mem2reg(ir::Program *prog) {
             } else {
               reg = alloc_map[pos][inst->addr];
             }
-            auto &all_use = func->use_list[inst->dst];
-            while(!all_use.empty()){
-              auto &uses= all_use.front();
-              uses->change_use(func->use_list, inst->dst, reg);
-            }
+            copy_propagation(func->use_list, inst->dst, reg);
             iter = bb->insns.erase(iter);
             continue;
           }
@@ -174,7 +171,7 @@ void mem2reg(ir::Program *prog) {
         TypeCase(inst, ir::insns::Store *, iter->get()) {
           if(alloc_set.find(inst->addr) != alloc_set.end()) {
             alloc_map[bb][inst->addr] = inst->val;
-            inst->remove_use_def(func->use_list, func->def_list);
+            inst->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }
@@ -207,7 +204,7 @@ void mem2reg(ir::Program *prog) {
       }
     }
     for(auto phi : phi2mem){
-      phi.first->add_use_def(func->use_list, func->def_list);
+      phi.first->add_use_def();
     }
   }
 }
@@ -236,7 +233,7 @@ void simplification_phi(ir::Program *prog){
                 assert(false);
               }
               auto reg = inst->incoming.begin()->second;
-              uses->change_use(func->use_list, inst->dst, reg);
+              uses->change_use(inst->dst, reg);
             }
             iter = bb->insns.erase(iter);
             continue;

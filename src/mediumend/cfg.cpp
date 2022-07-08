@@ -17,7 +17,7 @@ void compute_use_def_list(ir::Program *prog){
     for (auto &bb : bbs) {
       auto &insns = bb->insns;
       for (auto &inst : insns) {
-        inst.get()->add_use_def(func->use_list, func->def_list);
+        inst.get()->add_use_def();
       }
     }
   }
