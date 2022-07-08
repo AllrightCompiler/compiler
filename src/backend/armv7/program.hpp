@@ -49,15 +49,18 @@ struct Function {
 
   int regs_used; // 分配的虚拟寄存器总数
 
-  Reg new_reg(Reg::Type type) { return Reg{type, ++regs_used}; }
+  Reg new_reg(Reg::Type type) { return Reg{type, -(++regs_used)}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
 
   void do_liveness_analysis(RegFilter filter = [](const Reg &){ return true; });
   bool check_and_resolve_stack_store();
+  void defer_stack_param_load(Reg r, StackObject *obj);
   
   // post-register allocation passes
   void emit_prologue_epilogue();
   void resolve_stack_ops(int frame_size);
+
+  void emit(std::ostream &os);
 };
 
 struct Program {

@@ -51,6 +51,8 @@ struct Reg {
   }
 };
 
+std::ostream &operator<<(std::ostream &os, const Reg &r);
+
 // 指令执行条件码
 enum class ExCond {
   Always,
@@ -141,6 +143,12 @@ struct Instruction {
   virtual std::set<Reg> def() const { return {}; }
   virtual std::set<Reg> use() const { return {}; }
   virtual std::vector<Reg *> reg_ptrs() { return {}; }
+
+  void replace_reg(Reg src, Reg dst) {
+    for (auto p : reg_ptrs())
+      if (*p == src)
+        *p = dst;
+  }
 
   template <typename T> bool is() const {
     return dynamic_cast<const T *>(this) != nullptr;

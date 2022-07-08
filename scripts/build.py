@@ -23,6 +23,8 @@ def assembly(testcases, output_dir='asm'):
             failed += 1
     print('[assembly] %d success, %d failed' % (success, failed))
 
+    # zip assembly sources
+    os.system('zip -r %s.zip %s' % (output_dir, output_dir))
 
 if __name__ == '__main__':
     testcases = os.listdir(testcases_dir)

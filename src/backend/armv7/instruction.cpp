@@ -73,9 +73,12 @@ void next_instruction(ostream &os) {
 
 ostream &operator<<(ostream &os, const Reg &r) {
   if (r.type != Fp) {
-    if (r.id >= 0)
-      os << GPR_NAMES[r.id];
-    else
+    if (r.id >= 0) {
+      if (r.id < NR_GPRS)
+        os << GPR_NAMES[r.id];
+      else
+        os << "<bad reg " << r.id << ">";
+    } else
       os << "t" + std::to_string(-r.id);
   } else {
     if (r.id >= 0)
@@ -162,7 +165,7 @@ void RType::emit(std::ostream &os) const {
       [Add] = "add",
       [Sub] = "sub",
       [Mul] = "mul",
-      [Div] = "div",
+      [Div] = "sdiv",
   };
   write_op(os, OP_NAMES[op], dst.is_float()) << dst << ", " << s1 << ", " << s2;
 }
@@ -227,7 +230,7 @@ void FusedMul::emit(std::ostream &os) const {
       << dst << ", " << s1 << ", " << s2 << ", " << s3;
 }
 
-void Branch::emit(std::ostream &os) const { 
+void Branch::emit(std::ostream &os) const {
   write_op(os, "b") << target->label;
 }
 
