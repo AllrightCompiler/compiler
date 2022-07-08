@@ -80,6 +80,7 @@ void IrGen::visit_compile_unit(const ast::CompileUnit &node) {
 void IrGen::visit_declaration(const ast::Declaration &node) {
   auto &name = node.ident().name();
   auto &var = node.var;
+  auto &var_type = var->type;
   bool is_global = cur_func == nullptr;
 
   Reg reg;
@@ -87,7 +88,7 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
   if (!is_global) {
     reg = new_reg(String); // 注: String无实际意义，表示一个地址
     mem_vars[var.get()].reg = reg;
-    emit(new insns::Alloca{reg, var->type});
+    emit(new insns::Alloca{reg, var_type});
   } else { // global
     program->global_vars[name] = var;
   }
@@ -101,11 +102,32 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
       emit(new insns::LoadAddr{reg, name});
     }
 
-    if (var->type.is_array()) {
+    if (var_type.is_array()) {
       int index = 0;
+      std::set<int> assigned_indices;
       visit_initializer(
           std::get<std::vector<std::unique_ptr<ast::Initializer>>>(value), var,
-          reg, 0, index);
+          reg, 0, index, assigned_indices);
+      // 如果非全局变量，在其他索引处填充0
+      if (!is_global) {
+        Reg zero_reg = new_reg(var_type.base_type);
+        ConstValue zero_imm = (var_type.base_type == Float)
+                                  ? ConstValue{float(0)}
+                                  : ConstValue{0};
+        emit(new insns::LoadImm{zero_reg, zero_imm});
+
+        int cur_idx = 0;
+        int nr_elems = var_type.size() / 4;
+        for (int idx : assigned_indices) {
+          while (cur_idx < idx) {
+            emit_array_init(reg, zero_reg, cur_idx);
+            cur_idx++;
+          }
+          cur_idx = idx + 1;
+        }
+        while (cur_idx < nr_elems)
+          emit_array_init(reg, zero_reg, cur_idx++);
+      }
     } else {                         // scalar
       if (!is_global || !var->val) { // 局部变量或初值未在编译期求得
         ast::Expression *expr;
@@ -117,17 +139,28 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
           expr =
               std::get<std::unique_ptr<ast::Expression>>(init_list[0]->value())
                   .get();
+          // TODO: 如果init_list是空的 -> 标量0初始化
         }
-        Reg val = scalar_cast(visit_arith_expr(expr), var->type.base_type);
+        Reg val = scalar_cast(visit_arith_expr(expr), var_type.base_type);
         emit(new insns::Store{reg, val});
       }
     }
   }
 }
 
+void IrGen::emit_array_init(ir::Reg base_reg, ir::Reg val_reg, int index) {
+  Reg idx_reg = new_reg(Int);
+  Reg addr_reg = new_reg(String);
+  emit(new insns::LoadImm{idx_reg, index});
+  emit(new insns::GetElementPtr{
+      addr_reg, Type{val_reg.type, std::vector{0}}, base_reg, {idx_reg}});
+  emit(new insns::Store{addr_reg, val_reg});
+}
+
 void IrGen::visit_initializer(
     const std::vector<std::unique_ptr<ast::Initializer>> &init_list,
-    const std::shared_ptr<Var> &var, ir::Reg base_reg, int depth, int &index) {
+    const std::shared_ptr<Var> &var, ir::Reg base_reg, int depth, int &index,
+    std::set<int> &assigned_indices) {
 
   auto &type = var->type;
   int dim_size = 1;
@@ -145,21 +178,15 @@ void IrGen::visit_initializer(
       if (cur_func || !val_map.count(index)) {
         auto &expr = std::get<std::unique_ptr<ast::Expression>>(value);
         Reg val_reg = scalar_cast(visit_arith_expr(expr), var->type.base_type);
-        Reg idx_reg = new_reg(Int);
-        Reg addr_reg = new_reg(String);
-        // 这里当成扁平一维数组处理
-        emit(new insns::LoadImm{idx_reg, index});
-        emit(new insns::GetElementPtr{addr_reg,
-                                      Type{type.base_type, std::vector{0}},
-                                      base_reg,
-                                      {idx_reg}});
-        emit(new insns::Store{addr_reg, val_reg});
+        emit_array_init(base_reg, val_reg, index);        
+        assigned_indices.insert(index);
       }
       ++index;
     } else {
       auto &sub_list =
           std::get<std::vector<std::unique_ptr<ast::Initializer>>>(value);
-      visit_initializer(sub_list, var, base_reg, depth + 1, index);
+      visit_initializer(sub_list, var, base_reg, depth + 1, index,
+                        assigned_indices);
     }
   }
   if (index < padded)
