@@ -422,7 +422,8 @@ void Function::emit(std::ostream &os) {
 }
 
 void Program::emit(std::ostream &os) {
-  os << ".arch armv7ve\n";
+  os << ".cpu cortex-a72\n";
+  os << ".arm\n";
   os << ".global main\n";
   os << ".section .text\n\n";
 
