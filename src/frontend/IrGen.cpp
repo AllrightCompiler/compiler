@@ -44,6 +44,7 @@ BasicBlock *IrGen::new_bb() {
   auto bb = new BasicBlock;
   int id = cur_func->bbs.size();
   bb->label = "B" + std::to_string(id);
+  bb->func = cur_func;
   cur_func->bbs.emplace_back(bb);
   return bb;
 }
@@ -70,10 +71,11 @@ void IrGen::visit_compile_unit(const ast::CompileUnit &node) {
   }
 
   // 将init_bb包装成.init函数
-  init_bb->push(new insns::Return{std::nullopt});
+  init_bb->push_back(new insns::Return{std::nullopt});
   auto &init_fn = program->functions[".init"];
   init_fn.name = ".init";
   init_fn.bbs.emplace_back(init_bb);
+  init_bb->func = &init_fn;
   init_fn.nr_regs = global_regs;
 }
 
@@ -234,6 +236,10 @@ void IrGen::visit_function(const ast::Function &node) {
     emit(new insns::Call{new_reg(String), ".init", {}});
 
   visit_statement(*node.body());
+  auto last_inst = dynamic_cast<ir::insns::Return *>(cur_func->bbs.back()->insns.back().get());
+  if(!last_inst){
+    emit(new insns::Return{std::nullopt});
+  }
   cur_func->nr_regs = local_regs;
   cur_func = nullptr;
   cur_bb = init_bb;

@@ -1,5 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+#include "mediumend/optmizer.hpp"
 
 #include <cassert>
 
@@ -14,6 +15,7 @@ using std::vector;
 using std::string;
 
 void main_global_var_to_local(ir::Program *prog){
+  mark_global_addr_reg(prog);
   unordered_set<string> used_vars; // 变量被除了main函数以外的函数使用过
   unordered_set<string> main_used_vars; // 变量被除了main函数以外的函数使用过
   for(auto &func : prog->functions){
@@ -56,11 +58,7 @@ void main_global_var_to_local(ir::Program *prog){
     for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
       TypeCase(loadaddr, ir::insns::LoadAddr *, iter->get()){
         if(!used_vars.count(loadaddr->var_name)){
-          while(func.use_list[loadaddr->dst].size()){
-            auto &use = func.use_list[loadaddr->dst].front();
-            use->change_use(func.use_list, loadaddr->dst, global_addr_to_local_reg[loadaddr->var_name]);
-          }
-          iter = bb->insns.erase(iter);
+          copy_propagation(func.use_list, loadaddr->dst, global_addr_to_local_reg[loadaddr->var_name]);
         }
       }
       ++iter;
@@ -72,12 +70,15 @@ void mem2reg(ir::Program *prog) {
   for(auto &each : prog->functions){
     Function* func = &each.second;
     CFG *cfg = func->cfg;
+    cfg->build();
+    cfg->remove_unreachable_bb();
+    cfg->compute_dom();
     auto df = cfg->compute_df();
     unordered_map<Reg, BasicBlock *> alloc_set;
     unordered_map<Reg, ScalarType> alloc2type;
     unordered_map<Reg, vector<BasicBlock *>> defs;
     unordered_map<Reg, vector<Reg>> defs_reg;
-    unordered_map<Reg, Reg> alloc_map;
+    unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
     unordered_map<ir::insns::Phi *, Reg> phi2mem;
 
     for (auto &bb : func->bbs) {
@@ -111,7 +112,8 @@ void mem2reg(ir::Program *prog) {
           if (F.find(Y) == F.end()) {
             Reg r = func->new_reg(alloc2type[v.first]);
             auto phi = new ir::insns::Phi(r);
-            Y->push_front(phi); // add phi
+            Y->insns.emplace_front(phi); // add phi
+            phi->bb = Y;
             phi2mem[phi] = v.first;
             F.insert(Y);
             bool find = false;
@@ -133,53 +135,71 @@ void mem2reg(ir::Program *prog) {
     // mem2reg第二阶段，寄存器重命名
     vector<BasicBlock *> stack;
     stack.push_back(func->bbs.front().get());
-    cfg->clear_visit();
-    cfg->visit.insert(func->bbs.front().get());
+    func->clear_visit(); 
+    func->bbs.front().get()->visit = true;
     while(stack.size()){
       auto bb = stack.back();
       stack.pop_back();
       for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
         TypeCase(inst, ir::insns::Alloca *, iter->get()) {
           if(!inst->type.is_array()){
-            inst->remove_use_def(func->use_list, func->def_list);
+            inst->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }
         }
         TypeCase(inst, ir::insns::Load *, iter->get()) {
           if(alloc_set.find(inst->addr) != alloc_set.end()) {
-            assert(alloc_map.find(inst->addr) != alloc_map.end());
-            auto &all_use = func->use_list[inst->dst];
-            while(!all_use.empty()){
-              auto &uses= all_use.front();
-              uses->change_use(func->use_list, inst->dst, alloc_map[inst->addr]);
+            BasicBlock *pos = bb;
+            while(pos && !alloc_map[pos].count(inst->addr)){
+              pos = pos->idom;
             }
+            Reg reg;
+            if(!pos){
+              reg = Reg(ScalarType::Int, 0);
+            } else {
+              reg = alloc_map[pos][inst->addr];
+            }
+            copy_propagation(func->use_list, inst->dst, reg);
+            iter->get()->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }
         }
         TypeCase(inst, ir::insns::Store *, iter->get()) {
           if(alloc_set.find(inst->addr) != alloc_set.end()) {
-            alloc_map[inst->addr] = inst->val;
-            inst->remove_use_def(func->use_list, func->def_list);
+            alloc_map[bb][inst->addr] = inst->val;
+            inst->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }
         }
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
-          alloc_map[phi2mem[inst]] = inst->dst;
+          if(phi2mem.count(inst)){
+            alloc_map[bb][phi2mem.at(inst)] = inst->dst;
+          }
         }
         iter++;
         continue;
       }
-      for(auto &succ : cfg->succ[bb]){
-        if(!cfg->visit.count(succ)){
-          cfg->visit.insert(succ);
+      for(auto &succ : bb->succ){
+        if(!succ->visit){
+          succ->visit = true;
           stack.push_back(succ);
         }
         for(auto &inst : succ->insns){
           TypeCase(phi, ir::insns::Phi *, inst.get()) {
-            phi->incoming[bb] = alloc_map[phi2mem[phi]];
+            if(!phi2mem.count(phi)){
+              continue;
+            }
+            BasicBlock *pos = bb;
+            Reg reg = phi2mem.at(phi);
+            while(pos && !alloc_map[pos].count(reg)){
+              pos = pos->idom;
+            }
+            if(pos){
+              phi->incoming[bb] = alloc_map[pos][phi2mem.at(phi)];
+            }
           } else {
             break;
           }
@@ -187,7 +207,7 @@ void mem2reg(ir::Program *prog) {
       }
     }
     for(auto phi : phi2mem){
-      phi.first->add_use_def(func->use_list, func->def_list);
+      phi.first->add_use_def();
     }
   }
 }
@@ -195,12 +215,11 @@ void mem2reg(ir::Program *prog) {
 void simplification_phi(ir::Program *prog){
   for(auto &f : prog->functions){
     Function* func = &f.second;
-    auto &prev = func->cfg->prev;
     for(auto &bb : func->bbs){
       for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
           for(auto in_iter = inst->incoming.begin(); in_iter != inst->incoming.end();){
-            if(!prev[bb.get()].count(in_iter->first)){
+            if(!bb.get()->prev.count(in_iter->first)){
               func->use_list[in_iter->second].remove(inst);
               in_iter = inst->incoming.erase(in_iter);
             } else {
@@ -208,9 +227,15 @@ void simplification_phi(ir::Program *prog){
             }
           }
           if(inst->incoming.size() == 1){
-            while(func->use_list[inst->dst].size()){
-              auto &uses = func->use_list[inst->dst].front();
-              uses->change_use(func->use_list, inst->dst, inst->incoming.begin()->second);
+            auto &dst_use_list = func->use_list[inst->dst];
+            while(dst_use_list.size()){
+              auto uses = dst_use_list.front();
+              auto dmy = dynamic_cast<ir::Instruction *>(uses);
+              if(!dmy){
+                assert(false);
+              }
+              auto reg = inst->incoming.begin()->second;
+              uses->change_use(inst->dst, reg);
             }
             iter = bb->insns.erase(iter);
             continue;

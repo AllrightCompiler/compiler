@@ -2,46 +2,55 @@
 #include "common/ir.hpp"
 
 #include <cassert>
+#include<iostream>
 
 namespace mediumend {
 
 using std::vector;
 
-void compute_use_def_list(ir::Function *func){
-  auto &bbs = func->bbs;
-  for (auto &bb : bbs) {
-    auto &insns = bb->insns;
-    for (auto &inst : insns) {
-      inst.get()->add_use_def(func->use_list, func->def_list);
+void compute_use_def_list(ir::Program *prog){
+  for(auto &each : prog->functions){
+    auto func = &each.second;
+    func->def_list.clear();
+    func->use_list.clear();
+    auto &bbs = func->bbs;
+    for (auto &bb : bbs) {
+      auto &insns = bb->insns;
+      for (auto &inst : insns) {
+        inst.get()->add_use_def();
+      }
     }
   }
 }
 
-void mark_global_addr_reg(ir::Function *func){
-  auto &bbs = func->bbs;
-  for (auto &bb : bbs) {
-    auto &insns = bb->insns;
-    for (auto &inst : insns) {
-      TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
-        func->global_addr.insert(loadaddr->dst);
-      }
-      TypeCase(get_ptr, ir::insns::GetElementPtr *, inst.get()){
-        if(func->global_addr.count(get_ptr->base)){
-          func->global_addr.insert(get_ptr->dst);
+void mark_global_addr_reg(ir::Program *prog){
+  for(auto &each : prog->functions){
+    auto func = &each.second;
+    func->global_addr.clear();
+    auto &bbs = func->bbs;
+    for (auto &bb : bbs) {
+      auto &insns = bb->insns;
+      for (auto &inst : insns) {
+        TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
+          func->global_addr.insert(loadaddr->dst);
+        }
+        TypeCase(get_ptr, ir::insns::GetElementPtr *, inst.get()){
+          if(func->global_addr.count(get_ptr->base)){
+            func->global_addr.insert(get_ptr->dst);
+          }
         }
       }
     }
   }
+  
 }
 
 CFG::CFG(ir::Function *func) : func(func) {}
 
 void CFG::build(){
-  succ.clear();
-  prev.clear();
   for (auto &bb : func->bbs) {
-    this->succ[bb.get()] = {};
-    this->prev[bb.get()] = {};
+    bb->succ = {};
+    bb->prev = {};
   }
   for (auto &bb : func->bbs) {
     if (bb->insns.empty())
@@ -50,15 +59,15 @@ void CFG::build(){
     ir::insns::Jump *jmp = dynamic_cast<ir::insns::Jump *>(ins.get());
     ir::insns::Branch *brh = dynamic_cast<ir::insns::Branch *>(ins.get());
     ir::insns::Return *ret = dynamic_cast<ir::insns::Return *>(ins.get());
-    auto &next = this->succ[bb.get()];
+    auto &next = bb->succ;
     if (jmp) {
       next.insert(jmp->target);
-      prev[jmp->target].insert(bb.get());
+      jmp->target->prev.insert(bb.get());
     } else if (brh) {
       next.insert(brh->true_target);
       next.insert(brh->false_target);
-      prev[brh->true_target].insert(bb.get());
-      prev[brh->false_target].insert(bb.get());
+      brh->true_target->prev.insert(bb.get());
+      brh->false_target->prev.insert(bb.get());
     } else if (ret) {
     } else {
       assert(false);
@@ -71,17 +80,17 @@ void CFG::remove_unreachable_bb() {
   unordered_set<BasicBlock *> remove_set;
   vector<BasicBlock *> to_remove;
 
-  for (auto prev : this->prev) {
-    if (prev.second.size() == 0 && prev.first != entry) {
-      to_remove.push_back(prev.first);
+  for (auto &bb : func->bbs) {
+    if (bb->prev.size() == 0 && bb.get() != entry) {
+      to_remove.push_back(bb.get());
     }
   }
   while (to_remove.size()) {
     auto bb = to_remove.back();
     to_remove.pop_back();
-    for (auto &succ : this->succ[bb]) {
-      this->prev[succ].erase(bb);
-      if (this->prev[succ].size() == 0) {
+    for (auto &succ : bb->succ) {
+      succ->prev.erase(bb);
+      if (succ->prev.size() == 0) {
         to_remove.push_back(succ);
       }
     }
@@ -89,7 +98,21 @@ void CFG::remove_unreachable_bb() {
   }
   for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
     if (remove_set.find(iter->get()) != remove_set.end()) {
-      this->remove_bb_in_cfg(iter->get());
+      for(auto suc : iter->get()->succ){
+        for(auto &inst : suc->insns){
+          TypeCase(phi, ir::insns::Phi *, inst.get()){
+            phi->incoming.erase(iter->get());
+          } else {
+            break;
+          }
+        }
+      }
+      for(auto pre: iter->get()->prev){
+        pre->succ.erase(iter->get());
+      }
+      for(auto suc: iter->get()->succ){
+        suc->prev.erase(iter->get());
+      }
       iter = func->bbs.erase(iter);
     } else {
       iter++;
@@ -98,42 +121,37 @@ void CFG::remove_unreachable_bb() {
 }
 
 void CFG::compute_dom_level(BasicBlock *bb, int dom_level) {
-  auto &domlevel = this->domlevel;
-  auto &dom = this->dom;
-  domlevel[bb] = dom_level;
-  for (BasicBlock *succ : dom[bb]) {
+  bb->domlevel = dom_level;
+  for (BasicBlock *succ : bb->dom) {
     compute_dom_level(succ, dom_level + 1);
   }
 }
 
 void CFG::compute_dom() {
-  dom.clear();
-  domby.clear();
-  idom.clear();
-  domlevel.clear();
+  func->clear_dom();
   BasicBlock *entry = func->bbs.front().get();
-  domby[entry] = {entry};
+  entry->domby = {entry};
   unordered_set<BasicBlock *> all_bb;
   for (auto &bb : func->bbs) {
     all_bb.insert(bb.get());
   }
   for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
-    domby[iter->get()] = all_bb;
+    iter->get()->domby = all_bb;
   }
   bool modify = true;
   while (modify) {
     modify = false;
     for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
       auto bb = iter->get();
-      auto &domby_bb = domby[bb];
-      auto &dom_bb = dom[bb];
+      auto &domby_bb = bb->domby;
+      auto &dom_bb = bb->dom;
       for (auto iter = domby_bb.begin(); iter != domby_bb.end();) {
         BasicBlock *x = *iter;
-        auto &prev_bb = prev[bb];
+        auto &prev_bb = bb->prev;
         if (x != bb) {
           bool find = false;
           for (auto &pre : prev_bb) {
-            if (domby[pre].find(x) == domby[pre].end()) {
+            if (pre->domby.find(x) == pre->domby.end()) {
               modify = true;
               find = true;
               iter = domby_bb.erase(iter);
@@ -150,23 +168,24 @@ void CFG::compute_dom() {
     }
   }
 
-  idom[entry] = nullptr;
-  for (auto &bb : func->bbs) {
-    auto &domby_bb = domby[bb.get()];
+  entry->idom = nullptr;
+  for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
+    auto bb = iter->get();
+    auto &domby_bb = bb->domby;
     for (BasicBlock *d : domby_bb) {
-      if (d != bb.get()) {
+      if (d != bb) {
         bool all_true = true;
         for (auto &pre : domby_bb) {
-          if (pre == bb.get() || pre == d ||
-              domby[pre].find(d) == domby[pre].end()) {
+          if (pre == bb || pre == d ||
+              pre->domby.find(d) == pre->domby.end()) {
             continue;
           }
           all_true = false;
           break;
         }
         if (all_true) {
-          idom[bb.get()] = d;
-          dom[d].insert(bb.get());
+          bb->idom = d;
+          d->dom.insert(bb);
           break;
         }
       }
@@ -176,120 +195,34 @@ void CFG::compute_dom() {
 }
 
 
-void CFG::compute_rdom() {
-  rdom.clear();
-  rdomby.clear();
-  ridom.clear();
-  BasicBlock *entry = func->bbs.front().get();
-  rdomby[entry] = {entry};
-
-  unordered_set<BasicBlock *> all_bb;
-  unordered_set<BasicBlock *> outs;
-  for (auto &bb : func->bbs) {
-    all_bb.insert(bb.get());
-    auto &inst = bb->insns.back();
-    if(auto ret = dynamic_cast<ir::insns::Return *>(inst.get())){
-      outs.insert(bb.get());
-    }
-  }
-  for (auto iter = func->bbs.begin(); iter != func->bbs.end(); iter++) {
-    auto bb = iter->get();
-    if(outs.count(bb)){
-      rdomby[bb] = {bb};
-      ridom[bb] = nullptr;
-    } else {
-      rdomby[bb] = all_bb;
-    }
-  }
-  bool modify = true;
-  while (modify) {
-    modify = false;
-    for (auto iter = func->bbs.begin(); iter != func->bbs.end(); iter++) {
-      auto bb = iter->get();
-      if(outs.count(bb)){
-        continue;
-      }
-      auto &rdomby_bb = rdomby[bb];
-      auto &rdom_bb = rdom[bb];
-      for (auto iter = rdomby_bb.begin(); iter != rdomby_bb.end();) {
-        BasicBlock *x = *iter;
-        auto &succ_bb = succ[bb];
-        if (x != bb) {
-          bool find = false;
-          for (auto &suc : succ_bb) {
-            if (rdomby[suc].find(x) == rdomby[suc].end()) {
-              modify = true;
-              find = true;
-              iter = rdomby_bb.erase(iter);
-              break;
-            }
-          }
-          if (!find) {
-            ++iter;
-          }
-        } else {
-          ++iter;
-        }
-      }
-    }
-  }
-
-  for (auto &bb : func->bbs) {
-    auto &rdomby_bb = rdomby[bb.get()];
-    for (BasicBlock *d : rdomby_bb) {
-      if (d != bb.get()) {
-        bool all_true = true;
-        for (auto &pre : rdomby_bb) {
-          if (pre == bb.get() || pre == d ||
-              rdomby[pre].find(d) == rdomby[pre].end()) {
-            continue;
-          }
-          all_true = false;
-          break;
-        }
-        if (all_true) {
-          ridom[bb.get()] = d;
-          rdom[d].insert(bb.get());
-          break;
-        }
-      }
-    }
-  }
-}
-
-
 unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {
   unordered_map<BasicBlock *, unordered_set<BasicBlock *>> df;
-  auto &idom = this->idom;
   for (auto &bb : func->bbs) {
-    auto &succ_bb = this->succ[bb.get()];
+    auto &succ_bb = bb->succ;
     for (BasicBlock *to : succ_bb) {
-      auto &domby = this->domby[to];
+      auto &domby = to->domby;
       BasicBlock *x = bb.get();
       while (x == to || domby.find(x) == domby.end()) {
         df[x].insert(to);
-        x = idom[x];
+        x = x->idom;
       }
     }
   }
   return df;
 }
+void CFG::compute_rpo() {
+  func->clear_visit();
+  rpo.clear();
+  func->bbs.front().get()->rpo_dfs(rpo);
+  std::reverse(rpo.begin(), rpo.end());
+}
 
-unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_rdf() {
-  unordered_map<BasicBlock *, unordered_set<BasicBlock *>> rdf;
-  auto &ridom = this->ridom;
+void CFG::loop_analysis() {
+  func->clear_visit();
+  func->bbs.front().get()->loop_dfs();
   for (auto &bb : func->bbs) {
-    auto &prev_bb = prev[bb.get()];
-    for (BasicBlock *to : prev_bb) {
-      auto &rdomby = this->rdomby[to];
-      BasicBlock *x = bb.get();
-      while (x == to || rdomby.find(x) == rdomby.end()) {
-        rdf[x].insert(to);
-        x = ridom[x];
-      }
-    }
+    calc_loop_level(bb->loop);
   }
-  return rdf;
 }
 
 } // namespace mediumend

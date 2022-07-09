@@ -1,5 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+#include "mediumend/optmizer.hpp"
 
 namespace mediumend {
 
@@ -56,6 +57,12 @@ vector<ir::Reg> get_inst_use_reg(ir::Instruction *inst){
 void detect_pure_function(ir::Program *prog, ir::Function *func) {
   if(func->pure != -1){
     return;
+  }
+  for(auto &type : func->sig.param_types){
+    if(type.is_array()){
+      func->pure = 0;
+      return;
+    }
   }
   for (auto &bb : func->bbs) {
     for (auto &inst : bb->insns) {
@@ -154,50 +161,46 @@ void remove_uneffective_inst(ir::Program *prog){
       auto inst = stack.back();
       stack.pop_back();
       auto regs = get_inst_use_reg(inst);
-      inst->remove_use_def(func->use_list, func->def_list);
+      inst->remove_use_def();
       for(auto reg : regs){
         if(func->use_list[reg].size() == 0){
-          auto inst = func->def_list[reg];
+          auto output = func->def_list[reg];
           if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
             continue;
           }
-          stack.push_back(inst);
+          assert(output);
+          stack.push_back(output);
         }
       }
       remove_inst_set.insert(inst);
     }
     for(auto &bb : bbs){
-      auto &insns = bb->insns;
-      for(auto iter = insns.begin(); iter != insns.end();){
-        if(remove_inst_set.find(iter->get()) != remove_inst_set.end()){
-          iter = insns.erase(iter);
-        }else{
-          iter++;
-        }
-      }
+      bb->remove_if([=](ir::Instruction *ir) {
+        return remove_inst_set.count(ir);
+      });
     }
   }
 }
 
 // Clean Alogritm: Engineering a Compiler, Chap 10.2
 bool eliminate_useless_cf_one_pass(ir::Function *func){
-  func->cfg->clear_visit();
-  auto &visit = func->cfg->visit;
-  auto &succ = func->cfg->succ;
-  auto &prev = func->cfg->prev;
+  func->clear_visit();
   vector<BasicBlock *> stack;
+  if(func->bbs.empty()){
+    return false;
+  }
   stack.push_back(func->bbs.front().get());
   vector<BasicBlock *> order;
-  visit.insert(func->bbs.front().get());
+  func->bbs.front().get()->visit = true;
   while(stack.size()){
     auto bb = stack.back();
     stack.pop_back();
     order.push_back(bb);
-    auto &succ_bb = succ[bb];
+    auto &succ_bb = bb->succ;
     for(auto next : succ_bb){
-      if(!visit.count(next)){
+      if(!next->visit){
         stack.push_back(next);
-        visit.insert(next);
+        next->visit = true;
       }
     }
   }
@@ -207,6 +210,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     auto &inst = bb->insns.back();
     TypeCase(branch, ir::insns::Branch *, inst.get()){
       if(branch->true_target == branch->false_target){
+        branch->remove_use_def();
         inst.reset(new ir::insns::Jump(branch->true_target));
         ret = true;
       }
@@ -214,7 +218,10 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     TypeCase(jmp, ir::insns::Jump *, inst.get()){
       auto target = jmp->target;
       if(bb->insns.size() == 1) {
-        for(auto &pre : prev[bb]){
+        if(auto phi = dynamic_cast<ir::insns::Phi *>(target->insns.front().get())){
+          continue;
+        }
+        for(auto &pre : bb->prev){
           auto &last = pre->insns.back();
           TypeCase(br, ir::insns::Branch *, last.get()){
             if(br->true_target == bb){
@@ -229,10 +236,10 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
               j->target = target;
             }
           }
-          succ[pre].erase(bb);
-          succ[pre].insert(target);
-          prev[target].erase(bb);
-          prev[target].insert(pre);
+          pre->succ.erase(bb);
+          pre->succ.insert(target);
+          target->prev.erase(bb);
+          target->prev.insert(pre);
           for(auto &ins : target->insns){
             TypeCase(phi, ir::insns::Phi *, ins.get()){
               if(phi->incoming.count(bb)){
@@ -259,30 +266,57 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
         ret = true;
         continue;
       }
-      if(prev[target].size() == 1){
-        succ[bb].erase(target);
-        succ[bb].insert(succ[target].begin(), succ[target].end());
-        succ[target].clear();
+      if(target->prev.size() == 1){
+        bb->succ.erase(target);
+        bb->succ.insert(target->succ.begin(), target->succ.end());
         bb->insns.pop_back();
+        for(auto iter = target->insns.begin(); iter != target->insns.end();){
+          TypeCase(phi, ir::insns::Phi *, iter->get()){
+            assert(phi->incoming.size() == 1);
+            copy_propagation(func->use_list, phi->dst, phi->incoming.begin()->second);
+            phi->remove_use_def();
+            iter = target->insns.erase(iter);
+          } else {
+            iter->get()->bb = bb;
+            iter++;
+          }
+        }
         bb->insns.splice(bb->insns.end(), target->insns);
         for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
           if(iter->get() == target){
+            for(auto suc : target->succ){
+              for(auto &inst : suc->insns){
+                TypeCase(phi, ir::insns::Phi *, inst.get()){
+                  if(phi->incoming.count(target)){
+                    phi->incoming[bb] = phi->incoming[target];
+                    phi->incoming.erase(target);
+                  }
+                } else {
+                  break;
+                }
+              }
+            }
             func->bbs.erase(iter);
             break;
           }
         }
+        target->succ.clear();
         ret = true;
         continue;
       }
       if(target->insns.size() == 1){
         TypeCase(br, ir::insns::Branch *, target->insns.back().get()){
-          succ[bb].erase(target);
-          prev[target].erase(bb);
-          succ[bb].insert(br->true_target);
-          succ[bb].insert(br->false_target);
-          prev[br->true_target].insert(bb);
-          prev[br->false_target].insert(bb);
-          bb->insns.back().reset(new ir::insns::Branch(br->val, br->true_target, br->false_target));
+          bb->succ.erase(target);
+          target->prev.erase(bb);
+          bb->succ.insert(br->true_target);
+          bb->succ.insert(br->false_target);
+          br->true_target->prev.insert(bb);
+          br->false_target->prev.insert(bb);
+          br->remove_use_def();
+          auto new_inst = new ir::insns::Branch(br->val, br->true_target, br->false_target);
+          bb->insns.back().reset(new_inst);
+          new_inst->bb = bb;
+          new_inst->add_use_def();
           ret = true;
           continue;
         }
@@ -301,5 +335,8 @@ void clean_useless_cf(ir::Program *prog){
   }
 }
 
+void eliminate_useless_store(ir::Program *prog){
+
+}
 
 }
