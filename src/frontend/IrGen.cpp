@@ -373,7 +373,9 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
           reg = scalar_cast(reg, sig->param_types[i].base_type);
         arg_regs.push_back(reg);
       } else { // string literal
+        auto &str_literal = std::get<ast::StringLiteral>(arg);
         int str_id = program->string_table.size();
+        program->string_table.push_back(str_literal.value());
         auto str_name = ".str." + std::to_string(str_id);
         Reg reg = new_reg(String);
         emit(new insns::LoadAddr{reg, str_name});
