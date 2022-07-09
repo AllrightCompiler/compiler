@@ -224,6 +224,94 @@ void copy_propagation(unordered_map<Reg, list<Instruction *> > &use_list, Reg ds
   }
 }
 
+// Global Value Numbering
+void gvn(Function *f) {
+  f->cfg->build();
+  f->cfg->compute_dom();
+  // cfg dom, domby, idom, domlevel set
+  f->cfg->compute_rpo();
+  // rpo set
+
+  // use reg as value number
+  // reg -> inst : f->def_list[reg]
+  unordered_map<Instruction *, Reg> hashTable;
+  unordered_set<Instruction *> vnSet; // set of all value in hashTable
+  unordered_map<Reg, ConstValue> constMap;
+  for (auto bb : f->cfg->rpo) {
+    for (auto &insn : bb->insns) {
+      TypeCase(phi, ir::insns::Phi *, insn.get()) {
+        unordered_map <Reg, Reg> regsToChange;
+        for (auto income : phi->incoming) {
+          Reg new_reg = income.second;
+          if (!f->has_param(new_reg)) {
+            new_reg = vn_get(hashTable, vnSet, constMap, f->def_list[income.second]);
+          }
+          if (!(income.second == new_reg)) {
+            regsToChange[income.second] = new_reg;
+          }
+        }
+        for (auto reg_pair : regsToChange) {
+          phi->change_use(reg_pair.first, reg_pair.second);
+        }
+        // check meaningless
+        bool meaningless = true;
+        Reg first = (*(phi->incoming.begin())).second;
+        for (auto income : phi->incoming) {
+          meaningless &= (first == income.second);
+        }
+        if (meaningless) { // all incoming same
+          copy_propagation(f->use_list, phi->dst, first);
+        }
+      }
+      TypeCase(binary, ir::insns::Binary *, insn.get()) {
+        Reg new_reg1 = binary->src1;
+        if (!f->has_param(binary->src1)) {
+          new_reg1 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src1]);
+        }
+        Reg new_reg2 = binary->src2;
+        if (!f->has_param(binary->src2)) {
+          new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src2]);
+        }
+        if (!(binary->src1 == new_reg1)) binary->change_use(binary->src1, new_reg1);
+        if (!(binary->src2 == new_reg2)) binary->change_use(binary->src2, new_reg2);
+        // try to simplify binary Instruction
+        Reg src1 = binary->src1, src2 = binary->src2;
+        if (constMap.count(src1) && !constMap.count(src2)) {
+          swapBinaryOprands(binary);
+          src1 = binary->src1, src2 = binary->src2;
+        }
+        auto ret = simplifyBinary(constMap, binary);
+        if (ret.has_value()) {
+          if (ret.value().index() == 0) {
+            auto constval = std::get<ConstValue>(ret.value());
+            bool find = false;
+            for (auto pair : constMap) {
+              if (pair.second == constval) {
+                copy_propagation(f->use_list, binary->dst, pair.first);
+                find = true;
+                break;
+              }
+            }
+            if (!find) { // replace binary with loadimm
+              auto new_ins = new ir::insns::LoadImm(binary->dst, constval);
+              binary->remove_use_def();
+              insn.reset(new_ins);
+              new_ins->add_use_def();
+              hashTable[insn.get()] = binary->dst;
+              vnSet.insert(insn.get());
+              constMap[binary->dst] = constval;
+            }
+          } else {
+            auto reg = std::get<Reg>(ret.value());
+            copy_propagation(f->use_list, binary->dst, reg);
+          }
+        }
+      }
+      // TODO: more inst types
+    }
+  }
+}
+
 // Least Common Ancestor (on dom tree)
 BasicBlock *find_lca(BasicBlock *a, BasicBlock *b) {
   if (a == nullptr) return b;
@@ -334,88 +422,8 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
   }
 }
 
-void gvn_gcm(Function *f) {
-  // Global Value Numbering
-
-  f->cfg->build();
-  f->cfg->compute_dom();
-  // cfg dom, domby, idom, domlevel set
-  f->cfg->compute_rpo();
-  // rpo set
-
-  // use reg as value number
-  // reg -> inst : f->def_list[reg]
-  unordered_map<Instruction *, Reg> hashTable;
-  unordered_set<Instruction *> vnSet; // set of all value in hashTable
-  unordered_map<Reg, ConstValue> constMap;
-
-  for (auto bb : f->cfg->rpo) {
-    for (auto &insn : bb->insns) {
-      TypeCase(phi, ir::insns::Phi *, insn.get()) {
-        unordered_map <Reg, Reg> regsToChange;
-        for (auto income : phi->incoming) {
-          Reg new_reg = vn_get(hashTable, vnSet, constMap, f->def_list[income.second]);
-          if (!(income.second == new_reg)) {
-            regsToChange[income.second] = new_reg;
-          }
-        }
-        for (auto reg_pair : regsToChange) {
-          phi->change_use(reg_pair.first, reg_pair.second);
-        }
-        // check meaningless
-        bool meaningless = true;
-        Reg first = (*(phi->incoming.begin())).second;
-        for (auto income : phi->incoming) {
-          meaningless &= (first == income.second);
-        }
-        if (meaningless) { // all incoming same
-          copy_propagation(f->use_list, phi->dst, first);
-        }
-      }
-      TypeCase(binary, ir::insns::Binary *, insn.get()) {
-        Reg new_reg1 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src1]);
-        Reg new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src2]);
-        if (!(binary->src1 == new_reg1)) binary->change_use(binary->src1, new_reg1);
-        if (!(binary->src2 == new_reg2)) binary->change_use(binary->src2, new_reg2);
-        // try to simplify binary Instruction
-        Reg src1 = binary->src1, src2 = binary->src2;
-        if (constMap.count(src1) && !constMap.count(src2)) {
-          swapBinaryOprands(binary);
-          src1 = binary->src1, src2 = binary->src2;
-        }
-        auto ret = simplifyBinary(constMap, binary);
-        if (ret.has_value()) {
-          if (ret.value().index() == 0) {
-            auto constval = std::get<ConstValue>(ret.value());
-            bool find = false;
-            for (auto pair : constMap) {
-              if (pair.second == constval) {
-                copy_propagation(f->use_list, binary->dst, pair.first);
-                find = true;
-                break;
-              }
-            }
-            if (!find) { // replace binary with loadimm
-              auto new_ins = new ir::insns::LoadImm(binary->dst, constval);
-              binary->remove_use_def();
-              insn.reset(new_ins);
-              new_ins->add_use_def();
-              hashTable[insn.get()] = binary->dst;
-              vnSet.insert(insn.get());
-              constMap[binary->dst] = constval;
-            }
-          } else {
-            auto reg = std::get<Reg>(ret.value());
-            copy_propagation(f->use_list, binary->dst, reg);
-          }
-        }
-      }
-      // TODO: more inst types
-    }
-  }
-
-  // Global Code Motion
-
+// Global Code Motion
+void gcm(Function *f) {
   f->cfg->loop_analysis();
 
   vector<ir::Instruction *> all_insts;
@@ -438,7 +446,8 @@ void gvn_gcm(Function *f) {
 void gvn_gcm(ir::Program *prog) {
   for(auto &func : prog->functions){
     // std::cout << "func: " << func.first << std::endl;
-    gvn_gcm(&func.second);
+    gvn(&func.second);
+    gcm(&func.second);
   }
 }
 

@@ -141,6 +141,9 @@ struct Function {
       bb->idom = nullptr;
     }
   }
+  bool has_param(Reg r){
+    return r.id <= sig.param_types.size();
+  }
 };
 
 struct LibFunction {
