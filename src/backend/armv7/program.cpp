@@ -724,7 +724,9 @@ void Function::resolve_stack_ops(int frame_size) {
         int imm = std::abs(offset);
         bool sub = offset < 0;
 
-        if (is_imm8m(imm) || is_imm12(imm)) {
+        // TODO: 如果Thumb-2可用，这里可以是imm12吗?
+        // if (is_imm8m(imm) || is_imm12(imm)) {
+        if (is_imm8m(imm)) {
           auto op = sub ? IType::Sub : IType::Add;
           it->reset(new IType{op, dst, reg_sp, imm});
         } else {
@@ -766,9 +768,19 @@ void Function::resolve_stack_ops(int frame_size) {
       else TypeCase(sp_adjust, AdjustSp *, ins) {
         int offset = sp_adjust->offset;
         int imm = std::abs(offset);
-        auto op = offset < 0 ? IType::Sub : IType::Add;
-        assert(is_imm8m(imm) || is_imm12(imm));
-        it->reset(new IType{op, reg_sp, reg_sp, imm});
+        
+        if (is_imm8m(imm)) {
+          auto op = offset < 0 ? IType::Sub : IType::Add;
+          it->reset(new IType{op, reg_sp, reg_sp, imm});
+        } else {
+          // NOTE: 假设非imm8m的sp调整只会出现在函数调用之后
+          // (如果prologue和epilogue中sp的调整量都向上对齐到imm8m)
+          // 这时r1~r3是报废的，可以使用
+          auto op = offset < 0 ? RType::Sub : RType::Add;
+          Reg tmp{General, r2};
+          emit_load_imm(insns, it, tmp, imm);
+          it->reset(new RType{op, reg_sp, reg_sp, tmp});
+        }
         sp_offset += offset;
       }
       else TypeCase(push, Push *, ins) {
