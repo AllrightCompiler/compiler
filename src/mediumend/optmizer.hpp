@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/ir.hpp"
+#include "common/utils.hpp"
 #include "mediumend/cfg.hpp"
 #include <iostream>
 #include <fstream>
@@ -37,7 +38,7 @@ inline void run_medium(ir::Program *prog) {
 
   std::ifstream pass_config("pass_config.txt");
   if (pass_config.is_open()) {
-    std::cout << "use user pass config!" << std::endl;
+    warn(std::cerr) << "use user pass config!" << std::endl;
     passes.clear();
     std::string line;
     while (std::getline(pass_config, line)) {
