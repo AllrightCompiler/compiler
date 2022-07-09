@@ -180,7 +180,7 @@ void IrGen::visit_initializer(
       if (cur_func || !val_map.count(index)) {
         auto &expr = std::get<std::unique_ptr<ast::Expression>>(value);
         Reg val_reg = scalar_cast(visit_arith_expr(expr), var->type.base_type);
-        emit_array_init(base_reg, val_reg, index);        
+        emit_array_init(base_reg, val_reg, index);
         assigned_indices.insert(index);
       }
       ++index;
@@ -236,10 +236,10 @@ void IrGen::visit_function(const ast::Function &node) {
     emit(new insns::Call{new_reg(String), ".init", {}});
 
   visit_statement(*node.body());
-  auto last_inst = dynamic_cast<ir::insns::Return *>(cur_func->bbs.back()->insns.back().get());
-  if(!last_inst){
-    emit(new insns::Return{std::nullopt});
-  }
+  
+  // 总是添加return作为兜底
+  emit(new insns::Return{std::nullopt});
+
   cur_func->nr_regs = local_regs;
   cur_func = nullptr;
   cur_bb = init_bb;
