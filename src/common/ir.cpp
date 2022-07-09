@@ -144,6 +144,26 @@ std::vector<Instruction *> BasicBlock::remove_if(std::function<bool(Instruction 
   return ret;
 }
 
+void Function::clear_visit(){
+  for (auto &bb : bbs) {
+    bb->clear_visit();
+  }
+}
+
+void Function::clear_graph(){
+  for (auto &bb : bbs) {
+    bb->prev.clear();
+    bb->succ.clear();
+  }
+}
+
+void Function::clear_dom(){
+  for (auto &bb : bbs) {
+    bb->dom.clear();
+    bb->domby.clear();
+    bb->idom = nullptr;
+  }
+}
 namespace insns {
 
 ostream &write_reg(ostream &os, const Output &ins) {

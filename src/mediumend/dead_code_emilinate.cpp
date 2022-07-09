@@ -1,5 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+#include "mediumend/optmizer.hpp"
 
 namespace mediumend {
 
@@ -268,6 +269,16 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
         bb->succ.erase(target);
         bb->succ.insert(target->succ.begin(), target->succ.end());
         bb->insns.pop_back();
+        for(auto iter = target->insns.begin(); iter != target->insns.end();){
+          TypeCase(phi, ir::insns::Phi *, iter->get()){
+            assert(phi->incoming.size() == 1);
+            copy_propagation(func->use_list, phi->dst, phi->incoming.begin()->second);
+            iter = target->insns.erase(iter);
+          } else {
+            iter->get()->bb = bb;
+            iter++;
+          }
+        }
         bb->insns.splice(bb->insns.end(), target->insns);
         for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
           if(iter->get() == target){

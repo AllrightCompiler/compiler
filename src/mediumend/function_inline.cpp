@@ -43,6 +43,9 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     unordered_map<Reg, Reg> reg2reg;
     auto &args = inst->args;
     auto &paras = callee->sig.param_types;
+    for(int i = 0; i < args.size(); i++){
+      reg2reg[Reg(paras[i].base_type, i + 1)] = args[i];
+    }
     auto ret_bb = new BasicBlock();
     ret_bb->label = name + "_ret";
     ret_bb->func = caller;
@@ -85,6 +88,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
           ret_bb->insns.emplace_back(ret_phi);
           ret_phi->bb = ret_bb;
         }
+        inst_iter->get()->remove_use_def();
         inst_iter->reset(new ir::insns::Jump(bb2bb[callee->bbs.front().get()]));
         inst_iter++;
         break;

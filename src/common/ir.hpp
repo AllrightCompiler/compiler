@@ -123,27 +123,10 @@ struct Function {
     return ir::Reg{t, ++nr_regs};
   }
   ~Function();
-  void clear_visit(){
-    for (auto &bb : bbs) {
-      bb->clear_visit();
-    }
-  }
-  void clear_graph(){
-    for (auto &bb : bbs) {
-      bb->prev.clear();
-      bb->succ.clear();
-    }
-  }
-  void clear_dom(){
-    for (auto &bb : bbs) {
-      bb->dom.clear();
-      bb->domby.clear();
-      bb->idom = nullptr;
-    }
-  }
-  bool has_param(Reg r){
-    return r.id <= sig.param_types.size();
-  }
+  bool has_param(Reg r){ return r.id <= sig.param_types.size(); }
+  void clear_visit();
+  void clear_graph();
+  void clear_dom();
 };
 
 struct LibFunction {
