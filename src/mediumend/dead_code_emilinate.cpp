@@ -210,6 +210,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     auto &inst = bb->insns.back();
     TypeCase(branch, ir::insns::Branch *, inst.get()){
       if(branch->true_target == branch->false_target){
+        branch->remove_use_def();
         inst.reset(new ir::insns::Jump(branch->true_target));
         ret = true;
       }
@@ -273,6 +274,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           TypeCase(phi, ir::insns::Phi *, iter->get()){
             assert(phi->incoming.size() == 1);
             copy_propagation(func->use_list, phi->dst, phi->incoming.begin()->second);
+            phi->remove_use_def();
             iter = target->insns.erase(iter);
           } else {
             iter->get()->bb = bb;
@@ -310,7 +312,11 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           bb->succ.insert(br->false_target);
           br->true_target->prev.insert(bb);
           br->false_target->prev.insert(bb);
-          bb->insns.back().reset(new ir::insns::Branch(br->val, br->true_target, br->false_target));
+          br->remove_use_def();
+          auto new_inst = new ir::insns::Branch(br->val, br->true_target, br->false_target);
+          bb->insns.back().reset(new_inst);
+          new_inst->bb = bb;
+          new_inst->add_use_def();
           ret = true;
           continue;
         }

@@ -50,6 +50,9 @@ void constant_propagation(ir::Program *prog) {
           continue;
         }
         TypeCase(output, ir::insns::Output *, ins.get()){
+          if(output->dst.id == 152){
+            int a = 1;
+          }
           if(func->use_list[output->dst].empty()){
             TypeCase(call, ir::insns::Call *, output){
               auto func_iter = prog->functions.find(call->func);
@@ -78,7 +81,7 @@ void constant_propagation(ir::Program *prog) {
                 stack.insert(uses->bb);
               }
               unary->remove_use_def();
-              ConstValue new_val = const_compute(unary, const_map[unary->src]);
+              ConstValue new_val = const_compute(unary, const_map.at(unary->src));
               ins.reset(new ir::insns::LoadImm(reg, new_val));
               const_map[reg] = new_val;
               ins->bb = bb;
@@ -97,7 +100,7 @@ void constant_propagation(ir::Program *prog) {
                 stack.insert(uses->bb);
               }
               binary->remove_use_def();
-              ConstValue new_val = const_compute(binary, const_map[binary->src1], const_map[binary->src2]);
+              ConstValue new_val = const_compute(binary, const_map.at(binary->src1), const_map.at(binary->src2));
               auto new_ins = new ir::insns::LoadImm(reg, new_val);
               ins.reset(new_ins);
               const_map[reg] = new_val;
@@ -114,7 +117,7 @@ void constant_propagation(ir::Program *prog) {
                 stack.insert(uses->bb);
               }
               convey->remove_use_def();
-              ConstValue new_val = const_compute(convey, const_map[convey->src]);
+              ConstValue new_val = const_compute(convey, const_map.at(convey->src));
               auto new_ins = new ir::insns::LoadImm(reg, new_val);
               ins.reset(new_ins);
               ins->bb = bb;
@@ -132,14 +135,21 @@ void constant_propagation(ir::Program *prog) {
               if(!bb->prev.count(iter->first)){
                 iter = phi->incoming.erase(iter);
               } else {
-                if(!set_val){
-                  set_val = true;
-                  val = const_map[iter->second];
-                } else {
-                  if(!(val == const_map[iter->second])){
-                    phi_const = false;
+                if(phi_const){
+                  if(!set_val){
+                    if(!const_map.count(iter->second)){
+                      phi_const = false;
+                    } else {
+                      val = const_map.at(iter->second);
+                      set_val = true;
+                    }
+                  } else {
+                    if(!const_map.count(iter->second) || !(val == const_map.at(iter->second))){
+                      phi_const = false;
+                    }
                   }
                 }
+                
                 iter++;
               }
             }
@@ -166,7 +176,7 @@ void constant_propagation(ir::Program *prog) {
             }
             br->remove_use_def();
             ir::BasicBlock *target;
-            if(const_map[br->val].iv) {
+            if(const_map.at(br->val).iv) {
               target = br->true_target;
               bb->succ.erase(br->false_target);
               br->false_target->prev.erase(br->false_target);
