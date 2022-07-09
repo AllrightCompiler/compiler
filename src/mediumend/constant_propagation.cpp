@@ -9,7 +9,7 @@ namespace mediumend {
 using ir::Reg;
 
 void constant_propagation(ir::Program *prog) {
-  for(auto &each : prog->functions){
+  for (auto &each : prog->functions) {
     ir::Function *func = &each.second;
     ir::BasicBlock *entry = func->bbs.front().get();
     std::unordered_map<Reg, ConstValue> const_map;
@@ -25,45 +25,46 @@ void constant_propagation(ir::Program *prog) {
         }
       }
     }
-    while(stack.size()) {
+    while (stack.size()) {
       auto s_iter = stack.begin();
       auto bb = *s_iter;
       stack.erase(s_iter);
-      if(remove_list.count(bb)){
+      if (remove_list.count(bb)) {
         continue;
       }
-      if(bb->prev.empty() && bb != entry){
-        for(auto &suc : bb->succ){
+      if (bb->prev.empty() && bb != entry) {
+        for (auto &suc : bb->succ) {
           suc->prev.erase(bb);
         }
         stack.insert(bb->succ.begin(), bb->succ.end());
         bb->succ.clear();
         remove_list.insert(bb);
-        for(auto &inst : bb->insns){
+        for (auto &inst : bb->insns) {
           inst->remove_use_def();
         }
         continue;
       }
       bool add_res = false;
       for (auto &ins : bb->insns) {
-        if(remove_inst_list.count(ins.get())){
+        if (remove_inst_list.count(ins.get())) {
           continue;
         }
-        TypeCase(output, ir::insns::Output *, ins.get()){
-          if(output->dst.id == 152){
+        TypeCase(output, ir::insns::Output *, ins.get()) {
+          if (output->dst.id == 152) {
             int a = 1;
           }
-          if(func->use_list[output->dst].empty()){
-            TypeCase(call, ir::insns::Call *, output){
+          if (func->use_list[output->dst].empty()) {
+            TypeCase(call, ir::insns::Call *, output) {
               auto func_iter = prog->functions.find(call->func);
-              if(func_iter == prog->functions.end() || !func_iter->second.pure){
+              if (func_iter == prog->functions.end() ||
+                  !func_iter->second.pure) {
                 continue;
               }
             }
             auto reg_use = get_inst_use_reg(output);
-            for(auto &use : reg_use){
+            for (auto &use : reg_use) {
               auto it = func->def_list.find(use);
-              if(it != func->def_list.end()){
+              if (it != func->def_list.end()) {
                 stack.insert(it->second->bb);
               }
             }
@@ -71,17 +72,18 @@ void constant_propagation(ir::Program *prog) {
             remove_inst_list.insert(output);
             continue;
           }
-          if(const_map.count(output->dst)){
+          if (const_map.count(output->dst)) {
             continue;
           }
           TypeCase(unary, ir::insns::Unary *, ins.get()) {
             if (const_map.count(unary->src)) {
               Reg reg = unary->dst;
-              for(auto &uses : func->use_list[unary->src]){
+              for (auto &uses : func->use_list[unary->src]) {
                 stack.insert(uses->bb);
               }
               unary->remove_use_def();
-              ConstValue new_val = const_compute(unary, const_map.at(unary->src));
+              ConstValue new_val =
+                  const_compute(unary, const_map.at(unary->src));
               ins.reset(new ir::insns::LoadImm(reg, new_val));
               const_map[reg] = new_val;
               ins->bb = bb;
@@ -91,16 +93,19 @@ void constant_propagation(ir::Program *prog) {
             continue;
           }
           TypeCase(binary, ir::insns::Binary *, ins.get()) {
-            if (const_map.count(binary->src1) && const_map.count(binary->src2)) {
+            if (const_map.count(binary->src1) &&
+                const_map.count(binary->src2)) {
               Reg reg = binary->dst;
-              for(auto &uses : func->use_list[binary->src1]){
+              for (auto &uses : func->use_list[binary->src1]) {
                 stack.insert(uses->bb);
               }
-              for(auto &uses : func->use_list[binary->src2]){
+              for (auto &uses : func->use_list[binary->src2]) {
                 stack.insert(uses->bb);
               }
               binary->remove_use_def();
-              ConstValue new_val = const_compute(binary, const_map.at(binary->src1), const_map.at(binary->src2));
+              ConstValue new_val =
+                  const_compute(binary, const_map.at(binary->src1),
+                                const_map.at(binary->src2));
               auto new_ins = new ir::insns::LoadImm(reg, new_val);
               ins.reset(new_ins);
               const_map[reg] = new_val;
@@ -110,14 +115,15 @@ void constant_propagation(ir::Program *prog) {
             }
             continue;
           }
-          TypeCase(convey, ir::insns::Convert *, ins.get()){
-            if(const_map.find(convey->src) != const_map.end()){
+          TypeCase(convey, ir::insns::Convert *, ins.get()) {
+            if (const_map.find(convey->src) != const_map.end()) {
               Reg reg = convey->dst;
-              for(auto &uses : func->use_list[convey->src]){
+              for (auto &uses : func->use_list[convey->src]) {
                 stack.insert(uses->bb);
               }
               convey->remove_use_def();
-              ConstValue new_val = const_compute(convey, const_map.at(convey->src));
+              ConstValue new_val =
+                  const_compute(convey, const_map.at(convey->src));
               auto new_ins = new ir::insns::LoadImm(reg, new_val);
               ins.reset(new_ins);
               ins->bb = bb;
@@ -127,36 +133,47 @@ void constant_propagation(ir::Program *prog) {
             }
             continue;
           }
-          TypeCase(phi, ir::insns::Phi *, ins.get()){
+          TypeCase(phi, ir::insns::Phi *, ins.get()) {
             ConstValue val;
             bool set_val = false;
             bool phi_const = true;
-            for(auto iter = phi->incoming.begin(); iter != phi->incoming.end();){
-              if(!bb->prev.count(iter->first)){
+            bool use_same_reg = true;
+            bool set_reg = false;
+            Reg use_reg;
+            for (auto iter = phi->incoming.begin();
+                 iter != phi->incoming.end();) {
+              if (!bb->prev.count(iter->first)) {
                 iter = phi->incoming.erase(iter);
               } else {
-                if(phi_const){
-                  if(!set_val){
-                    if(!const_map.count(iter->second)){
+                if (!set_reg) {
+                  use_reg = iter->second;
+                } else {
+                  if (!(use_reg == iter->second)) {
+                    use_same_reg = false;
+                  }
+                }
+                if (phi_const) {
+                  if (!set_val) {
+                    if (!const_map.count(iter->second)) {
                       phi_const = false;
                     } else {
                       val = const_map.at(iter->second);
                       set_val = true;
                     }
                   } else {
-                    if(!const_map.count(iter->second) || !(val == const_map.at(iter->second))){
+                    if (!const_map.count(iter->second) ||
+                        !(val == const_map.at(iter->second))) {
                       phi_const = false;
                     }
                   }
                 }
-                
                 iter++;
               }
             }
-            if(phi_const){
+            if (phi_const) {
               Reg reg = phi->dst;
-              for(auto &in : phi->incoming){
-                for(auto &uses : func->use_list[in.second]){
+              for (auto &in : phi->incoming) {
+                for (auto &uses : func->use_list[in.second]) {
                   stack.insert(uses->bb);
                 }
               }
@@ -166,20 +183,27 @@ void constant_propagation(ir::Program *prog) {
               ins->add_use_def();
               add_res = true;
               const_map[reg] = val;
+            } else {
+              if (use_same_reg) {
+                copy_propagation(func->use_list, phi->dst, use_reg);
+                stack.insert(func->def_list.at(use_reg)->bb);
+                phi->remove_use_def();
+                remove_inst_list.insert(phi);
+              }
             }
           }
         }
         TypeCase(br, ir::insns::Branch *, ins.get()) {
           if (const_map.find(br->val) != const_map.end()) {
-            for(auto &uses : func->use_list[br->val]){
+            for (auto &uses : func->use_list[br->val]) {
               stack.insert(uses->bb);
             }
             br->remove_use_def();
             ir::BasicBlock *target;
-            if(const_map.at(br->val).iv) {
+            if (const_map.at(br->val).iv) {
               target = br->true_target;
               bb->succ.erase(br->false_target);
-              br->false_target->prev.erase(br->false_target);
+              br->false_target->prev.erase(bb);
               stack.insert(br->false_target);
             } else {
               target = br->false_target;
@@ -195,16 +219,17 @@ void constant_propagation(ir::Program *prog) {
           continue;
         }
       }
-      if(add_res){
+      if (add_res) {
         stack.insert(bb->succ.begin(), bb->succ.end());
       }
     }
-    for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-      if(remove_list.count(iter->get())){
+    for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
+      if (remove_list.count(iter->get())) {
         iter = func->bbs.erase(iter);
       } else {
-        for(auto inst_iter = iter->get()->insns.begin(); inst_iter != iter->get()->insns.end();){
-          if(remove_inst_list.count(inst_iter->get())){
+        for (auto inst_iter = iter->get()->insns.begin();
+             inst_iter != iter->get()->insns.end();) {
+          if (remove_inst_list.count(inst_iter->get())) {
             inst_iter = iter->get()->insns.erase(inst_iter);
           } else {
             inst_iter++;

@@ -1,4 +1,5 @@
 import sys
+import re
 
 reg_map = {}
 n_reg = 0
@@ -6,9 +7,9 @@ lib_funcs = [
     ["declare i32 @getint()"],
     ["declare i32 @getch()"],
     ["declare float @getfloat()"],
-    ["declare i32 @putint(i32)"],
-    ["declare i32 @putch(i32)"],
-    ["declare float @putfloat(float)"],
+    ["declare void @putint(i32)"],
+    ["declare void @putch(i32)"],
+    ["declare void @putfloat(float)"],
     []
 ]
 
@@ -44,6 +45,15 @@ def replace_br(line):
     line[1] = "i1"
     return line
 
+def replace_funcall(line):
+    if(len(line) < 3):
+        return line
+    if(line[2] != "call"):
+        return line
+    if(line[3] == "void"):
+        return line[2::]
+    return line
+
 def rename_regs(s: str):
     global reg_map
     global n_reg
@@ -71,6 +81,7 @@ def translate(input_path, output_path):
     content = [replace_loadimm(line) for line in content]
     content = [replace_cmp(line) for line in content]
     content = [replace_br(line) for line in content]
+    content = [replace_funcall(line) for line in content]
     for line in content:
         if line:
             collect_regs(line[0])

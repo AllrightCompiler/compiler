@@ -49,13 +49,10 @@ void main_global_var_to_local(ir::Program *prog){
     global_addr_to_local_reg[each] = reg;
     if(var->val.has_value()){
       Reg val_reg = func.new_reg(var->type.base_type);
-      entry->insns.emplace_front(new ir::insns::LoadImm(val_reg, var->val.value()));
-      entry->insns.front().get()->bb = entry.get();
-      entry->insns.emplace_front(new ir::insns::Store(reg, val_reg));
-      entry->insns.front().get()->bb = entry.get();
+      entry->push_front(new ir::insns::LoadImm(val_reg, var->val.value()));
+      entry->push_front(new ir::insns::Store(reg, val_reg));
     }
-    entry->insns.emplace_front(new ir::insns::Alloca(reg, var->type));
-    entry->insns.front().get()->bb = entry.get();
+    entry->push_front(new ir::insns::Alloca(reg, var->type));
   }
   for(auto &bb : func.bbs){
     for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
@@ -164,6 +161,7 @@ void mem2reg(ir::Program *prog) {
               reg = alloc_map[pos][inst->addr];
             }
             copy_propagation(func->use_list, inst->dst, reg);
+            iter->get()->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }
@@ -177,7 +175,9 @@ void mem2reg(ir::Program *prog) {
           }
         }
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
-          alloc_map[bb][phi2mem[inst]] = inst->dst;
+          if(phi2mem.count(inst)){
+            alloc_map[bb][phi2mem.at(inst)] = inst->dst;
+          }
         }
         iter++;
         continue;
@@ -189,13 +189,16 @@ void mem2reg(ir::Program *prog) {
         }
         for(auto &inst : succ->insns){
           TypeCase(phi, ir::insns::Phi *, inst.get()) {
+            if(!phi2mem.count(phi)){
+              continue;
+            }
             BasicBlock *pos = bb;
-            Reg reg = phi2mem[phi];
+            Reg reg = phi2mem.at(phi);
             while(pos && !alloc_map[pos].count(reg)){
               pos = pos->idom;
             }
             if(pos){
-              phi->incoming[bb] = alloc_map[pos][phi2mem[phi]];
+              phi->incoming[bb] = alloc_map[pos][phi2mem.at(phi)];
             }
           } else {
             break;

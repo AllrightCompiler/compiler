@@ -5,6 +5,8 @@
 
 namespace ir {
 
+const Program *ir_print_prog = nullptr;
+
 using std::ostream;
 
 inline std::string reg_name(Reg r) { return "%" + std::to_string(r.id); }
@@ -25,6 +27,13 @@ inline std::string type_string(const std::optional<ScalarType> &t) {
   if (!t)
     return "void";
   return type_string(t.value());
+}
+
+inline std::string type_string(string fun_name) {
+  if(ir_print_prog->functions.count(fun_name)){
+    return type_string(ir_print_prog->functions.at(fun_name).sig.ret_type);
+  }
+  return type_string(ir_print_prog->lib_funcs.at(fun_name).sig.ret_type);
 }
 
 std::string type_string(const Type &t) {
@@ -223,7 +232,7 @@ ostream &operator<<(ostream &os, const Convert &ins) {
 
 ostream &operator<<(ostream &os, const Call &ins) {
   // TODO: 类型标注，需要Program上下文
-  write_reg(os, ins) << " = call " << type_string(ins.dst.type) << " " << var_name(ins.func) << "(";
+  write_reg(os, ins) << " = call " << type_string(ins.func) << " " << var_name(ins.func) << "(";
   for (int i = 0; i < int(ins.args.size()); ++i) {
     if (i != 0)
       os << ", ";
@@ -346,6 +355,7 @@ ostream &operator<<(ostream &os, const Function &f) {
 }
 
 ostream &operator<<(ostream &os, const Program &p) {
+  ir_print_prog = &p;
   for (auto &[_, f] : p.functions)
     os << f;
   return os;

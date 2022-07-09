@@ -68,11 +68,15 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
         print('\033[0;31mTLE\033[0m')
         return False
     retcode = proc.returncode
-    ans = int(open(ans_path).read())
-    if retcode == ans:
-        print(' \033[0;32mPass\033[0m')
-        return True
-    else:
+    try:
+        ans = int(open(ans_path).read())
+        if retcode == ans:
+            print(' \033[0;32mPass\033[0m')
+            return True
+        else:
+            print('\033[0;31mWrong Answer\033[0m')
+            return False
+    except:
         print('\033[0;31mWrong Answer\033[0m')
         return False
 

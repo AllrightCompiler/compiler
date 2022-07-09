@@ -38,7 +38,7 @@ inline void run_medium(ir::Program *prog) {
 
   std::ifstream pass_config("pass_config.txt");
   if (pass_config.is_open()) {
-    warn(std::cerr) << "use user pass config!" << std::endl;
+    // warn(std::cerr) << "use user pass config!" << std::endl;
     passes.clear();
     std::string line;
     while (std::getline(pass_config, line)) {
