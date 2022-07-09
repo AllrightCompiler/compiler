@@ -27,8 +27,7 @@ std::string_view op_string(BinaryOp op) {
   if (op >= BinaryOp::NR_OPS)
     return "<unknown_binary_op>";
   static constexpr std::string_view op_strs[] = {
-    "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "&&", "||"
-  };
+      "+", "-", "*", "/", "%", "==", "!=", "<", ">", "<=", ">=", "&&", "||"};
   return op_strs[i];
 }
 
@@ -115,8 +114,14 @@ void Parameter::print(std::ostream &out, unsigned int indent) const {
 
 void LValue::print(std::ostream &out, unsigned int indent) const {
   print_indent(out, indent);
-  out << "LValue " << m_ident << '\n';
-  // TODO: indices
+  out << "LValue " << m_ident;
+  for (auto const &index : this->m_indices) {
+    out << "[\n";
+    index->print(out, indent + 1);
+    print_indent(out, indent);
+    out << ']';
+  }
+  out << '\n';
 }
 
 void UnaryExpr::print(std::ostream &out, unsigned int indent) const {
@@ -189,7 +194,8 @@ void Initializer::print(std::ostream &out, unsigned int indent) const {
     assert(expr);
     expr->print(out, indent + INDENT_LEN);
   } else {
-    auto &initializers = std::get<std::vector<std::unique_ptr<Initializer>>>(m_value);
+    auto &initializers =
+        std::get<std::vector<std::unique_ptr<Initializer>>>(m_value);
     for (auto &initializer : initializers) {
       assert(initializer);
       initializer->print(out, indent + INDENT_LEN);
@@ -226,12 +232,12 @@ void Block::print(std::ostream &out, unsigned int indent) const {
 void IfElse::print(std::ostream &out, unsigned int indent) const {
   print_indent(out, indent);
   out << "IfElse\n";
-  
+
   print_indent(out, indent + INDENT_LEN);
   out << "Cond\n";
   assert(m_cond);
   m_cond->print(out, indent + INDENT_LEN * 2);
-  
+
   print_indent(out, indent + INDENT_LEN);
   out << "Then\n";
   assert(m_then);
@@ -247,7 +253,7 @@ void IfElse::print(std::ostream &out, unsigned int indent) const {
 void While::print(std::ostream &out, unsigned int indent) const {
   print_indent(out, indent);
   out << "While\n";
-  
+
   print_indent(out, indent + INDENT_LEN);
   out << "Cond\n";
   assert(m_cond);
