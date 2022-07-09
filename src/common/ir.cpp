@@ -203,11 +203,11 @@ ostream &operator<<(ostream &os, const Convert &ins) {
 
 ostream &operator<<(ostream &os, const Call &ins) {
   // TODO: 类型标注，需要Program上下文
-  write_reg(os, ins) << " = call " << var_name(ins.func) << "(";
+  write_reg(os, ins) << " = call " << type_string(ins.dst.type) << " " << var_name(ins.func) << "(";
   for (int i = 0; i < int(ins.args.size()); ++i) {
     if (i != 0)
       os << ", ";
-    os << reg_name(ins.args[i]);
+    os << type_string(ins.args[i].type) << " " << reg_name(ins.args[i]);
   }
   os << ")";
   return os;
@@ -247,10 +247,11 @@ ostream &operator<<(ostream &os, const Branch &ins) {
 }
 
 ostream &operator<<(ostream &os, const Phi &ins) {
-  write_reg(os, ins) << " = " << "Phi";
-  for (auto each : ins.incoming) {
-    os << " [" << label_name(each.first->label) << ", "
-       << reg_name(each.second) << "]";
+  write_reg(os, ins) << " = " << "phi " << type_string(ins.dst.type);
+  for (auto it = ins.incoming.begin(); it != ins.incoming.end(); it++) {
+    if (it != ins.incoming.begin()) os << ",";
+    os << " [" << reg_name(it->second) << ", "
+       << label_name(it->first->label) << "]";
   }
   return os;
 }
