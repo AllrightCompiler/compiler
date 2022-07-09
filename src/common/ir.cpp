@@ -354,8 +354,19 @@ ostream &operator<<(ostream &os, const Function &f) {
   return os << "}\n\n";
 }
 
+ostream &operator<<(ostream &os, const ConstValue &p) {
+  if (p.type == Int) {
+    os << p.iv;
+  } else if (p.type == Float) {
+    os << p.fv;
+  } else assert(false);
+}
+
 ostream &operator<<(ostream &os, const Program &p) {
   ir_print_prog = &p;
+  for (auto &[name, var] : p.global_vars) {
+    os << "@" << name << " = global " << type_string(var->type) << " " << var->val.value() << "\n";
+  }
   for (auto &[_, f] : p.functions)
     os << f;
   return os;
