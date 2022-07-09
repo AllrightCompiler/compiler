@@ -59,6 +59,7 @@ struct Function {
   // post-register allocation passes
   void emit_prologue_epilogue();
   void resolve_stack_ops(int frame_size);
+  void replace_pseudo_insns();
 
   void emit(std::ostream &os);
 };

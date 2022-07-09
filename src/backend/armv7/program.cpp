@@ -251,9 +251,12 @@ class ProgramTranslator {
       case BinaryOp::Gt:
       case BinaryOp::Leq:
       case BinaryOp::Lt: {
-        // 暂不生成实际代码，只生成标记（要求虚拟寄存器单赋值）
+        auto cond = from(binary->op);
+        auto inner = new Compare{s1, Operand2::from(s2)};
+        bb->push(cond, new PseudoCompare{inner, dst});
+
         auto &cmp = cmp_info[dst];
-        cmp.cond = from(binary->op);
+        cmp.cond = cond;
         cmp.lhs = s1;
         cmp.rhs = s2;
         break;
@@ -773,6 +776,27 @@ void Function::resolve_stack_ops(int frame_size) {
       }
       else TypeCase(pop, Pop *, ins) {
         sp_offset += pop->dsts.size() * 4;
+      }
+    }
+  }
+}
+
+void Function::replace_pseudo_insns() {
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end(); ++it) {
+      TypeCase(pcmp, PseudoCompare *, it->get()) {
+        auto cond = pcmp->cond;
+        auto dst = pcmp->dst;
+
+        auto cmov_true = new Move{dst, Operand2::from(1)};
+        cmov_true->cond = cond;
+        auto cmov_false = new Move{dst, Operand2::from(0)};
+        cmov_false->cond = logical_not(cond);
+
+        insns.emplace(it, pcmp->cmp.release());
+        insns.emplace(it, cmov_false);
+        it->reset(cmov_true);
       }
     }
   }

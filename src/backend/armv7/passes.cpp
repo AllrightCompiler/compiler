@@ -18,7 +18,9 @@ void backend_passes(Program &p) {
 
     reg_allocator.do_reg_alloc(f);
 
-    f.emit_prologue_epilogue(); // 必须调用
+    // 以下步骤必须进行
+    f.emit_prologue_epilogue();
+    f.replace_pseudo_insns();
   }
 }
 
@@ -94,6 +96,20 @@ void fold_constants(Function &f) {
         return x;
       };
 
+      auto inline_compare_constant = [&](Compare *cmp) {
+        // TODO: 检查s1是否是常数，可以反转指令条件
+        auto opt_imm = eval_operand2(cmp->s2);
+        if (opt_imm) {
+          int imm = opt_imm.value();
+          if (is_imm8m(imm))
+            cmp->s2 = Operand2::from(imm);
+          else if (is_imm8m(-imm)) {
+            cmp->s2 = Operand2::from(-imm);
+            cmp->neg = !cmp->neg;
+          }
+        }
+      };
+
       TypeCase(r_ins, RType *, ins) {
         auto op = r_ins->op;
         if (r_ins->dst.is_float()) // TODO: 浮点立即数
@@ -146,16 +162,10 @@ void fold_constants(Function &f) {
         }
       }
       else TypeCase(cmp, Compare *, ins) {
-        auto opt_imm = eval_operand2(cmp->s2);
-        if (opt_imm) {
-          int imm = opt_imm.value();
-          if (is_imm8m(imm))
-            cmp->s2 = Operand2::from(imm);
-          else if (is_imm8m(-imm)) {
-            cmp->s2 = Operand2::from(-imm);
-            cmp->neg = !cmp->neg;
-          }
-        }
+        inline_compare_constant(cmp);
+      }
+      else TypeCase(pcmp, PseudoCompare *, ins) {
+        inline_compare_constant(pcmp->cmp.get());
       }
     }
   }

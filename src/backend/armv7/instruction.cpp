@@ -289,4 +289,9 @@ void CountLeadingZero::emit(std::ostream &os) const {
   write_op(os, "clz") << dst << ", " << src;
 }
 
+void PseudoCompare::emit(std::ostream &os) const {
+  os << "*compare-" << cond << ' ' << dst << ' ';
+  cmp->emit(os);
+}
+
 } // namespace armv7
