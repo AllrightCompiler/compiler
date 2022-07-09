@@ -148,7 +148,7 @@ void constant_propagation(ir::Program *prog) {
                 if (!set_reg) {
                   use_reg = iter->second;
                 } else {
-                  if (!(use_reg == iter->second)) {
+                  if (use_reg != iter->second) {
                     use_same_reg = false;
                   }
                 }
@@ -162,7 +162,7 @@ void constant_propagation(ir::Program *prog) {
                     }
                   } else {
                     if (!const_map.count(iter->second) ||
-                        !(val == const_map.at(iter->second))) {
+                        val != const_map.at(iter->second)) {
                       phi_const = false;
                     }
                   }

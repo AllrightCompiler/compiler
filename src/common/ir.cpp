@@ -47,8 +47,19 @@ std::string type_string(const Type &t) {
     pointer = true;
     i = 1;
   }
-  for (; i < t.nr_dims(); ++i)
-    s += "[" + std::to_string(t.dims[i]) + "]";
+  if (t.is_array()) {
+    if (t.dims.size() == 1 && pointer) { // scalar pointer
+      s = type_string(t.base_type);
+    } else { // really array
+      s = "";
+      for (; i < t.nr_dims() - 1; ++i)
+        s += "[" + std::to_string(t.dims[i]) + " x ";
+      s += "[" + std::to_string(t.dims[i]) + " x " + type_string(t.base_type) + "]";
+      i = pointer ? 1 : 0;
+      for (; i < t.nr_dims() - 1; ++i)
+        s += "]";
+    }
+  }
   if (pointer)
     s += "*";
   return s;
@@ -202,23 +213,27 @@ ostream &operator<<(ostream &os, const LoadAddr &ins) {
 
 ostream &operator<<(ostream &os, const Load &ins) {
   auto ts = type_string(ins.dst.type);
-  write_reg(os, ins) << " = load " << ts << ", " << ts << "* "
+  write_reg(os, ins) << " = load " << ts << ", " << type_string(ins.addr.type) << " "
                      << reg_name(ins.addr);
   return os;
 }
 
 ostream &operator<<(ostream &os, const Store &ins) {
   auto ts = type_string(ins.val.type);
-  os << "store " << ts << " " << reg_name(ins.val) << ", " << ts << "* "
+  os << "store " << ts << " " << reg_name(ins.val) << ", " << type_string(ins.addr.type) << " "
      << reg_name(ins.addr);
   return os;
 }
 
 ostream &operator<<(ostream &os, const GetElementPtr &ins) {
-  write_reg(os, ins) << " = getelementptr " << type_string(ins.type) << " "
-                     << reg_name(ins.base);
+  write_reg(os, ins) << " = getelementptr " << type_string(ins.type) << ", "
+                     << type_string(ins.base.type) << " " << reg_name(ins.base);
+  int num_zero = ins.type.dims.size() - ins.dst.type.dims.size() + 1 - ins.indices.size() + 1; // output trick
+  while (num_zero--) {
+    os << ", i32 0";
+  }
   for (int i = 0; i < int(ins.indices.size()); ++i) {
-    os << ", " << reg_name(ins.indices[i]);
+    os << ", " << type_string(ins.indices[i].type) << " " << reg_name(ins.indices[i]);
   }
   return os;
 }
@@ -236,7 +251,7 @@ ostream &operator<<(ostream &os, const Call &ins) {
   for (int i = 0; i < int(ins.args.size()); ++i) {
     if (i != 0)
       os << ", ";
-    os << type_string(ins.args[i].type) << " " << reg_name(ins.args[i]);
+    os << type_string(ir_print_prog->functions.at(ins.func).sig.param_types[i]) << " " << reg_name(ins.args[i]);
   }
   os << ")";
   return os;
@@ -360,12 +375,26 @@ ostream &operator<<(ostream &os, const ConstValue &p) {
   } else if (p.type == Float) {
     os << p.fv;
   } else assert(false);
+  return os;
 }
 
 ostream &operator<<(ostream &os, const Program &p) {
   ir_print_prog = &p;
   for (auto &[name, var] : p.global_vars) {
-    os << "@" << name << " = global " << type_string(var->type) << " " << var->val.value() << "\n";
+    if (var->type.is_array()) {
+      if (var->arr_val.get()->size()) {
+        // TODO: array initialization
+        os << "@" << name << " = global " << type_string(var->type) << " " << var->val.value() << "\n";
+      } else {
+        os << "@" << name << " = global " << type_string(var->type) << " zeroinitializer\n";
+      }
+    } else {
+      if (var->val.has_value()) {
+        os << "@" << name << " = global " << type_string(var->type) << " " << var->val.value() << "\n";
+      } else {
+        os << "@" << name << " = global " << type_string(var->type) << " zeroinitializer\n";
+      }
+    }
   }
   for (auto &[_, f] : p.functions)
     os << f;

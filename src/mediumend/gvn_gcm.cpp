@@ -246,7 +246,7 @@ void gvn(Function *f) {
           if (!f->has_param(new_reg)) {
             new_reg = vn_get(hashTable, vnSet, constMap, f->def_list[income.second]);
           }
-          if (!(income.second == new_reg)) {
+          if (income.second != new_reg) {
             regsToChange[income.second] = new_reg;
           }
         }
@@ -272,8 +272,8 @@ void gvn(Function *f) {
         if (!f->has_param(binary->src2)) {
           new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src2]);
         }
-        if (!(binary->src1 == new_reg1)) binary->change_use(binary->src1, new_reg1);
-        if (!(binary->src2 == new_reg2)) binary->change_use(binary->src2, new_reg2);
+        if (binary->src1 != new_reg1) binary->change_use(binary->src1, new_reg1);
+        if (binary->src2 != new_reg2) binary->change_use(binary->src2, new_reg2);
         // try to simplify binary Instruction
         Reg src1 = binary->src1, src2 = binary->src2;
         if (constMap.count(src1) && !constMap.count(src2)) {
@@ -294,6 +294,7 @@ void gvn(Function *f) {
             }
             if (!find) { // replace binary with loadimm
               auto new_ins = new ir::insns::LoadImm(binary->dst, constval);
+              new_ins->bb = binary->bb;
               binary->remove_use_def();
               insn.reset(new_ins);
               new_ins->add_use_def();

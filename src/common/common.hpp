@@ -51,6 +51,32 @@ struct Type {
       size *= n;
     return size;
   }
+  bool operator== (const Type &b)const{
+    if (base_type != b.base_type) return false;
+    if (nr_dims() != b.nr_dims()) return false;
+    for (int i = 0; i < nr_dims(); i++) {
+      if (dims[i] != b.dims[i]) return false;
+    }
+    return true;
+  }
+  bool operator!= (const Type &b)const{
+    return !this->operator==(b);
+  }
+  Type getaddr_type()const{
+    Type new_type = *this;
+    if (is_array()) {
+      if (new_type.dims[0] == 0) {
+        new_type.dims.erase(new_type.dims.begin());
+      }
+      new_type.dims[0] = 0;
+    } else new_type.dims.push_back(0);
+    return new_type;
+  }
+  Type getpointer_type()const{
+    Type new_type = *this;
+    new_type.dims.insert(new_type.dims.begin(), 0);
+    return new_type;
+  }
 
   Type() {}
   Type(ScalarType btype) : base_type{btype}, is_const{false} {}
@@ -58,6 +84,8 @@ struct Type {
       : base_type{btype}, is_const{const_qualified} {}
   Type(ScalarType btype, std::vector<int> &&dimensions)
       : base_type{btype}, is_const{false}, dims{std::move(dimensions)} {}
+  Type(Type type, std::vector<int> &&dimensions)
+      : base_type{type.base_type}, is_const{false}, dims{std::move(dimensions)} { assert(!type.is_array()); }
 };
 
 // std::variant过于难用，这里直接用union
@@ -94,6 +122,9 @@ struct ConstValue {
     if (type == Int) return iv == b.iv;
     if (type == Float) return fv == b.fv;
     assert(false);
+  }
+  bool operator != (const ConstValue &b) const {
+    return !this->operator==(b);
   }
 };
 

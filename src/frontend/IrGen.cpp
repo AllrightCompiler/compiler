@@ -88,7 +88,9 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
   Reg reg;
   mem_vars[var.get()].global = is_global;
   if (!is_global) {
-    reg = new_reg(String); // 注: String无实际意义，表示一个地址
+    Type new_type = var_type;
+    new_type.dims.insert(new_type.dims.begin(), 0);
+    reg = new_reg(new_type);
     mem_vars[var.get()].reg = reg;
     emit(new insns::Alloca{reg, var_type});
   } else { // global
@@ -100,7 +102,7 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
     auto &value = initializer->value();
     if (is_global) {
       // load base address of global variable into reg
-      reg = new_reg(String);
+      reg = new_reg(var->type);
       emit(new insns::LoadAddr{reg, name});
     }
 
@@ -152,10 +154,17 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
 
 void IrGen::emit_array_init(ir::Reg base_reg, ir::Reg val_reg, int index) {
   Reg idx_reg = new_reg(Int);
-  Reg addr_reg = new_reg(String);
+
+  Type array_type = base_reg.type;
+  array_type.dims.erase(array_type.dims.begin());
+
+  Type new_type = array_type;
+  for (int i = 1; i <= array_type.dims.size(); i++)
+    new_type = new_type.getaddr_type();
+  Reg addr_reg = new_reg(new_type);
   emit(new insns::LoadImm{idx_reg, index});
   emit(new insns::GetElementPtr{
-      addr_reg, Type{val_reg.type, std::vector{0}}, base_reg, {idx_reg}});
+      addr_reg, array_type, base_reg, {idx_reg}});
   emit(new insns::Store{addr_reg, val_reg});
 }
 
@@ -314,7 +323,7 @@ Reg IrGen::visit_lvalue(const ast::LValue &node, bool return_addr_when_scalar) {
 
   Reg addr, base = storage.reg;
   if (storage.global) {
-    base = new_reg(String);
+    base = new_reg(program->global_vars[name].get()->type.getpointer_type());
     emit(new insns::LoadAddr{base, name});
   }
 
@@ -325,6 +334,10 @@ Reg IrGen::visit_lvalue(const ast::LValue &node, bool return_addr_when_scalar) {
       index_regs.push_back(scalar_cast(visit_arith_expr(index), Int));
     }
     addr = new_reg(String);
+    addr.type = var->type;
+    int n_indexes = index_regs.size();
+    for (int i = 1; i <= n_indexes; i++)
+      addr.type = addr.type.getaddr_type();
     emit(
         new insns::GetElementPtr{addr, var->type, base, std::move(index_regs)});
   } else {

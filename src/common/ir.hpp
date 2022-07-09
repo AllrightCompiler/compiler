@@ -22,13 +22,16 @@ using std::unordered_map;
 using std::unordered_set;
 
 struct Reg {
-  ScalarType type;
+  Type type;
   int id;
 
   Reg() {}
-  Reg(ScalarType type_, int id_) : type{type_}, id{id_} {}
+  Reg(Type type_, int id_) : type{type_}, id{id_} {}
   bool operator== (const Reg &b)const{
-      return id == b.id && type == b.type;
+    return id == b.id && type == b.type;
+  }
+  bool operator!= (const Reg &b)const{
+    return !this->operator==(b);
   }
 };
 }
@@ -119,7 +122,7 @@ struct Function {
   unordered_set<Reg> global_addr;
 
   list<unique_ptr<BasicBlock>> bbs;
-  Reg new_reg(::ScalarType t) {
+  Reg new_reg(::Type t) {
     return ir::Reg{t, ++nr_regs};
   }
   ~Function();
@@ -162,7 +165,10 @@ struct Output : Instruction {
 struct Alloca : Output {
   Type type;
 
-  Alloca(Reg dst, Type tp) : type{std::move(tp)}, Output{dst} {}
+  Alloca(Reg dst, Type tp) : type{std::move(tp)}, Output{dst} {
+    this->dst.type = this->type;
+    this->dst.type.dims.insert(this->dst.type.dims.begin(), 0);
+  }
 };
 
 // dst = mem[src]
