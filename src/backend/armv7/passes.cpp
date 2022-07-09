@@ -57,18 +57,23 @@ void fold_constants(Function &f) {
           if (mov->flip)
             imm = ~imm;
 
-          constants[mov->dst] = imm;
+          Reg dst = mov->dst;
+          if (dst.is_virt())
+            constants[dst] = imm;
           is_load_imm = true;
         }
       }
       else TypeCase(movw, MovW *, ins) {
-        constants[movw->dst] = movw->imm;
+        Reg dst = movw->dst;
+        if (dst.is_virt())
+          constants[dst] = movw->imm;
         is_load_imm = true;
       }
       else TypeCase(movt, MovT *, ins) {
-        if (constants.count(movt->dst)) {
-          int lo = constants[movt->dst].iv;
-          constants[movt->dst] = (movt->imm << 16) | lo;
+        Reg dst = movt->dst;
+        if (constants.count(dst)) {
+          int lo = constants[dst].iv;
+          constants[dst] = (movt->imm << 16) | lo;
           is_load_imm = true;
         }
       }
@@ -152,7 +157,9 @@ void fold_constants(Function &f) {
         auto opt_imm = eval_operand2(mov->src);
         if (opt_imm) {
           int imm = opt_imm.value();
-          constants[mov->dst] = imm;
+          Reg dst = mov->dst;
+          if (dst.is_virt())
+            constants[dst] = imm;
           if (is_imm8m(imm))
             mov->src = Operand2::from(imm);
           else if (is_imm8m(~imm)) {
