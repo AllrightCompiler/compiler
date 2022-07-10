@@ -356,6 +356,10 @@ void get_load_pred(unordered_set<Instruction *> &visited,
     for (auto i : load->bb->func->use_list[load->dst]) {
       pred[i].push_back(load);
     }
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    for (auto i : loadaddr->bb->func->use_list[loadaddr->dst]) {
+      pred[i].push_back(loadaddr);
+    }
   } else TypeCase(store, ir::insns::Store *, inst) {
     update_pred(visited, pred, inst, store->addr);
     update_pred(visited, pred, inst, store->val);
@@ -446,8 +450,17 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
   TypeCase(phi, ir::insns::Phi *, inst) {
     return;
   } else TypeCase(load, ir::insns::Load *, inst) {
-    for (auto i : use_list.at(load->dst)) {
-      schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
+    if (use_list.count(load->dst)) {
+      for (auto i : use_list.at(load->dst)) {
+        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
+      }
+    }
+    return;
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    if (use_list.count(loadaddr->dst)) {
+      for (auto i : use_list.at(loadaddr->dst)) {
+        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
+      }
     }
     return;
   } else TypeCase(output, ir::insns::Output *, inst) {

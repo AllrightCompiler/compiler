@@ -142,6 +142,13 @@ void BasicBlock::insert_after(list<Instruction *> pred, Instruction *insn) {
   if (insns.begin() != insns.end()) {
     do {
       it--;
+      TypeCase(phi, ir::insns::Phi *, it->get()) {
+        it++;
+        insns.emplace(it, insn);
+        insn->bb = this;
+        // insn->add_use_def();
+        return;
+      }
       if (std::find(pred.begin(), pred.end(), it->get()) != pred.end()) {
         it++;
         insns.emplace(it, insn);
