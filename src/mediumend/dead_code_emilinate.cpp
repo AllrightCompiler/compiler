@@ -191,6 +191,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
   }
   stack.push_back(func->bbs.front().get());
   vector<BasicBlock *> order;
+  unordered_set<BasicBlock *> erase_set;
   func->bbs.front().get()->visit = true;
   while(stack.size()){
     auto bb = stack.back();
@@ -238,7 +239,6 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           }
           pre->succ.erase(bb);
           pre->succ.insert(target);
-          target->prev.erase(bb);
           target->prev.insert(pre);
           for(auto &ins : target->insns){
             TypeCase(phi, ir::insns::Phi *, ins.get()){
@@ -250,6 +250,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
             }
           }
         }
+        target->prev.erase(bb);
         for(auto &ins : target->insns){
           TypeCase(phi, ir::insns::Phi *, ins.get()){
             phi->incoming.erase(bb);
@@ -270,6 +271,20 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
         bb->succ.erase(target);
         bb->succ.insert(target->succ.begin(), target->succ.end());
         bb->insns.pop_back();
+        for(auto suc: target->succ){
+          suc->prev.erase(target);
+          suc->prev.insert(bb);
+          for(auto &inst : suc->insns){
+            TypeCase(phi, ir::insns::Phi *, inst.get()){
+              if(phi->incoming.count(target)){
+                phi->incoming[bb] = phi->incoming[target];
+                phi->incoming.erase(target);
+              }
+            } else {
+              break;
+            }
+          }
+        }
         for(auto iter = target->insns.begin(); iter != target->insns.end();){
           TypeCase(phi, ir::insns::Phi *, iter->get()){
             assert(phi->incoming.size() == 1);
@@ -282,24 +297,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           }
         }
         bb->insns.splice(bb->insns.end(), target->insns);
-        for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
-          if(iter->get() == target){
-            for(auto suc : target->succ){
-              for(auto &inst : suc->insns){
-                TypeCase(phi, ir::insns::Phi *, inst.get()){
-                  if(phi->incoming.count(target)){
-                    phi->incoming[bb] = phi->incoming[target];
-                    phi->incoming.erase(target);
-                  }
-                } else {
-                  break;
-                }
-              }
-            }
-            func->bbs.erase(iter);
-            break;
-          }
-        }
+        erase_set.insert(target);
         target->succ.clear();
         ret = true;
         continue;
@@ -321,6 +319,13 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           continue;
         }
       }
+    }
+  }
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    if(erase_set.count(iter->get())){
+      iter = func->bbs.erase(iter);
+    } else {
+      iter++;
     }
   }
   return ret;
