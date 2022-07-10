@@ -1,10 +1,11 @@
 #include "backend/armv7/passes.hpp"
+#include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
 #include "backend/armv7/instruction.hpp"
-#include "backend/armv7/ColoringRegAllocator.hpp"
 
 #include "common/common.hpp"
 
+#include <iostream>
 #include <iterator>
 
 namespace armv7 {
@@ -15,6 +16,8 @@ void backend_passes(Program &p) {
   for (auto &[_, f] : p.functions) {
     fold_constants(f);
     remove_unused(f);
+
+    // f.emit(std::cerr);
 
     reg_allocator.do_reg_alloc(f);
 
@@ -182,7 +185,7 @@ void remove_unused(Function &f) {
   f.do_liveness_analysis();
   for (auto &bb : f.bbs) {
     auto live = bb->live_out;
-    for (auto it = bb->insns.rbegin(); it != bb->insns.rend(); ) {
+    for (auto it = bb->insns.rbegin(); it != bb->insns.rend();) {
       bool no_effect = true;
       auto ins = it->get();
 

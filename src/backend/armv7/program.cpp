@@ -162,7 +162,7 @@ class ProgramTranslator {
     }
     else TypeCase(gep, ii::GetElementPtr *, ins) {
       Reg index_reg = Reg::from(gep->indices[0]);
-      int nr_indices = gep->type.dims.size();
+      int nr_indices = gep->indices.size();
       for (int i = 1; i < nr_indices; ++i) {
         Reg t = fn.new_reg(General);
         Reg s = Reg::from(gep->indices[i]);
@@ -175,6 +175,20 @@ class ProgramTranslator {
           Reg imm_reg = fn.new_reg(General);
           emit_load_imm(bb, imm_reg, dim);
           bb->push(new FusedMul{t, index_reg, imm_reg, s});
+        }
+        index_reg = t;
+      }
+      for (int i = nr_indices; i < static_cast<int>(gep->type.dims.size());
+           ++i) {
+        Reg t = fn.new_reg(General);
+        int dim = gep->type.dims[i];
+        if (is_power_of_2(dim)) {
+          bb->push(
+              new Move{t, Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
+        } else {
+          Reg imm_reg = fn.new_reg(General);
+          emit_load_imm(bb, imm_reg, dim);
+          bb->push(new RType{RType::Op::Mul, t, index_reg, imm_reg});
         }
         index_reg = t;
       }
