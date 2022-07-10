@@ -263,6 +263,12 @@ void gvn(Function *f) {
           copy_propagation(f->use_list, phi->dst, first);
         }
       }
+      TypeCase(loadimm, ir::insns::LoadImm *, insn.get()) {
+        Reg new_reg = vn_get(hashTable, vnSet, constMap, loadimm);
+        if (new_reg != loadimm->dst) {
+          copy_propagation(f->use_list, loadimm->dst, new_reg);
+        }
+      }
       TypeCase(binary, ir::insns::Binary *, insn.get()) {
         Reg new_reg1 = binary->src1;
         if (!f->has_param(binary->src1)) {
@@ -325,6 +331,57 @@ BasicBlock *find_lca(BasicBlock *a, BasicBlock *b) {
   return a;
 }
 
+void get_load_pred(unordered_set<Instruction *> &visited,
+                  unordered_map<Instruction *, list<Instruction *> > &pred,
+                  Instruction *inst);
+
+void update_pred(unordered_set<Instruction *> &visited,
+                unordered_map<Instruction *, list<Instruction *> > &pred,
+                Instruction *inst, Reg reg_use) {
+  Instruction *inst_use = inst->bb->func->def_list[reg_use];
+  get_load_pred(visited, pred, inst_use);
+  if (pred.count(inst_use)) {
+    pred[inst].insert(pred[inst].end(), pred[inst_use].begin(), pred[inst_use].end());
+  }
+}
+
+// load inst can not be moved, therefore we need pred of load insts for position limit
+void get_load_pred(unordered_set<Instruction *> &visited,
+                  unordered_map<Instruction *, list<Instruction *> > &pred,
+                  Instruction *inst) {
+  if (visited.count(inst)) return;
+  visited.insert(inst);
+  TypeCase(load, ir::insns::Load *, inst) {
+    update_pred(visited, pred, inst, load->addr);
+    for (auto i : load->bb->func->use_list[load->dst]) {
+      pred[i].push_back(load);
+    }
+  } else TypeCase(store, ir::insns::Store *, inst) {
+    update_pred(visited, pred, inst, store->addr);
+    update_pred(visited, pred, inst, store->val);
+  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+    update_pred(visited, pred, inst, gep->base);
+    for (auto idx : gep->indices) {
+      update_pred(visited, pred, inst, idx);
+    }
+  } else TypeCase(convert, ir::insns::Convert *, inst) {
+    update_pred(visited, pred, inst, convert->src);
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    for (auto arg : call->args) {
+      update_pred(visited, pred, inst, arg);
+    }
+  } else TypeCase(unary, ir::insns::Unary *, inst) {
+    update_pred(visited, pred, inst, unary->src);
+  } else TypeCase(binary, ir::insns::Binary *, inst) {
+    update_pred(visited, pred, inst, binary->src1);
+    update_pred(visited, pred, inst, binary->src2);
+  } else TypeCase(phi, ir::insns::Phi *, inst) {
+    for (auto [_, reg] : phi->incoming) {
+      update_pred(visited, pred, inst, reg);
+    }
+  }
+}
+
 // 3. Schedule (select basic blocks for) all instructions
 // early, based on existing control and data depend-
 // ences. We place instructions in the first block
@@ -382,17 +439,23 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
                   const CFG *cfg,
                   list<unique_ptr<BasicBlock>> &bbs,
                   const unordered_map<Reg, list<Instruction *>> &use_list,
+                  const unordered_map<Instruction*, list<Instruction *>> &pred,
                   ir::Instruction *inst) {
   if (visited.count(inst)) return;
   visited.insert(inst);
   TypeCase(phi, ir::insns::Phi *, inst) {
+    return;
+  } else TypeCase(load, ir::insns::Load *, inst) {
+    for (auto i : use_list.at(load->dst)) {
+      schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
+    }
     return;
   } else TypeCase(output, ir::insns::Output *, inst) {
     // Find latest legal block for instruction
     BasicBlock *lca = nullptr, *use;
     if(use_list.count(output->dst)) {
       for (auto i : use_list.at(output->dst)) {
-        schedule_late(visited, placement, cfg, bbs, use_list, i);
+        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
         TypeCase(phi, ir::insns::Phi *, i) {
           for (auto pair : phi->incoming) {
             if (pair.second == output->dst) {
@@ -418,7 +481,11 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
       } while (lca != placement[inst]);
     }
     inst->bb->remove(inst);
-    best->insert_after_phi(inst);
+    if (pred.count(inst)) {
+      best->insert_after(pred.at(inst), inst);
+    } else {
+      best->insert_after_phi(inst);
+    }
     placement[inst] = best;
   }
 }
@@ -435,12 +502,17 @@ void gcm(Function *f) {
   
   unordered_set<ir::Instruction *> visited;
   unordered_map<ir::Instruction *, BasicBlock *> placement;
+  unordered_map<Instruction*, list<Instruction *>> pred;
+  for (auto inst : all_insts) {
+    get_load_pred(visited, pred, inst);
+  }
+  visited.clear();
   for (auto inst : all_insts) {
     schedule_early(visited, placement, f->bbs, f->def_list, f->bbs.front().get(), inst);
   }
   visited.clear();
   for (auto inst : all_insts) {
-    schedule_late(visited, placement, f->cfg, f->bbs, f->use_list, inst);
+    schedule_late(visited, placement, f->cfg, f->bbs, f->use_list, pred, inst);
   }
 }
 
