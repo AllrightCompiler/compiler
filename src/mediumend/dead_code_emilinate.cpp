@@ -95,7 +95,7 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
 }
 
 void mark_pure_func(ir::Program *prog){
-  prog->functions["main"].pure = 0;
+  prog->functions.at("main").pure = 0;
   for(auto &func : prog->functions){
     detect_pure_function(prog, &func.second);
   }
@@ -112,7 +112,7 @@ void remove_unused_function(ir::Program *prog){
       continue;
     }
     used.insert(func_name);
-    auto &func = prog->functions[func_name];
+    auto &func = prog->functions.at(func_name);
     for(auto &bb : func.bbs){
       for(auto &ins : bb->insns){
         if(auto call = dynamic_cast<ir::insns::Call *>(ins.get())){
@@ -146,7 +146,7 @@ void remove_uneffective_inst(ir::Program *prog){
             if(!prog->functions.count(call->func)){
               continue;
             }
-            if(prog->functions[call->func].pure == 0){
+            if(prog->functions.at(call->func).pure == 0){
               continue;
             }
           }

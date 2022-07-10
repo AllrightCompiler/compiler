@@ -251,7 +251,11 @@ ostream &operator<<(ostream &os, const Call &ins) {
   for (int i = 0; i < int(ins.args.size()); ++i) {
     if (i != 0)
       os << ", ";
-    os << type_string(ir_print_prog->functions.at(ins.func).sig.param_types[i]) << " " << reg_name(ins.args[i]);
+    if(ir_print_prog->lib_funcs.count(ins.func)){
+      os << type_string(ir_print_prog->lib_funcs.at(ins.func).sig.param_types[i]) << " " << reg_name(ins.args[i]);
+    }else{
+      os << type_string(ir_print_prog->functions.at(ins.func).sig.param_types[i]) << " " << reg_name(ins.args[i]);
+    }
   }
   os << ")";
   return os;

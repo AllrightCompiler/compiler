@@ -28,7 +28,7 @@ struct Reg {
   Reg() {}
   Reg(Type type_, int id_) : type{type_}, id{id_} {}
   bool operator== (const Reg &b)const{
-    return id == b.id && type == b.type;
+    return id == b.id;
   }
   bool operator!= (const Reg &b)const{
     return !this->operator==(b);
@@ -82,7 +82,7 @@ struct BasicBlock {
   BasicBlock *idom;
   // dom by (recursive)
   unordered_set<BasicBlock *> domby;
-  Loop *loop;
+  Loop *loop = nullptr;
   bool visit;
   int domlevel;
 
