@@ -117,7 +117,7 @@ void LValue::print(std::ostream &out, unsigned int indent) const {
   out << "LValue " << m_ident;
   for (auto const &index : this->m_indices) {
     out << "[\n";
-    index->print(out, indent + 1);
+    index->print(out, indent + INDENT_LEN);
     print_indent(out, indent);
     out << ']';
   }

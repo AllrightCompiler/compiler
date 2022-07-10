@@ -162,7 +162,7 @@ class ProgramTranslator {
     }
     else TypeCase(gep, ii::GetElementPtr *, ins) {
       Reg index_reg = Reg::from(gep->indices[0]);
-      int nr_indices = gep->indices.size();
+      int nr_indices = gep->type.dims.size();
       for (int i = 1; i < nr_indices; ++i) {
         Reg t = fn.new_reg(General);
         Reg s = Reg::from(gep->indices[i]);
@@ -648,7 +648,7 @@ void Function::emit_prologue_epilogue() {
   for (auto obj : normal_objs)
     stack_obj_size += obj->size;
   stack_obj_size = round_up_to_imm8m(stack_obj_size);
-  
+
   // emit prologue
   auto &prologue = entry->insns;
   // 每次都插入在头部，先生成后面的
@@ -768,7 +768,7 @@ void Function::resolve_stack_ops(int frame_size) {
       else TypeCase(sp_adjust, AdjustSp *, ins) {
         int offset = sp_adjust->offset;
         int imm = std::abs(offset);
-        
+
         if (is_imm8m(imm)) {
           auto op = offset < 0 ? IType::Sub : IType::Add;
           it->reset(new IType{op, reg_sp, reg_sp, imm});
