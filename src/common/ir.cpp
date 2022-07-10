@@ -378,13 +378,46 @@ ostream &operator<<(ostream &os, const ConstValue &p) {
   return os;
 }
 
+void generate_array_init(string &output, Type tp, int offset, std::map<int, ConstValue> *arr_val) {
+  int num_elements = tp.size() / 4;
+  bool all_zero = true;
+  for (int i = offset; i < offset + num_elements; i++)
+    if (arr_val->count(i)) all_zero = false;
+  if (all_zero) {
+    output += type_string(tp) + " zeroinitializer";
+    return;
+  }
+  if (tp.dims.size() == 1) {
+    output += type_string(tp) + " [";
+    for (int i = 0; i < tp.dims[0]; i++) {
+      ConstValue val(0);
+      if (arr_val->count(offset + i)) val = arr_val->at(offset + i);
+      if (i > 0) output += ", ";
+      output += type_string(tp.base_type) + " " + val.toString();
+    }
+    output += "]";
+  } else {
+    output += type_string(tp) + " [";
+    Type new_type = tp;
+    new_type.dims.erase(new_type.dims.begin());
+    for (int i = 0; i < tp.dims[0]; i++) {
+      if (i > 0) output += ", ";
+      generate_array_init(output, new_type, offset, arr_val);
+      offset += new_type.size() / 4;
+    }
+    output += "]";
+  }
+}
+
 ostream &operator<<(ostream &os, const Program &p) {
   ir_print_prog = &p;
   for (auto &[name, var] : p.global_vars) {
     if (var->type.is_array()) {
-      if (var->arr_val.get()->size()) {
-        // TODO: array initialization
-        os << "@" << name << " = global " << type_string(var->type) << " " << var->val.value() << "\n";
+      if (var->arr_val) {
+        os << "@" << name << " = global ";
+        string init_string;
+        generate_array_init(init_string, var->type, 0, var->arr_val.get());
+        os << init_string << "\n";
       } else {
         os << "@" << name << " = global " << type_string(var->type) << " zeroinitializer\n";
       }

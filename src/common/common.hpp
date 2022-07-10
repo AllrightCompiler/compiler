@@ -126,6 +126,12 @@ struct ConstValue {
   bool operator != (const ConstValue &b) const {
     return !this->operator==(b);
   }
+  
+  std::string toString() const {
+    if (type == Int) return std::to_string(iv);
+    if (type == Float) return std::to_string(fv);
+    assert(false);
+  }
 };
 
 // variable or constant
