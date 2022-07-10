@@ -137,6 +137,23 @@ void BasicBlock::insert_after_phi(Instruction *insn) {
   // insn->add_use_def();
 }
 
+void BasicBlock::insert_after(list<Instruction *> pred, Instruction *insn) {
+  auto it = insns.end();
+  if (insns.begin() != insns.end()) {
+    do {
+      it--;
+      if (std::find(pred.begin(), pred.end(), it->get()) != pred.end()) {
+        it++;
+        insns.emplace(it, insn);
+        insn->bb = this;
+        // insn->add_use_def();
+        return;
+      }
+    } while (it != insns.begin());
+  }
+  assert(false);
+}
+
 bool BasicBlock::remove(Instruction *insn) {
   for (auto it = insns.begin(); it != insns.end(); it++) {
     if (it->get() == insn) {
