@@ -164,12 +164,14 @@ void remove_uneffective_inst(ir::Program *prog){
       inst->remove_use_def();
       for(auto reg : regs){
         if(func->use_list[reg].size() == 0){
-          auto output = func->def_list[reg];
-          if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
-            continue;
+          auto def = func->def_list.find(reg);
+          if(def != func->def_list.end()){
+            auto output = def->second;
+            if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
+              continue;
+            }
+            stack.push_back(output);
           }
-          assert(output);
-          stack.push_back(output);
         }
       }
       remove_inst_set.insert(inst);

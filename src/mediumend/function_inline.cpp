@@ -127,7 +127,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
           }
           inst_copy = new ir::insns::Call(reg2reg.at(call->dst), call->func, args_copy);
         } else TypeCase(ret, ir::insns::Return *, inst.get()){
-          if(ret_phi){
+          if(ret_phi && ret->val.has_value()){
             ret_phi->incoming[mapped_bb] = reg2reg.at(ret->val.value());
           }
           inst_copy = new ir::insns::Jump(ret_bb);
@@ -208,7 +208,7 @@ void function_inline(ir::Program *prog) {
     }
   }
   while(stack.size()){
-    auto &func_name = stack.back();
+    string func_name = stack.back();
     stack.pop_back();
     auto &func = prog->functions.at(func_name);
     inline_single_func(&func, prog, cursive_or_long_calls);
