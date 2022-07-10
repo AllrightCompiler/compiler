@@ -271,6 +271,7 @@ struct Phi : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  void remove_prev(BasicBlock *bb);
 };
 
 struct Return : Terminator {

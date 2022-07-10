@@ -81,7 +81,7 @@ void CFG::remove_unreachable_bb() {
   vector<BasicBlock *> to_remove;
 
   for (auto &bb : func->bbs) {
-    if (bb->prev.size() == 0 && bb.get() != entry) {
+    if ((bb->prev.size() == 0 && bb.get() != entry) || (bb->prev.size() == 1 && *(bb->prev.begin()) == bb.get())) {
       to_remove.push_back(bb.get());
     }
   }
@@ -101,7 +101,7 @@ void CFG::remove_unreachable_bb() {
       for(auto suc : iter->get()->succ){
         for(auto &inst : suc->insns){
           TypeCase(phi, ir::insns::Phi *, inst.get()){
-            phi->incoming.erase(iter->get());
+            phi->remove_prev(iter->get());
           } else {
             break;
           }
@@ -110,8 +110,8 @@ void CFG::remove_unreachable_bb() {
       for(auto pre: iter->get()->prev){
         pre->succ.erase(iter->get());
       }
-      for(auto suc: iter->get()->succ){
-        suc->prev.erase(iter->get());
+      for(auto &inst : iter->get()->insns){
+        inst->remove_use_def();
       }
       iter = func->bbs.erase(iter);
     } else {

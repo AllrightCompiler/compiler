@@ -3,10 +3,23 @@
 #include "mediumend/optmizer.hpp"
 
 #include <cassert>
-
+#define FRW_DEBUG
 namespace mediumend {
 
 using ir::Reg;
+
+void checkbb(BasicBlock* bb){
+  #ifdef FRW_DEBUG
+  assert(bb->label[0]);
+  int a = bb->visit;
+  for(auto each : bb->succ){
+    assert(each);
+  }
+  for(auto each : bb->prev){
+    assert(each);
+  }
+  #endif
+}
 
 void constant_propagation(ir::Program *prog) {
   for (auto &each : prog->functions) {
@@ -37,6 +50,9 @@ void constant_propagation(ir::Program *prog) {
           suc->prev.erase(bb);
         }
         stack.insert(bb->succ.begin(), bb->succ.end());
+        for(auto each : bb->succ){
+          checkbb(each);
+        }
         bb->succ.clear();
         remove_list.insert(bb);
         for (auto &inst : bb->insns) {
@@ -50,9 +66,6 @@ void constant_propagation(ir::Program *prog) {
           continue;
         }
         TypeCase(output, ir::insns::Output *, ins.get()) {
-          if (output->dst.id == 152) {
-            int a = 1;
-          }
           if (func->use_list[output->dst].empty()) {
             TypeCase(call, ir::insns::Call *, output) {
               auto func_iter = prog->functions.find(call->func);
@@ -66,6 +79,7 @@ void constant_propagation(ir::Program *prog) {
               auto it = func->def_list.find(use);
               if (it != func->def_list.end()) {
                 stack.insert(it->second->bb);
+                checkbb(it->second->bb);
               }
             }
             output->remove_use_def();
@@ -80,10 +94,12 @@ void constant_propagation(ir::Program *prog) {
               Reg reg = unary->dst;
               for (auto &uses : func->use_list[unary->src]) {
                 stack.insert(uses->bb);
+                checkbb(uses->bb);
               }
               unary->remove_use_def();
               ConstValue new_val =
                   const_compute(unary, const_map.at(unary->src));
+              ins->remove_use_def();
               ins.reset(new ir::insns::LoadImm(reg, new_val));
               const_map[reg] = new_val;
               ins->bb = bb;
@@ -98,15 +114,17 @@ void constant_propagation(ir::Program *prog) {
               Reg reg = binary->dst;
               for (auto &uses : func->use_list[binary->src1]) {
                 stack.insert(uses->bb);
+                checkbb(uses->bb);
               }
               for (auto &uses : func->use_list[binary->src2]) {
                 stack.insert(uses->bb);
+                checkbb(uses->bb);
               }
-              binary->remove_use_def();
               ConstValue new_val =
                   const_compute(binary, const_map.at(binary->src1),
                                 const_map.at(binary->src2));
               auto new_ins = new ir::insns::LoadImm(reg, new_val);
+              ins->remove_use_def();
               ins.reset(new_ins);
               const_map[reg] = new_val;
               ins->bb = bb;
@@ -120,11 +138,12 @@ void constant_propagation(ir::Program *prog) {
               Reg reg = convey->dst;
               for (auto &uses : func->use_list[convey->src]) {
                 stack.insert(uses->bb);
+                checkbb(uses->bb);
               }
-              convey->remove_use_def();
               ConstValue new_val =
                   const_compute(convey, const_map.at(convey->src));
               auto new_ins = new ir::insns::LoadImm(reg, new_val);
+              ins->remove_use_def();
               ins.reset(new_ins);
               ins->bb = bb;
               ins->add_use_def();
@@ -140,9 +159,9 @@ void constant_propagation(ir::Program *prog) {
             bool use_same_reg = true;
             bool set_reg = false;
             Reg use_reg;
-            for (auto iter = phi->incoming.begin();
-                 iter != phi->incoming.end();) {
+            for (auto iter = phi->incoming.begin(); iter != phi->incoming.end();) {
               if (!bb->prev.count(iter->first)) {
+                func->use_list.at(iter->second).remove(phi);
                 iter = phi->incoming.erase(iter);
               } else {
                 if (!set_reg) {
@@ -176,6 +195,7 @@ void constant_propagation(ir::Program *prog) {
               for (auto &in : phi->incoming) {
                 for (auto &uses : func->use_list[in.second]) {
                   stack.insert(uses->bb);
+                  checkbb(uses->bb);
                 }
               }
               ins->remove_use_def();
@@ -188,6 +208,7 @@ void constant_propagation(ir::Program *prog) {
               if (use_same_reg) {
                 copy_propagation(func->use_list, phi->dst, use_reg);
                 stack.insert(func->def_list.at(use_reg)->bb);
+                checkbb(func->def_list.at(use_reg)->bb);
                 phi->remove_use_def();
                 remove_inst_list.insert(phi);
               }
@@ -198,21 +219,24 @@ void constant_propagation(ir::Program *prog) {
           if (const_map.find(br->val) != const_map.end()) {
             for (auto &uses : func->use_list[br->val]) {
               stack.insert(uses->bb);
+              checkbb(uses->bb);
             }
-            br->remove_use_def();
             ir::BasicBlock *target;
             if (const_map.at(br->val).iv) {
               target = br->true_target;
               bb->succ.erase(br->false_target);
               br->false_target->prev.erase(bb);
               stack.insert(br->false_target);
+              checkbb(br->false_target);
             } else {
               target = br->false_target;
               bb->succ.erase(br->true_target);
               br->true_target->prev.erase(bb);
               stack.insert(br->true_target);
+              checkbb(br->true_target);
             }
             auto new_ins = new ir::insns::Jump(target);
+            ins->remove_use_def();
             ins.reset(new_ins);
             ins->bb = bb;
             ins->add_use_def();
@@ -222,10 +246,16 @@ void constant_propagation(ir::Program *prog) {
       }
       if (add_res) {
         stack.insert(bb->succ.begin(), bb->succ.end());
+        for(auto each : bb->succ){
+          checkbb(each);
+        }
       }
     }
     for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
       if (remove_list.count(iter->get())) {
+        for(auto &inst : iter->get()->insns){
+          inst->remove_use_def();
+        }
         iter = func->bbs.erase(iter);
       } else {
         for (auto inst_iter = iter->get()->insns.begin();

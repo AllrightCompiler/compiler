@@ -655,6 +655,17 @@ void Phi::change_use(Reg old_reg, Reg new_reg){
   }
 }
 
+void Phi::remove_prev(BasicBlock *prev){
+  auto iter = this->incoming.find(prev); 
+  if(iter != this->incoming.end()){
+    auto &list = this->bb->func->use_list.at(this->incoming.at(prev));
+    list.remove(this);
+    this->incoming.erase(iter);
+  } else {
+    assert(false);
+  }
+}
+
 void Return::add_use_def(){
   if(val.has_value())
     bb->func->use_list[val.value()].push_back(this);
