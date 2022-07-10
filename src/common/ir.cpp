@@ -262,7 +262,11 @@ ostream &operator<<(ostream &os, const Call &ins) {
 }
 
 ostream &operator<<(ostream &os, const Unary &ins) {
-  write_reg(os, ins) << " = " << op_string(ins.op) << " " << reg_name(ins.src);
+  if (ins.op == UnaryOp::Sub) {
+    write_reg(os, ins) << " = " << "sub i32 0, " << reg_name(ins.src);
+  } else {
+    write_reg(os, ins) << " = " << op_string(ins.op) << " " << reg_name(ins.src);
+  }
   return os;
 }
 
