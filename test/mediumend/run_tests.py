@@ -43,14 +43,14 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
         return False
 
     command = f'llc {ll_path} -filetype=obj -o {obj_path}'
-    proc = subprocess.Popen(command, shell=True)
+    proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
     proc.wait()
     if proc.returncode:
         print('\033[0;31mllc Error\033[0m')
         return False
 
     command = f'gcc {obj_path} {lib_path} -o {exe_path}'
-    proc = subprocess.Popen(command, shell=True)
+    proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
     proc.wait()
     if proc.returncode:
         print('\033[0;31mLinker Error\033[0m')
@@ -58,9 +58,9 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
     
     command = f'{exe_path}'
     if (os.path.exists(input_path)):
-        proc = subprocess.Popen(command, stdin=open(input_path, "r"), stdout=open(output_path, "w"), shell=True)
+        proc = subprocess.Popen(command, stdin=open(input_path, "r"), stdout=open(output_path, "w",), stderr=open("/dev/null", "w"), shell=True)
     else:
-        proc = subprocess.Popen(command, stdout=open(output_path, "w"), shell=True)
+        proc = subprocess.Popen(command, stdout=open(output_path, "w"), stderr=open("/dev/null", "w"), shell=True)
     try:
         proc.wait(TIMEOUT)
         with open(output_path, "a") as f:

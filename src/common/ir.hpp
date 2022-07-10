@@ -40,7 +40,7 @@ namespace std{
 template<>
 class hash<ir::Reg> {
 public:
-	size_t operator()(const ir::Reg& r) const{ return hash<int>()(r.id); }
+	size_t operator()(const ir::Reg& r) const{ return r.id; }
 };
 }
 

@@ -161,7 +161,7 @@ void mem2reg(ir::Program *prog) {
               reg = alloc_map[pos][inst->addr];
             }
             copy_propagation(func->use_list, inst->dst, reg);
-            iter->get()->remove_use_def();
+            inst->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }

@@ -253,9 +253,6 @@ void constant_propagation(ir::Program *prog) {
     }
     for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
       if (remove_list.count(iter->get())) {
-        for(auto &inst : iter->get()->insns){
-          inst->remove_use_def();
-        }
         iter = func->bbs.erase(iter);
       } else {
         for (auto inst_iter = iter->get()->insns.begin();
