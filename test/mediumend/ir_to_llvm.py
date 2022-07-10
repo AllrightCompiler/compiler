@@ -89,6 +89,8 @@ def translate(input_path, output_path):
     content = [line.replace(",", " , ") for line in content]
     content = [line.replace("[", " [ ") for line in content]
     content = [line.replace("]", " ] ") for line in content]
+    content = [line.replace("(", " ( ") for line in content]
+    content = [line.replace(")", " ) ") for line in content]
     content = [line.split() for line in content]
     content = [replace_loadimm(line) for line in content]
     content = [replace_cmp(line) for line in content]
