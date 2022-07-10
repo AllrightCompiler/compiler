@@ -193,6 +193,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
   vector<BasicBlock *> order;
   unordered_set<BasicBlock *> erase_set;
   func->bbs.front().get()->visit = true;
+  BasicBlock *entry = func->bbs.front().get();
   while(stack.size()){
     auto bb = stack.back();
     stack.pop_back();
@@ -258,11 +259,9 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
             break;
           }
         }
-        for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
-          if(iter->get() == bb){
-            func->bbs.erase(iter);
-            break;
-          }
+        erase_set.insert(bb);
+        if(entry == bb){
+          entry = target;
         }
         ret = true;
         continue;
@@ -310,6 +309,26 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           bb->succ.insert(br->false_target);
           br->true_target->prev.insert(bb);
           br->false_target->prev.insert(bb);
+          for(auto &ins : br->true_target->insns){
+            TypeCase(phi, ir::insns::Phi *, ins.get()){
+              if(phi->incoming.count(target)){
+                phi->incoming[bb] = phi->incoming[target];
+                phi->incoming.erase(target);
+              }
+            } else {
+              break;
+            }
+          }
+          for(auto &ins : br->false_target->insns){
+            TypeCase(phi, ir::insns::Phi *, ins.get()){
+              if(phi->incoming.count(target)){
+                phi->incoming[bb] = phi->incoming[target];
+                phi->incoming.erase(target);
+              }
+            } else {
+              break;
+            }
+          }
           br->remove_use_def();
           auto new_inst = new ir::insns::Branch(br->val, br->true_target, br->false_target);
           bb->insns.back().reset(new_inst);
@@ -325,9 +344,15 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     if(erase_set.count(iter->get())){
       iter = func->bbs.erase(iter);
     } else {
+      if(iter->get() == entry){
+        iter->release();
+        iter = func->bbs.erase(iter);
+        continue;
+      }
       iter++;
     }
   }
+  func->bbs.emplace_front(entry);
   return ret;
 }
 

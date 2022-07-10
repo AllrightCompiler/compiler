@@ -147,6 +147,7 @@ void constant_propagation(ir::Program *prog) {
               } else {
                 if (!set_reg) {
                   use_reg = iter->second;
+                  set_reg = true;
                 } else {
                   if (use_reg != iter->second) {
                     use_same_reg = false;
