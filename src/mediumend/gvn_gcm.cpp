@@ -263,6 +263,12 @@ void gvn(Function *f) {
           copy_propagation(f->use_list, phi->dst, first);
         }
       }
+      TypeCase(loadimm, ir::insns::LoadImm *, insn.get()) {
+        Reg new_reg = vn_get(hashTable, vnSet, constMap, loadimm);
+        if (new_reg != loadimm->dst) {
+          copy_propagation(f->use_list, loadimm->dst, new_reg);
+        }
+      }
       TypeCase(binary, ir::insns::Binary *, insn.get()) {
         Reg new_reg1 = binary->src1;
         if (!f->has_param(binary->src1)) {

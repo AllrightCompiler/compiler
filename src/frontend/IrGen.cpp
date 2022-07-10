@@ -102,7 +102,7 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
     auto &value = initializer->value();
     if (is_global) {
       // load base address of global variable into reg
-      reg = new_reg(var->type);
+      reg = new_reg(var->type.getpointer_type());
       emit(new insns::LoadAddr{reg, name});
     }
 
