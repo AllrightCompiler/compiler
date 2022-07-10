@@ -63,22 +63,29 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
         proc = subprocess.Popen(command, stdout=open(output_path, "w"), shell=True)
     try:
         proc.wait(TIMEOUT)
+        with open(output_path, "a") as f:
+            f.write("\n"+str(proc.returncode))
     except subprocess.TimeoutExpired:
         proc.kill()
         print('\033[0;31mTLE\033[0m')
         return False
-    retcode = proc.returncode
+    
+
+    command = f'diff -b -B {output_path} {ans_path}'
+    proc = subprocess.Popen(command, stdout=open("/dev/null", "w"), shell=True)
     try:
-        ans = int(open(ans_path).read())
-        if retcode == ans:
-            print(' \033[0;32mPass\033[0m')
-            return True
-        else:
-            print('\033[0;31mWrong Answer\033[0m')
-            return False
-    except:
+        proc.wait(TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        print('\033[0;31mDIFF TLE\033[0m')
+        return False
+
+    if proc.returncode:
         print('\033[0;31mWrong Answer\033[0m')
         return False
+    else:
+        print('\033[0;32mPass\033[0m')
+        return True
 
 if __name__ == '__main__':
     if len(sys.argv) != 5:
