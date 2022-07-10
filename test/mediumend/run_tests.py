@@ -49,7 +49,7 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
         print('\033[0;31mllc Error\033[0m')
         return False
 
-    command = f'gcc {obj_path} {lib_path} -o {exe_path}'
+    command = f'clang {obj_path} {lib_path} -o {exe_path}'
     proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
     proc.wait()
     if proc.returncode:

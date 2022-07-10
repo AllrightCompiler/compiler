@@ -77,45 +77,46 @@ void CFG::build(){
 
 void CFG::remove_unreachable_bb() {
   auto entry = func->bbs.front().get();
-  unordered_set<BasicBlock *> remove_set;
-  vector<BasicBlock *> to_remove;
-
-  for (auto &bb : func->bbs) {
-    if ((bb->prev.size() == 0 && bb.get() != entry) || (bb->prev.size() == 1 && *(bb->prev.begin()) == bb.get())) {
-      to_remove.push_back(bb.get());
+  func->clear_visit();
+  vector<ir::BasicBlock *> stack;
+  stack.push_back(entry);
+  while(stack.size()){
+    ir::BasicBlock *bb = stack.back();
+    stack.pop_back();
+    if(bb->visit){
+      continue;
     }
-  }
-  while (to_remove.size()) {
-    auto bb = to_remove.back();
-    to_remove.pop_back();
-    for (auto &succ : bb->succ) {
-      succ->prev.erase(bb);
-      if (succ->prev.size() == 0) {
-        to_remove.push_back(succ);
+    bb->visit = true;
+    for(auto suc : bb->succ){
+      if(!suc->visit){
+        stack.push_back(suc);
       }
     }
-    remove_set.insert(bb);
   }
-  for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
-    if (remove_set.find(iter->get()) != remove_set.end()) {
-      for(auto suc : iter->get()->succ){
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    if(iter->get()->visit){
+      iter++;
+    } else {
+      auto bb = iter->get();
+      for(auto &inst : bb->insns){
+        inst->remove_use_def();
+      }
+      for(auto suc : bb->succ){
+        suc->prev.erase(bb);
         for(auto &inst : suc->insns){
           TypeCase(phi, ir::insns::Phi *, inst.get()){
-            phi->remove_prev(iter->get());
+            if(phi->incoming.count(bb)){
+              phi->remove_prev(bb);
+            }
           } else {
             break;
           }
         }
       }
-      for(auto pre: iter->get()->prev){
-        pre->succ.erase(iter->get());
-      }
-      for(auto &inst : iter->get()->insns){
-        inst->remove_use_def();
+      for(auto pre : bb->prev){
+        pre->succ.erase(bb);
       }
       iter = func->bbs.erase(iter);
-    } else {
-      iter++;
     }
   }
 }

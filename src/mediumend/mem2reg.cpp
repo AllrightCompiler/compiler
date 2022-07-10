@@ -237,6 +237,7 @@ void simplification_phi(ir::Program *prog){
               auto reg = inst->incoming.begin()->second;
               uses->change_use(inst->dst, reg);
             }
+            iter->get()->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }
