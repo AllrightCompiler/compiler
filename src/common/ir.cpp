@@ -324,10 +324,25 @@ ostream &operator<<(ostream &os, const Branch &ins) {
 
 ostream &operator<<(ostream &os, const Phi &ins) {
   write_reg(os, ins) << " = " << "phi " << type_string(ins.dst.type);
-  for (auto it = ins.incoming.begin(); it != ins.incoming.end(); it++) {
-    if (it != ins.incoming.begin()) os << ",";
-    os << " [" << reg_name(it->second) << ", "
-       << label_name(it->first->label) << "]";
+  // for (auto it = ins.incoming.begin(); it != ins.incoming.end(); it++) {
+  //   if (it != ins.incoming.begin()) os << ",";
+  //   os << " [" << reg_name(it->second) << ", "
+  //      << label_name(it->first->label) << "]";
+  // }
+  int first = 1;
+  for(auto bb : ins.bb->prev){
+    if(first){
+      first = 0;
+    } else {
+      os << ",";
+    }
+    if(ins.incoming.count(bb)){
+      os << " [" << reg_name(ins.incoming.at(bb)) << ", "
+       << label_name(bb->label) << "]";
+    } else {
+      os << " [" << 0 << ", "
+       << label_name(bb->label) << "]";
+    }
   }
   return os;
 }
