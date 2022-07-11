@@ -158,7 +158,10 @@ void BasicBlock::insert_after(list<Instruction *> pred, Instruction *insn) {
       }
     } while (it != insns.begin());
   }
-  assert(false);
+  it++;
+  insns.emplace(it, insn);
+  insn->bb = this;
+  // insn->add_use_def();
 }
 
 bool BasicBlock::remove(Instruction *insn) {

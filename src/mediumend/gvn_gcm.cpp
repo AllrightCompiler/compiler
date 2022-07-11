@@ -208,6 +208,20 @@ Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
       hashTable[inst] = binary->dst;
       vnSet.insert(inst);
     }
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    bool find = false;
+    for (auto i : vnSet) {
+      TypeCase(loadaddr_i, ir::insns::LoadAddr *, i) {
+        if (loadaddr_i->var_name == loadaddr->var_name) {
+          hashTable[inst] = loadaddr_i->dst;
+          find = true;
+        }
+      }
+    }
+    if (!find) {
+      hashTable[inst] = loadaddr->dst;
+      vnSet.insert(inst);
+    }
   } else TypeCase(other, ir::insns::Output *, inst) {
     hashTable[inst] = other->dst;
     vnSet.insert(inst);
@@ -267,6 +281,12 @@ void gvn(Function *f) {
         Reg new_reg = vn_get(hashTable, vnSet, constMap, loadimm);
         if (new_reg != loadimm->dst) {
           copy_propagation(f->use_list, loadimm->dst, new_reg);
+        }
+      }
+      TypeCase(loadaddr, ir::insns::LoadAddr *, insn.get()) {
+        Reg new_reg = vn_get(hashTable, vnSet, constMap, loadaddr);
+        if (new_reg != loadaddr->dst) {
+          copy_propagation(f->use_list, loadaddr->dst, new_reg);
         }
       }
       TypeCase(binary, ir::insns::Binary *, insn.get()) {
