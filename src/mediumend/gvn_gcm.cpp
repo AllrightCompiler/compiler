@@ -222,6 +222,25 @@ Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
       hashTable[inst] = loadaddr->dst;
       vnSet.insert(inst);
     }
+  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+    bool find = false;
+    for (auto i : vnSet) {
+      TypeCase(gep_i, ir::insns::GetElementPtr *, i) {
+        bool same = (gep->base == gep_i->base);
+        if (gep->indices.size() != gep_i->indices.size()) continue;
+        int n_idx = gep->indices.size();
+        for (int i = 0; i < n_idx; i++)
+          same &= (gep->indices[i] == gep_i->indices[i]);
+        if (same) {
+          hashTable[inst] = gep_i->dst;
+          find = true;
+        }
+      }
+    }
+    if (!find) {
+      hashTable[inst] = gep->dst;
+      vnSet.insert(inst);
+    }
   } else TypeCase(other, ir::insns::Output *, inst) {
     hashTable[inst] = other->dst;
     vnSet.insert(inst);
@@ -287,6 +306,12 @@ void gvn(Function *f) {
         Reg new_reg = vn_get(hashTable, vnSet, constMap, loadaddr);
         if (new_reg != loadaddr->dst) {
           copy_propagation(f->use_list, loadaddr->dst, new_reg);
+        }
+      }
+      TypeCase(gep, ir::insns::GetElementPtr *, insn.get()) {
+        Reg new_reg = vn_get(hashTable, vnSet, constMap, gep);
+        if (new_reg != gep->dst) {
+          copy_propagation(f->use_list, gep->dst, new_reg);
         }
       }
       TypeCase(binary, ir::insns::Binary *, insn.get()) {
