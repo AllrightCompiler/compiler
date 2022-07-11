@@ -474,6 +474,8 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     }
   } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
     placement[loadimm] = root_bb;
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    placement[loadaddr] = root_bb;
   } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
     placement[gep] = root_bb;
     BasicBlock *place;
@@ -495,6 +497,20 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
       }
       if (place->domlevel > placement[gep]->domlevel) {
         placement[gep] = place;
+      }
+    }
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    placement[call] = root_bb;
+    BasicBlock *place;
+    for (auto arg : call->args) {
+      if (inst->bb->func->has_param(arg)) {
+        place = inst->bb->func->bbs.front().get();
+      } else {
+        schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(arg));
+        place = placement[def_list.at(arg)];
+      }
+      if (place->domlevel > placement[call]->domlevel) {
+        placement[call] = place;
       }
     }
   } else {
