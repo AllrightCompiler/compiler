@@ -338,6 +338,7 @@ void get_load_pred(unordered_set<Instruction *> &visited,
 void update_pred(unordered_set<Instruction *> &visited,
                 unordered_map<Instruction *, list<Instruction *> > &pred,
                 Instruction *inst, Reg reg_use) {
+  if (inst->bb->func->has_param(reg_use)) return;
   Instruction *inst_use = inst->bb->func->def_list[reg_use];
   get_load_pred(visited, pred, inst_use);
   if (pred.count(inst_use)) {
