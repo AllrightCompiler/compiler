@@ -39,6 +39,11 @@ void constant_propagation(ir::Program *prog) {
         TypeCase(phi, ir::insns::Phi *, ins.get()){
           stack.insert(bb.get());
         }
+        TypeCase(output, ir::insns::Output *, ins.get()){
+          if(func->use_list[output->dst].empty()){
+            stack.insert(bb.get());
+          }
+        }
       }
     }
     while (stack.size()) {
@@ -79,10 +84,10 @@ void constant_propagation(ir::Program *prog) {
             }
             auto reg_use = get_inst_use_reg(output);
             for (auto &use : reg_use) {
-              auto it = func->def_list.find(use);
-              if (it != func->def_list.end()) {
-                stack.insert(it->second->bb);
-                checkbb(it->second->bb);
+              if(!func->has_param(use)){
+                auto def = func->def_list.at(use);
+                stack.insert(def->bb);
+                checkbb(def->bb);
               }
             }
             output->remove_use_def();

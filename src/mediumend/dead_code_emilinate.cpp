@@ -193,7 +193,6 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
   }
   stack.push_back(func->bbs.front().get());
   vector<BasicBlock *> order;
-  unordered_set<BasicBlock *> erase_set;
   func->bbs.front().get()->visit = true;
   BasicBlock *entry = func->bbs.front().get();
   while(stack.size()){
@@ -209,6 +208,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     }
   }
   bool ret = false;
+  func->clear_visit();
   for(int i = order.size() - 1; i >= 0; i--){
     auto bb = order[i];
     auto &inst = bb->insns.back();
@@ -261,7 +261,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
             break;
           }
         }
-        erase_set.insert(bb);
+        bb->visit = true;
         if(entry == bb){
           entry = target;
         }
@@ -298,7 +298,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           }
         }
         bb->insns.splice(bb->insns.end(), target->insns);
-        erase_set.insert(target);
+        target->visit = true;
         target->succ.clear();
         ret = true;
         continue;
@@ -343,7 +343,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     }
   }
   for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-    if(erase_set.count(iter->get())){
+    if(iter->get()->visit){
       iter = func->bbs.erase(iter);
     } else {
       if(iter->get() == entry){

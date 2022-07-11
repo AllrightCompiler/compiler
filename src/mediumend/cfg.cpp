@@ -195,17 +195,16 @@ void CFG::compute_dom() {
   compute_dom_level(entry, 0);
 }
 
-
+// 计算支配边界
 unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {
   unordered_map<BasicBlock *, unordered_set<BasicBlock *>> df;
   for (auto &bb : func->bbs) {
-    auto &succ_bb = bb->succ;
-    for (BasicBlock *to : succ_bb) {
-      auto &domby = to->domby;
-      BasicBlock *x = bb.get();
-      while (x == to || domby.find(x) == domby.end()) {
-        df[x].insert(to);
-        x = x->idom;
+    for (BasicBlock *suc : bb->succ) {
+      auto &domby = suc->domby;
+      BasicBlock *pos = bb.get();
+      while (pos == suc || domby.find(pos) == domby.end()) {
+        df[pos].insert(suc);
+        pos = pos->idom;
       }
     }
   }
