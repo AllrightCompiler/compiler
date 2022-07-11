@@ -7,44 +7,39 @@
 
 #include <ostream>
 
-namespace mediumend{
+namespace mediumend {
 class CFG;
 }
 
 namespace ir {
 
+using std::list;
 using std::optional;
 using std::string;
 using std::unique_ptr;
-using std::vector;
-using std::list;
 using std::unordered_map;
 using std::unordered_set;
+using std::vector;
 
 struct Reg {
-  Type type;
+  ScalarType type;
   int id;
 
   Reg() {}
-  Reg(Type type_, int id_) : type{type_}, id{id_} {}
-  bool operator== (const Reg &b)const{
-    return id == b.id;
-  }
-  bool operator!= (const Reg &b)const{
-    return !this->operator==(b);
-  }
+  Reg(ScalarType type, int id) : type{type}, id{id} {}
+  bool operator==(const Reg &b) const { return id == b.id; }
+  bool operator!=(const Reg &b) const { return !this->operator==(b); }
 };
-}
+} // namespace ir
 
-namespace std{
-template<>
-class hash<ir::Reg> {
+namespace std {
+template <> class hash<ir::Reg> {
 public:
-	size_t operator()(const ir::Reg& r) const{ return r.id; }
+  size_t operator()(const ir::Reg &r) const { return r.id; }
 };
-}
+} // namespace std
 
-namespace ir{
+namespace ir {
 struct Storage {
   bool global;
   Reg reg; // reg的type字段无效，此reg表示变量的地址。全局变量的此字段无效。
@@ -55,19 +50,21 @@ struct Function;
 
 struct Instruction : Display {
   BasicBlock *bb;
-  virtual void print(std::ostream &, unsigned) const override;
-  virtual ~Instruction();
-  virtual void add_use_def() {};
-  virtual void remove_use_def() {};
-  virtual void change_use(Reg , Reg ) {};
+
+  virtual ~Instruction() = default;
+
+  virtual void print(std::ostream &, unsigned) const override {}
+  virtual void add_use_def() {}
+  virtual void remove_use_def() {}
+  virtual void change_use(Reg, Reg) {}
 };
 
 class Loop {
 public:
-    Loop *outer;
-    BasicBlock *header;
-    int level;
-    Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1) {}
+  Loop *outer;
+  BasicBlock *header;
+  int level;
+  Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1) {}
 };
 
 struct BasicBlock {
@@ -116,7 +113,7 @@ struct Function {
   FunctionSignature sig;
   int nr_regs;
 
-  mediumend::CFG* cfg = nullptr;
+  mediumend::CFG *cfg = nullptr;
   int pure = -1;
 
   unordered_map<Reg, list<Instruction *>> use_list;
@@ -124,11 +121,9 @@ struct Function {
   unordered_set<Reg> global_addr;
 
   list<unique_ptr<BasicBlock>> bbs;
-  Reg new_reg(::Type t) {
-    return ir::Reg{t, ++nr_regs};
-  }
+  Reg new_reg(ScalarType t) { return ir::Reg{t, ++nr_regs}; }
   ~Function();
-  bool has_param(Reg r){ return r.id <= sig.param_types.size(); }
+  bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
   void clear_visit();
   void clear_graph();
   void clear_dom();
@@ -167,10 +162,7 @@ struct Output : Instruction {
 struct Alloca : Output {
   Type type;
 
-  Alloca(Reg dst, Type tp) : type{std::move(tp)}, Output{dst} {
-    this->dst.type = this->type;
-    this->dst.type.dims.insert(this->dst.type.dims.begin(), 0);
-  }
+  Alloca(Reg dst, Type tp) : type{std::move(tp)}, Output{dst} {}
 };
 
 // dst = mem[src]
@@ -225,7 +217,6 @@ struct Convert : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-
 };
 
 struct Call : Output {
@@ -265,7 +256,7 @@ struct Phi : Output {
 
   Phi(Reg dst) : Output{dst} {}
 
-  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs): Output{dst} {
+  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst} {
     for (int i = 0; i < bbs.size(); i++) {
       incoming[bbs[i]] = regs[i];
     }
@@ -305,4 +296,3 @@ struct Branch : Terminator {
 } // namespace insns
 
 } // namespace ir
-

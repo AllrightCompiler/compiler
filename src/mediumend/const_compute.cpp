@@ -8,7 +8,7 @@ namespace mediumend {
 ConstValue const_compute(ir::Instruction *inst, ConstValue &oprand) {
   ConstValue res;
   TypeCase(unary, ir::insns::Unary *, inst) {
-    res.type = unary->dst.type.base_type;
+    res.type = unary->dst.type;
     assert(unary->src.type == oprand.type);
     switch (unary->op) {
       case UnaryOp::Not:
@@ -23,7 +23,7 @@ ConstValue const_compute(ir::Instruction *inst, ConstValue &oprand) {
         assert(false);
     }
   } else TypeCase(convert, ir::insns::Convert *, inst) {
-    res.type = convert->dst.type.base_type;
+    res.type = convert->dst.type;
     assert(convert->src.type == oprand.type);
     if (convert->dst.type == ScalarType::Int){
       if (convert->src.type == ScalarType::Int) res.iv = oprand.iv;
@@ -39,7 +39,7 @@ ConstValue const_compute(ir::Instruction *inst, ConstValue &oprand) {
 ConstValue const_compute(ir::Instruction *inst, ConstValue &op1, ConstValue &op2) {
   ConstValue res;
   TypeCase(binary, ir::insns::Binary *, inst) {
-    res.type = binary->dst.type.base_type;
+    res.type = binary->dst.type;
     assert(binary->src1.type == op1.type && binary->src2.type == op2.type);
     assert(binary->src1.type == binary->src2.type);
     switch (binary->op) {

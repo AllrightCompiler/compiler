@@ -35,7 +35,7 @@ class IrGen {
 
   std::unordered_map<Var *, ir::Storage> mem_vars;
 
-  ir::Reg new_reg(::Type t) {
+  ir::Reg new_reg(::ScalarType t) {
     auto &nr_regs = cur_func ? local_regs : global_regs;
     return ir::Reg{t, ++nr_regs};
   }

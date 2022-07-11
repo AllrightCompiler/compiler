@@ -77,24 +77,24 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(unordered_map<Reg,
   switch (binary->op) {
     case BinaryOp::Add:
       assert(!constMap.count(src1) && constMap.count(src2));
-      if (constMap[src2].isValue(0)) return src1;
+      if (constMap[src2].equals(0)) return src1;
       break;
     case BinaryOp::Sub:
-      if (constMap.count(src2) && constMap[src2].isValue(0)) return src1;
+      if (constMap.count(src2) && constMap[src2].equals(0)) return src1;
       break;
     case BinaryOp::Mul:
       assert(!constMap.count(src1) && constMap.count(src2));
-      if (constMap[src2].isValue(0)) return ConstValue(0);
-      if (constMap[src2].isValue(1)) return src1;
+      if (constMap[src2].equals(0)) return ConstValue(0);
+      if (constMap[src2].equals(1)) return src1;
       break;
     case BinaryOp::Div:
       if (constMap.count(src2)) {
-        if (constMap[src2].isValue(1)) return src1;
+        if (constMap[src2].equals(1)) return src1;
       }
       break;
     case BinaryOp::Mod:
       if (constMap.count(src2)) {
-        if (constMap[src2].isValue(1)) return ConstValue(0);
+        if (constMap[src2].equals(1)) return ConstValue(0);
       }
       break;
     default:
@@ -165,7 +165,7 @@ Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
         if (binary->src1 == binary_i->src1 && constMap.count(binary->src2) && constMap.count(binary_i->src2)) {
           if ((binary->op == BinaryOp::Add && binary_i->op == BinaryOp::Sub) || (binary->op == BinaryOp::Sub && binary_i->op == BinaryOp::Add)) {
             ConstValue c1 = constMap[binary->src2], c2 = constMap[binary_i->src2];
-            if (c1.isOpposite(c2)) {
+            if (c1.is_opposite(c2)) {
               hashTable[inst] = binary_i->dst;
               find = true;
             }
