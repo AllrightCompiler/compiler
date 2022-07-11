@@ -4,6 +4,7 @@
 
 #include "frontend/symbol_table.hpp"
 
+#include <functional>
 #include <ostream>
 
 namespace mediumend {
@@ -36,7 +37,7 @@ struct Reg {
 namespace std {
 template <> class hash<ir::Reg> {
 public:
-  size_t operator()(const ir::Reg &r) const { return r.id; }
+  size_t operator()(const ir::Reg &r) const { return hash<int>()(r.id); }
 };
 } // namespace std
 

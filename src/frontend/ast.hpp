@@ -217,6 +217,8 @@ public:
   StringLiteral(Value value) : m_value{std::move(value)} {}
   virtual ~StringLiteral() = default;
 
+  const std::string &value() const { return m_value; }
+
   void print(std::ostream &out, unsigned indent) const override;
 
 private:

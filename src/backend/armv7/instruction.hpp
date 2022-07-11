@@ -207,7 +207,7 @@ struct FullRType : Instruction {
     u.insert(s1);
     return u;
   }
-  std::vector<Reg *> reg_ptrs() override { 
+  std::vector<Reg *> reg_ptrs() override {
     auto ptrs = s2.get_reg_ptrs();
     ptrs.push_back(&dst);
     ptrs.push_back(&s1);
@@ -230,7 +230,7 @@ struct Move : Instruction {
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return src.get_use(); }
-  std::vector<Reg *> reg_ptrs() override { 
+  std::vector<Reg *> reg_ptrs() override {
     auto ptrs = src.get_reg_ptrs();
     ptrs.push_back(&dst);
     return ptrs;
@@ -241,7 +241,7 @@ struct Move : Instruction {
     if (!src.is_imm_shift())
       return false;
     auto &reg_shift = std::get<RegImmShift>(src.opd);
-    return !flip && reg_shift.s == 0; 
+    return !flip && reg_shift.s == 0;
   }
 };
 
@@ -304,7 +304,7 @@ struct Compare : Instruction {
     u.insert(s1);
     return u;
   }
-  std::vector<Reg *> reg_ptrs() override { 
+  std::vector<Reg *> reg_ptrs() override {
     auto ptrs = s2.get_reg_ptrs();
     ptrs.push_back(&s1);
     return ptrs;
@@ -469,11 +469,11 @@ struct Pop : SpRelative {
   Pop(std::vector<Reg> dsts) : dsts{std::move(dsts)} {}
 
   void emit(std::ostream &os) const override;
-  std::set<Reg> def() const override { 
+  std::set<Reg> def() const override {
     return std::set<Reg>(dsts.begin(), dsts.end());
   }
   std::set<Reg> use() const override { return {}; }
-// NOTE: Pop的操作数是物理寄存器，不提供可修改的寄存器列表
+  // NOTE: Pop的操作数是物理寄存器，不提供可修改的寄存器列表
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 
@@ -524,6 +524,24 @@ struct CountLeadingZero : Instruction {
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {src}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
+};
+
+// 伪二元比较，需要在最后阶段被展开
+// trick: 实际的op用的是本指令的条件码
+struct PseudoCompare : Instruction {
+  std::unique_ptr<Compare> cmp;
+  Reg dst;
+
+  PseudoCompare(Compare *real_cmp, Reg dst) : cmp{real_cmp}, dst{dst} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return cmp->use(); }
+  std::vector<Reg *> reg_ptrs() override {
+    auto ptrs = cmp->reg_ptrs();
+    ptrs.push_back(&dst);
+    return ptrs;
+  }
 };
 
 } // namespace armv7

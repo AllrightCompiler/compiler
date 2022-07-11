@@ -178,6 +178,20 @@ class ProgramTranslator {
         }
         index_reg = t;
       }
+      for (int i = nr_indices; i < static_cast<int>(gep->type.dims.size());
+           ++i) {
+        Reg t = fn.new_reg(General);
+        int dim = gep->type.dims[i];
+        if (is_power_of_2(dim)) {
+          bb->push(
+              new Move{t, Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
+        } else {
+          Reg imm_reg = fn.new_reg(General);
+          emit_load_imm(bb, imm_reg, dim);
+          bb->push(new RType{RType::Op::Mul, t, index_reg, imm_reg});
+        }
+        index_reg = t;
+      }
       Reg dst = Reg::from(gep->dst);
       Reg base = Reg::from(gep->base);
       bb->push(new FullRType{FullRType::Op::Add, dst, base,
@@ -198,17 +212,17 @@ class ProgramTranslator {
         }
         break;
       case UnaryOp::Not: {
-        // 根据语法特性，!expr将不会参与常规计算，暂不生成实际代码而只生成标记
-        // if (!dst.is_float()) {
-        //   // bb->push(new Move{dst, Operand2::from(0)});
-        //   // bb->push(new Compare{src, Operand2::from(0)});
-        //   // bb->push(ExCond::Eq, new Move{dst, Operand2::from(1)});
-        //   // alternative: clz dst, src; lsr dst, dst, #5
-        //   bb->push(new CountLeadingZero{dst, src});
-        //   bb->push(new Move{dst, Operand2::from(LSR, dst, 5)});
-        // } else {
-        //   // TODO: emit vcmp vmrs etc.
-        // }
+        if (!dst.is_float()) {
+          // bb->push(new Move{dst, Operand2::from(0)});
+          // bb->push(new Compare{src, Operand2::from(0)});
+          // bb->push(ExCond::Eq, new Move{dst, Operand2::from(1)});
+          // alternative: clz dst, src; lsr dst, dst, #5
+          bb->push(new CountLeadingZero{dst, src});
+          bb->push(new Move{dst, Operand2::from(LSR, dst, 5)});
+        } else {
+          // TODO: emit vcmp vmrs etc.
+        }
+
         if (cmp_info.count(src)) {
           auto &cmp = cmp_info[src];
           cmp_info[dst].cond = logical_not(cmp.cond);
@@ -251,9 +265,12 @@ class ProgramTranslator {
       case BinaryOp::Gt:
       case BinaryOp::Leq:
       case BinaryOp::Lt: {
-        // 暂不生成实际代码，只生成标记（要求虚拟寄存器单赋值）
+        auto cond = from(binary->op);
+        auto inner = new Compare{s1, Operand2::from(s2)};
+        bb->push(cond, new PseudoCompare{inner, dst});
+
         auto &cmp = cmp_info[dst];
-        cmp.cond = from(binary->op);
+        cmp.cond = cond;
         cmp.lhs = s1;
         cmp.rhs = s2;
         break;
@@ -645,7 +662,7 @@ void Function::emit_prologue_epilogue() {
   for (auto obj : normal_objs)
     stack_obj_size += obj->size;
   stack_obj_size = round_up_to_imm8m(stack_obj_size);
-  
+
   // emit prologue
   auto &prologue = entry->insns;
   // 每次都插入在头部，先生成后面的
@@ -721,7 +738,9 @@ void Function::resolve_stack_ops(int frame_size) {
         int imm = std::abs(offset);
         bool sub = offset < 0;
 
-        if (is_imm8m(imm) || is_imm12(imm)) {
+        // TODO: 如果Thumb-2可用，这里可以是imm12吗?
+        // if (is_imm8m(imm) || is_imm12(imm)) {
+        if (is_imm8m(imm)) {
           auto op = sub ? IType::Sub : IType::Add;
           it->reset(new IType{op, dst, reg_sp, imm});
         } else {
@@ -763,9 +782,19 @@ void Function::resolve_stack_ops(int frame_size) {
       else TypeCase(sp_adjust, AdjustSp *, ins) {
         int offset = sp_adjust->offset;
         int imm = std::abs(offset);
-        auto op = offset < 0 ? IType::Sub : IType::Add;
-        assert(is_imm8m(imm) || is_imm12(imm));
-        it->reset(new IType{op, reg_sp, reg_sp, imm});
+
+        if (is_imm8m(imm)) {
+          auto op = offset < 0 ? IType::Sub : IType::Add;
+          it->reset(new IType{op, reg_sp, reg_sp, imm});
+        } else {
+          // NOTE: 假设非imm8m的sp调整只会出现在函数调用之后
+          // (如果prologue和epilogue中sp的调整量都向上对齐到imm8m)
+          // 这时r1~r3是报废的，可以使用
+          auto op = offset < 0 ? RType::Sub : RType::Add;
+          Reg tmp{General, r2};
+          emit_load_imm(insns, it, tmp, imm);
+          it->reset(new RType{op, reg_sp, reg_sp, tmp});
+        }
         sp_offset += offset;
       }
       else TypeCase(push, Push *, ins) {
@@ -773,6 +802,27 @@ void Function::resolve_stack_ops(int frame_size) {
       }
       else TypeCase(pop, Pop *, ins) {
         sp_offset += pop->dsts.size() * 4;
+      }
+    }
+  }
+}
+
+void Function::replace_pseudo_insns() {
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end(); ++it) {
+      TypeCase(pcmp, PseudoCompare *, it->get()) {
+        auto cond = pcmp->cond;
+        auto dst = pcmp->dst;
+
+        auto cmov_true = new Move{dst, Operand2::from(1)};
+        cmov_true->cond = cond;
+        auto cmov_false = new Move{dst, Operand2::from(0)};
+        cmov_false->cond = logical_not(cond);
+
+        insns.emplace(it, pcmp->cmp.release());
+        insns.emplace(it, cmov_false);
+        it->reset(cmov_true);
       }
     }
   }

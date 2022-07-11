@@ -1,10 +1,11 @@
 #include "backend/armv7/passes.hpp"
+#include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
 #include "backend/armv7/instruction.hpp"
-#include "backend/armv7/ColoringRegAllocator.hpp"
 
 #include "common/common.hpp"
 
+#include <iostream>
 #include <iterator>
 
 namespace armv7 {
@@ -16,9 +17,13 @@ void backend_passes(Program &p) {
     fold_constants(f);
     remove_unused(f);
 
+    // f.emit(std::cerr);
+
     reg_allocator.do_reg_alloc(f);
 
-    f.emit_prologue_epilogue(); // 必须调用
+    // 以下步骤必须进行
+    f.emit_prologue_epilogue();
+    f.replace_pseudo_insns();
   }
 }
 
@@ -55,18 +60,23 @@ void fold_constants(Function &f) {
           if (mov->flip)
             imm = ~imm;
 
-          constants[mov->dst] = imm;
+          Reg dst = mov->dst;
+          if (dst.is_virt())
+            constants[dst] = imm;
           is_load_imm = true;
         }
       }
       else TypeCase(movw, MovW *, ins) {
-        constants[movw->dst] = movw->imm;
+        Reg dst = movw->dst;
+        if (dst.is_virt())
+          constants[dst] = movw->imm;
         is_load_imm = true;
       }
       else TypeCase(movt, MovT *, ins) {
-        if (constants.count(movt->dst)) {
-          int lo = constants[movt->dst].iv;
-          constants[movt->dst] = (movt->imm << 16) | lo;
+        Reg dst = movt->dst;
+        if (constants.count(dst)) {
+          int lo = constants[dst].iv;
+          constants[dst] = (movt->imm << 16) | lo;
           is_load_imm = true;
         }
       }
@@ -92,6 +102,20 @@ void fold_constants(Function &f) {
           x = s2.get<int>();
         }
         return x;
+      };
+
+      auto inline_compare_constant = [&](Compare *cmp) {
+        // TODO: 检查s1是否是常数，可以反转指令条件
+        auto opt_imm = eval_operand2(cmp->s2);
+        if (opt_imm) {
+          int imm = opt_imm.value();
+          if (is_imm8m(imm))
+            cmp->s2 = Operand2::from(imm);
+          else if (is_imm8m(-imm)) {
+            cmp->s2 = Operand2::from(-imm);
+            cmp->neg = !cmp->neg;
+          }
+        }
       };
 
       TypeCase(r_ins, RType *, ins) {
@@ -136,7 +160,9 @@ void fold_constants(Function &f) {
         auto opt_imm = eval_operand2(mov->src);
         if (opt_imm) {
           int imm = opt_imm.value();
-          constants[mov->dst] = imm;
+          Reg dst = mov->dst;
+          if (dst.is_virt())
+            constants[dst] = imm;
           if (is_imm8m(imm))
             mov->src = Operand2::from(imm);
           else if (is_imm8m(~imm)) {
@@ -146,16 +172,10 @@ void fold_constants(Function &f) {
         }
       }
       else TypeCase(cmp, Compare *, ins) {
-        auto opt_imm = eval_operand2(cmp->s2);
-        if (opt_imm) {
-          int imm = opt_imm.value();
-          if (is_imm8m(imm))
-            cmp->s2 = Operand2::from(imm);
-          else if (is_imm8m(-imm)) {
-            cmp->s2 = Operand2::from(-imm);
-            cmp->neg = !cmp->neg;
-          }
-        }
+        inline_compare_constant(cmp);
+      }
+      else TypeCase(pcmp, PseudoCompare *, ins) {
+        inline_compare_constant(pcmp->cmp.get());
       }
     }
   }
@@ -165,7 +185,7 @@ void remove_unused(Function &f) {
   f.do_liveness_analysis();
   for (auto &bb : f.bbs) {
     auto live = bb->live_out;
-    for (auto it = bb->insns.rbegin(); it != bb->insns.rend(); ) {
+    for (auto it = bb->insns.rbegin(); it != bb->insns.rend();) {
       bool no_effect = true;
       auto ins = it->get();
 

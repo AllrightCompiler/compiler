@@ -236,11 +236,10 @@ void IrGen::visit_function(const ast::Function &node) {
     emit(new insns::Call{new_reg(String), ".init", {}});
 
   visit_statement(*node.body());
-  auto last_inst = dynamic_cast<ir::insns::Return *>(
-      cur_func->bbs.back()->insns.back().get());
-  if (!last_inst) {
-    emit(new insns::Return{std::nullopt});
-  }
+  
+  // 总是添加return作为兜底
+  emit(new insns::Return{std::nullopt});
+
   cur_func->nr_regs = local_regs;
   cur_func = nullptr;
   cur_bb = init_bb;
@@ -374,7 +373,9 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
           reg = scalar_cast(reg, sig->param_types[i].base_type);
         arg_regs.push_back(reg);
       } else { // string literal
+        auto &str_literal = std::get<ast::StringLiteral>(arg);
         int str_id = program->string_table.size();
+        program->string_table.push_back(str_literal.value());
         auto str_name = ".str." + std::to_string(str_id);
         Reg reg = new_reg(String);
         emit(new insns::LoadAddr{reg, str_name});
