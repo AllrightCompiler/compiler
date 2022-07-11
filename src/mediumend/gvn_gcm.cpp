@@ -15,6 +15,8 @@ using std::list;
 using std::unique_ptr;
 using mediumend::CFG;
 
+static ir::Program *program = nullptr;
+
 // try to swap imm to src2 (only for ops with commutativity)
 void swapBinaryOprands(ir::insns::Binary *binary) {
   switch (binary->op) {
@@ -281,7 +283,7 @@ void gvn(Function *f) {
         for (auto income : phi->incoming) {
           Reg new_reg = income.second;
           if (!f->has_param(new_reg)) {
-            new_reg = vn_get(hashTable, vnSet, constMap, f->def_list[income.second]);
+            new_reg = vn_get(hashTable, vnSet, constMap, f->def_list.at(income.second));
           }
           if (income.second != new_reg) {
             regsToChange[income.second] = new_reg;
@@ -321,11 +323,11 @@ void gvn(Function *f) {
       TypeCase(binary, ir::insns::Binary *, insn.get()) {
         Reg new_reg1 = binary->src1;
         if (!f->has_param(binary->src1)) {
-          new_reg1 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src1]);
+          new_reg1 = vn_get(hashTable, vnSet, constMap, f->def_list.at(binary->src1));
         }
         Reg new_reg2 = binary->src2;
         if (!f->has_param(binary->src2)) {
-          new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src2]);
+          new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list.at(binary->src2));
         }
         if (binary->src1 != new_reg1) binary->change_use(binary->src1, new_reg1);
         if (binary->src2 != new_reg2) binary->change_use(binary->src2, new_reg2);
@@ -388,7 +390,7 @@ void update_pred(unordered_set<Instruction *> &visited,
                 unordered_map<Instruction *, list<Instruction *> > &pred,
                 Instruction *inst, Reg reg_use) {
   if (inst->bb->func->has_param(reg_use)) return;
-  Instruction *inst_use = inst->bb->func->def_list[reg_use];
+  Instruction *inst_use = inst->bb->func->def_list.at(reg_use);
   get_load_pred(visited, pred, inst_use);
   if (pred.count(inst_use)) {
     pred[inst].insert(pred[inst].end(), pred[inst_use].begin(), pred[inst_use].end());
@@ -500,18 +502,22 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
       }
     }
   } else TypeCase(call, ir::insns::Call *, inst) {
-    placement[call] = root_bb;
-    BasicBlock *place;
-    for (auto arg : call->args) {
-      if (inst->bb->func->has_param(arg)) {
-        place = inst->bb->func->bbs.front().get();
-      } else {
-        schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(arg));
-        place = placement[def_list.at(arg)];
+    if (program->functions.count(call->func) && program->functions[call->func].is_pure()) {
+      placement[call] = root_bb;
+      BasicBlock *place;
+      for (auto arg : call->args) {
+        if (inst->bb->func->has_param(arg)) {
+          place = inst->bb->func->bbs.front().get();
+        } else {
+          schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(arg));
+          place = placement[def_list.at(arg)];
+        }
+        if (place->domlevel > placement[call]->domlevel) {
+          placement[call] = place;
+        }
       }
-      if (place->domlevel > placement[call]->domlevel) {
-        placement[call] = place;
-      }
+    } else {
+      placement[call] = inst->bb;
     }
   } else {
     placement[inst] = inst->bb;
@@ -540,6 +546,13 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
   } else TypeCase(load, ir::insns::Load *, inst) {
     if (use_list.count(load->dst)) {
       for (auto i : use_list.at(load->dst)) {
+        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
+      }
+    }
+    return;
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    if (use_list.count(call->dst)) {
+      for (auto i : use_list.at(call->dst)) {
         schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
       }
     }
@@ -618,7 +631,9 @@ void gcm(Function *f) {
 }
 
 void gvn_gcm(ir::Program *prog) {
+  program = prog;
   for(auto &func : prog->functions){
+    func.second.cfg->remove_unreachable_bb();
     // std::cout << "func: " << func.first << std::endl;
     gvn(&func.second);
     gcm(&func.second);
