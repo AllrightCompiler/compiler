@@ -36,6 +36,9 @@ void constant_propagation(ir::Program *prog) {
           stack.insert(bb.get());
           stack.insert(bb->succ.begin(), bb->succ.end());
         }
+        TypeCase(phi, ir::insns::Phi *, ins.get()){
+          stack.insert(bb.get());
+        }
       }
     }
     while (stack.size()) {
