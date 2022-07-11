@@ -46,7 +46,7 @@ def replace_div_mod(line):
         line[2] = "rem"
     if line[3] == "i32":
         line[2] = "s" + line[2]
-    elif line[4] == "float":
+    elif line[3] == "float":
         line[2] = "f" + line[2]
     else:
         assert False

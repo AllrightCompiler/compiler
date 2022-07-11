@@ -122,7 +122,10 @@ void BasicBlock::insert_after(list<Instruction *> pred, Instruction *insn) {
       }
     } while (it != insns.begin());
   }
-  assert(false);
+  it++;
+  insns.emplace(it, insn);
+  insn->bb = this;
+  // insn->add_use_def();
 }
 
 bool BasicBlock::remove(Instruction *insn) {
@@ -272,11 +275,26 @@ void Branch::emit(std::ostream &os) const {
 
 void Phi::emit(std::ostream &os) const {
   write_reg(os) << "phi " << type_string(dst.type);
-  for (auto it = incoming.begin(); it != incoming.end(); ++it) {
-    if (it != incoming.begin())
-      os << ", ";
-    os << " [" << reg_name(it->second) << ", " << label_name(it->first->label)
-       << "]";
+  // for (auto it = incoming.begin(); it != incoming.end(); ++it) {
+  //   if (it != incoming.begin())
+  //     os << ", ";
+  //   os << " [" << reg_name(it->second) << ", " <<
+  //   label_name(it->first->label)
+  //      << "]";
+  // }
+  int first = 1;
+  for (auto bb : bb->prev) {
+    if (first) {
+      first = 0;
+    } else {
+      os << ",";
+    }
+    if (incoming.count(bb)) {
+      os << " [" << reg_name(incoming.at(bb)) << ", " << label_name(bb->label)
+         << "]";
+    } else {
+      os << " [" << 0 << ", " << label_name(bb->label) << "]";
+    }
   }
 }
 

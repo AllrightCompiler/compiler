@@ -15,6 +15,8 @@ using std::list;
 using std::unique_ptr;
 using mediumend::CFG;
 
+static ir::Program *program = nullptr;
+
 // try to swap imm to src2 (only for ops with commutativity)
 void swapBinaryOprands(ir::insns::Binary *binary) {
   switch (binary->op) {
@@ -114,9 +116,13 @@ Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
     for (auto i : vnSet) {
       TypeCase(phi_i, ir::insns::Phi *, i) {
         bool same = true;
-        Reg first = (*phi_i->incoming.begin()).second;
-        for (auto income : phi_i->incoming) {
-          same &= (first == income.second);
+        if (phi->incoming.size() != phi_i->incoming.size()) continue;
+        for (auto income : phi->incoming) {
+          if (phi_i->incoming.count(income.first)) {
+            same &= (income.second == phi_i->incoming[income.first]);
+          } else {
+            same = false;
+          }
         }
         if (same) {
           hashTable[inst] = phi_i->dst;
@@ -208,6 +214,39 @@ Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
       hashTable[inst] = binary->dst;
       vnSet.insert(inst);
     }
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    bool find = false;
+    for (auto i : vnSet) {
+      TypeCase(loadaddr_i, ir::insns::LoadAddr *, i) {
+        if (loadaddr_i->var_name == loadaddr->var_name) {
+          hashTable[inst] = loadaddr_i->dst;
+          find = true;
+        }
+      }
+    }
+    if (!find) {
+      hashTable[inst] = loadaddr->dst;
+      vnSet.insert(inst);
+    }
+  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+    bool find = false;
+    for (auto i : vnSet) {
+      TypeCase(gep_i, ir::insns::GetElementPtr *, i) {
+        bool same = (gep->base == gep_i->base);
+        if (gep->indices.size() != gep_i->indices.size()) continue;
+        int n_idx = gep->indices.size();
+        for (int i = 0; i < n_idx; i++)
+          same &= (gep->indices[i] == gep_i->indices[i]);
+        if (same) {
+          hashTable[inst] = gep_i->dst;
+          find = true;
+        }
+      }
+    }
+    if (!find) {
+      hashTable[inst] = gep->dst;
+      vnSet.insert(inst);
+    }
   } else TypeCase(other, ir::insns::Output *, inst) {
     hashTable[inst] = other->dst;
     vnSet.insert(inst);
@@ -244,7 +283,7 @@ void gvn(Function *f) {
         for (auto income : phi->incoming) {
           Reg new_reg = income.second;
           if (!f->has_param(new_reg)) {
-            new_reg = vn_get(hashTable, vnSet, constMap, f->def_list[income.second]);
+            new_reg = vn_get(hashTable, vnSet, constMap, f->def_list.at(income.second));
           }
           if (income.second != new_reg) {
             regsToChange[income.second] = new_reg;
@@ -269,14 +308,26 @@ void gvn(Function *f) {
           copy_propagation(f->use_list, loadimm->dst, new_reg);
         }
       }
+      TypeCase(loadaddr, ir::insns::LoadAddr *, insn.get()) {
+        Reg new_reg = vn_get(hashTable, vnSet, constMap, loadaddr);
+        if (new_reg != loadaddr->dst) {
+          copy_propagation(f->use_list, loadaddr->dst, new_reg);
+        }
+      }
+      TypeCase(gep, ir::insns::GetElementPtr *, insn.get()) {
+        Reg new_reg = vn_get(hashTable, vnSet, constMap, gep);
+        if (new_reg != gep->dst) {
+          copy_propagation(f->use_list, gep->dst, new_reg);
+        }
+      }
       TypeCase(binary, ir::insns::Binary *, insn.get()) {
         Reg new_reg1 = binary->src1;
         if (!f->has_param(binary->src1)) {
-          new_reg1 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src1]);
+          new_reg1 = vn_get(hashTable, vnSet, constMap, f->def_list.at(binary->src1));
         }
         Reg new_reg2 = binary->src2;
         if (!f->has_param(binary->src2)) {
-          new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src2]);
+          new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list.at(binary->src2));
         }
         if (binary->src1 != new_reg1) binary->change_use(binary->src1, new_reg1);
         if (binary->src2 != new_reg2) binary->change_use(binary->src2, new_reg2);
@@ -338,7 +389,8 @@ void get_load_pred(unordered_set<Instruction *> &visited,
 void update_pred(unordered_set<Instruction *> &visited,
                 unordered_map<Instruction *, list<Instruction *> > &pred,
                 Instruction *inst, Reg reg_use) {
-  Instruction *inst_use = inst->bb->func->def_list[reg_use];
+  if (inst->bb->func->has_param(reg_use)) return;
+  Instruction *inst_use = inst->bb->func->def_list.at(reg_use);
   get_load_pred(visited, pred, inst_use);
   if (pred.count(inst_use)) {
     pred[inst].insert(pred[inst].end(), pred[inst_use].begin(), pred[inst_use].end());
@@ -401,16 +453,15 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
   visited.insert(inst);
   TypeCase(binary, ir::insns::Binary *, inst) {
     placement[binary] = root_bb;
-    int n_params = inst->bb->func->sig.param_types.size();
     BasicBlock *place1, *place2;
-    if (binary->src1.id <= n_params) { // is function param
+    if (inst->bb->func->has_param(binary->src1)) { // is function param
       place1 = inst->bb->func->bbs.front().get();
     } else {
       ir::Instruction *i1 = def_list.at(binary->src1);
       schedule_early(visited, placement, bbs, def_list, root_bb, i1);
       place1 = placement[i1];
     }
-    if (binary->src2.id <= n_params) { // is function param
+    if (inst->bb->func->has_param(binary->src2)) { // is function param
       place2 = inst->bb->func->bbs.front().get();
     } else {
       ir::Instruction *i2 = def_list.at(binary->src2);
@@ -425,6 +476,49 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     }
   } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
     placement[loadimm] = root_bb;
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    placement[loadaddr] = root_bb;
+  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+    placement[gep] = root_bb;
+    BasicBlock *place;
+    if (inst->bb->func->has_param(gep->base)) {
+      place = inst->bb->func->bbs.front().get();
+    } else {
+      schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(gep->base));
+      place = placement[def_list.at(gep->base)];
+    }
+    if (place->domlevel > placement[gep]->domlevel) {
+      placement[gep] = place;
+    }
+    for (auto reg : gep->indices) {
+      if (inst->bb->func->has_param(reg)) {
+        place = inst->bb->func->bbs.front().get();
+      } else {
+        schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(reg));
+        place = placement[def_list.at(reg)];
+      }
+      if (place->domlevel > placement[gep]->domlevel) {
+        placement[gep] = place;
+      }
+    }
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    if (program->functions.count(call->func) && program->functions[call->func].is_pure()) {
+      placement[call] = root_bb;
+      BasicBlock *place;
+      for (auto arg : call->args) {
+        if (inst->bb->func->has_param(arg)) {
+          place = inst->bb->func->bbs.front().get();
+        } else {
+          schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(arg));
+          place = placement[def_list.at(arg)];
+        }
+        if (place->domlevel > placement[call]->domlevel) {
+          placement[call] = place;
+        }
+      }
+    } else {
+      placement[call] = inst->bb;
+    }
   } else {
     placement[inst] = inst->bb;
   }
@@ -452,6 +546,13 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
   } else TypeCase(load, ir::insns::Load *, inst) {
     if (use_list.count(load->dst)) {
       for (auto i : use_list.at(load->dst)) {
+        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
+      }
+    }
+    return;
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    if (use_list.count(call->dst)) {
+      for (auto i : use_list.at(call->dst)) {
         schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
       }
     }
@@ -530,7 +631,9 @@ void gcm(Function *f) {
 }
 
 void gvn_gcm(ir::Program *prog) {
+  program = prog;
   for(auto &func : prog->functions){
+    func.second.cfg->remove_unreachable_bb();
     // std::cout << "func: " << func.first << std::endl;
     gvn(&func.second);
     gcm(&func.second);

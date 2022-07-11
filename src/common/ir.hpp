@@ -130,8 +130,8 @@ struct Function {
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(ScalarType t) { return ir::Reg{t, ++nr_regs}; }
   ~Function();
-
-  bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
+  bool has_param(Reg r){ return r.id <= sig.param_types.size(); }
+  bool is_pure() const {return pure == 1;}
   void clear_visit();
   void clear_graph();
   void clear_dom();
