@@ -451,16 +451,15 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
   visited.insert(inst);
   TypeCase(binary, ir::insns::Binary *, inst) {
     placement[binary] = root_bb;
-    int n_params = inst->bb->func->sig.param_types.size();
     BasicBlock *place1, *place2;
-    if (binary->src1.id <= n_params) { // is function param
+    if (inst->bb->func->has_param(binary->src1)) { // is function param
       place1 = inst->bb->func->bbs.front().get();
     } else {
       ir::Instruction *i1 = def_list.at(binary->src1);
       schedule_early(visited, placement, bbs, def_list, root_bb, i1);
       place1 = placement[i1];
     }
-    if (binary->src2.id <= n_params) { // is function param
+    if (inst->bb->func->has_param(binary->src2)) { // is function param
       place2 = inst->bb->func->bbs.front().get();
     } else {
       ir::Instruction *i2 = def_list.at(binary->src2);
@@ -475,6 +474,29 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     }
   } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
     placement[loadimm] = root_bb;
+  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+    placement[gep] = root_bb;
+    BasicBlock *place;
+    if (inst->bb->func->has_param(gep->base)) {
+      place = inst->bb->func->bbs.front().get();
+    } else {
+      schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(gep->base));
+      place = placement[def_list.at(gep->base)];
+    }
+    if (place->domlevel > placement[gep]->domlevel) {
+      placement[gep] = place;
+    }
+    for (auto reg : gep->indices) {
+      if (inst->bb->func->has_param(reg)) {
+        place = inst->bb->func->bbs.front().get();
+      } else {
+        schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(reg));
+        place = placement[def_list.at(reg)];
+      }
+      if (place->domlevel > placement[gep]->domlevel) {
+        placement[gep] = place;
+      }
+    }
   } else {
     placement[inst] = inst->bb;
   }
