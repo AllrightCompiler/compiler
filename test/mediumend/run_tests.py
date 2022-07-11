@@ -13,14 +13,14 @@ def get_testcases(test_dir):
     return testcases
 
 def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
-    code_path = test_dir + test_name + ".sy"
-    input_path = test_dir + test_name + ".in"
-    output_path = test_dir + test_name + ".tmp"
-    ir_path = test_dir + test_name + ".ir"
-    ll_path = test_dir + test_name + ".ll"
-    obj_path = test_dir + test_name + ".o"
-    exe_path = test_dir + test_name
-    ans_path = test_dir + test_name + ".out"
+    code_path = os.path.join(test_dir, test_name + ".sy")
+    input_path = os.path.join(test_dir, test_name + ".in")
+    output_path = os.path.join(test_dir, test_name + ".tmp")
+    ir_path = os.path.join(test_dir, test_name + ".ir")
+    ll_path = os.path.join(test_dir, test_name + ".ll")
+    obj_path = os.path.join(test_dir, test_name + ".o")
+    exe_path = os.path.join(test_dir, test_name)
+    ans_path = os.path.join(test_dir, test_name + ".out")
     print("Running test {}: ".format(test_name), end="")
 
     command = f'{compiler_path} --ir -O2 {code_path}'
@@ -35,12 +35,19 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
         print('\033[0;31mCompiler Error\033[0m')
         return False
     
-    command = f'python3 {converter_path} {ir_path} {ll_path}'
-    proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
+    command = f'{compiler_path} --llvm -O2 {code_path}'
+    proc = subprocess.Popen(command, stdout=open(ll_path, "w"), stderr=open("/dev/null", "w"), shell=True)
     proc.wait()
     if proc.returncode:
         print('\033[0;31mTranslator Error\033[0m')
         return False
+    
+    # command = f'python3 {converter_path} {ir_path} {ll_path}'
+    # proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
+    # proc.wait()
+    # if proc.returncode:
+    #     print('\033[0;31mTranslator Error\033[0m')
+    #     return False
 
     command = f'llc {ll_path} -filetype=obj -o {obj_path}'
     proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
@@ -49,7 +56,7 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
         print('\033[0;31mllc Error\033[0m')
         return False
 
-    command = f'clang {obj_path} {lib_path} -o {exe_path}'
+    command = f'gcc {obj_path} {lib_path} -o {exe_path}'
     proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
     proc.wait()
     if proc.returncode:

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common/Display.hpp"
 #include "common/common.hpp"
 
 #include "frontend/symbol_table.hpp"
@@ -27,6 +26,8 @@ struct Reg {
 
   Reg() {}
   Reg(ScalarType type, int id) : type{type}, id{id} {}
+
+  bool operator<(const Reg &b) const { return id < b.id; }
   bool operator==(const Reg &b) const { return id == b.id; }
   bool operator!=(const Reg &b) const { return !this->operator==(b); }
 };
@@ -48,15 +49,20 @@ struct Storage {
 struct BasicBlock;
 struct Function;
 
-struct Instruction : Display {
+struct Instruction {
   BasicBlock *bb;
+
+  template <typename T> bool is() const {
+    return dynamic_cast<const T *>(this) != nullptr;
+  }
 
   virtual ~Instruction() = default;
 
-  virtual void print(std::ostream &, unsigned) const override {}
+  virtual void emit(std::ostream &os) const {}
   virtual void add_use_def() {}
   virtual void remove_use_def() {}
   virtual void change_use(Reg, Reg) {}
+  virtual std::vector<Reg *> reg_ptrs() { return {}; }
 };
 
 class Loop {
@@ -123,6 +129,7 @@ struct Function {
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(ScalarType t) { return ir::Reg{t, ++nr_regs}; }
   ~Function();
+
   bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
   void clear_visit();
   void clear_graph();
@@ -140,7 +147,61 @@ struct Program {
   vector<string> string_table;
 };
 
-std::ostream &operator<<(std::ostream &, const Program &);
+// 指令输出相关
+std::ostream &operator<<(std::ostream &os, const Program &);
+void emit_global_var(std::ostream &os, const std::string &name, Var *var);
+void set_print_context(const Program &);
+const Program *get_print_context();
+
+inline std::string reg_name(Reg r) { return "%" + std::to_string(r.id); }
+
+inline std::string var_name(std::string name) { return "@" + name; }
+
+inline std::string label_name(std::string name) { return "%" + name; }
+
+inline std::string type_string(ScalarType t) {
+  if (t == Int)
+    return "i32";
+  if (t == Float)
+    return "float";
+  return "?";
+}
+
+inline std::string type_string(const std::optional<ScalarType> &t) {
+  if (!t)
+    return "void";
+  return type_string(t.value());
+}
+
+inline std::string type_string(const Type &t) {
+  auto s = type_string(t.base_type);
+  if (!t.is_array())
+    return s;
+
+  bool pointer = false;
+  int i = 0;
+  if (t.dims[0] == 0) {
+    pointer = true;
+    i = 1;
+  }
+  if (t.is_array()) {
+    if (t.dims.size() == 1 && pointer) { // scalar pointer
+      s = type_string(t.base_type);
+    } else { // really array
+      s = "";
+      for (; i < t.nr_dims() - 1; ++i)
+        s += "[" + std::to_string(t.dims[i]) + " x ";
+      s += "[" + std::to_string(t.dims[i]) + " x " + type_string(t.base_type) +
+           "]";
+      i = pointer ? 1 : 0;
+      for (; i < t.nr_dims() - 1; ++i)
+        s += "]";
+    }
+  }
+  if (pointer)
+    s += "*";
+  return s;
+}
 
 // instructions
 
@@ -154,8 +215,12 @@ struct Output : Instruction {
 
   Output() {}
   Output(Reg r) : dst{r} {}
+
+  std::ostream &write_reg(std::ostream &os) const;
+
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&dst}; }
 };
 
 // 栈空间分配
@@ -163,6 +228,8 @@ struct Alloca : Output {
   Type type;
 
   Alloca(Reg dst, Type tp) : type{std::move(tp)}, Output{dst} {}
+
+  virtual void emit(std::ostream &os) const override;
 };
 
 // dst = mem[src]
@@ -170,9 +237,12 @@ struct Load : Output {
   Reg addr;
 
   Load(Reg dst, Reg addr) : addr{addr}, Output{dst} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &addr}; }
 };
 
 // 将全局变量地址加载到dst寄存器
@@ -180,21 +250,28 @@ struct LoadAddr : Output {
   string var_name;
 
   LoadAddr(Reg dst, string name) : var_name{std::move(name)}, Output{dst} {}
+
+  virtual void emit(std::ostream &os) const override;
 };
 
 struct LoadImm : Output {
   ConstValue imm;
 
   LoadImm(Reg dst, ConstValue immediate) : imm{immediate}, Output{dst} {}
+
+  virtual void emit(std::ostream &os) const override;
 };
 
 struct Store : Instruction {
   Reg addr, val;
 
   Store(Reg addr, Reg val) : addr{addr}, val{val} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&addr, &val}; }
 };
 
 struct GetElementPtr : Output {
@@ -205,18 +282,29 @@ struct GetElementPtr : Output {
   GetElementPtr(Reg dst, Type tp, Reg base, vector<Reg> indexes)
       : type{std::move(tp)}, indices{std::move(indexes)}, base{base},
         Output{dst} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override {
+    std::vector<Reg *> ptrs{&dst, &base};
+    for (Reg &r : indices)
+      ptrs.push_back(&r);
+    return ptrs;
+  }
 };
 
 struct Convert : Output {
   Reg src;
 
   Convert(Reg to, Reg from) : src{from}, Output{to} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
 };
 
 struct Call : Output {
@@ -225,9 +313,17 @@ struct Call : Output {
 
   Call(Reg dst, string callee, vector<Reg> arg_regs)
       : func{std::move(callee)}, args{std::move(arg_regs)}, Output{dst} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override {
+    std::vector<Reg *> ptrs{&dst};
+    for (Reg &r : args)
+      ptrs.push_back(&r);
+    return ptrs;
+  }
 };
 
 struct Unary : Output {
@@ -235,9 +331,12 @@ struct Unary : Output {
   Reg src;
 
   Unary(Reg dst, UnaryOp op, Reg src) : op{op}, src{src}, Output{dst} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
 };
 
 struct Binary : Output {
@@ -246,40 +345,63 @@ struct Binary : Output {
 
   Binary(Reg dst, BinaryOp op, Reg src1, Reg src2)
       : op{op}, src1{src1}, src2{src2}, Output{dst} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override {
+    return {&dst, &src1, &src2};
+  }
 };
 
 struct Phi : Output {
-  unordered_map<BasicBlock *, Reg> incoming;
+  std::map<BasicBlock *, Reg> incoming;
 
   Phi(Reg dst) : Output{dst} {}
 
   Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst} {
-    for (int i = 0; i < bbs.size(); i++) {
+    for (size_t i = 0; i < bbs.size(); i++) {
       incoming[bbs[i]] = regs[i];
     }
   };
+
+  void remove_prev(BasicBlock *bb);
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-  void remove_prev(BasicBlock *bb);
+  virtual std::vector<Reg *> reg_ptrs() override {
+    std::vector<Reg *> ptrs{&dst};
+    for (auto &[_, r] : incoming)
+      ptrs.push_back(&r);
+    return ptrs;
+  }
 };
 
 struct Return : Terminator {
   std::optional<Reg> val;
 
   Return(std::optional<Reg> ret_val) : val{ret_val} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override {
+    if (val.has_value())
+      return {&val.value()};
+    return {};
+  }
 };
 
 struct Jump : Terminator {
   BasicBlock *target;
 
   Jump(BasicBlock *dest) : target{dest} {}
+
+  virtual void emit(std::ostream &os) const override;
 };
 
 struct Branch : Terminator {
@@ -288,9 +410,12 @@ struct Branch : Terminator {
 
   Branch(Reg src, BasicBlock *true_dst, BasicBlock *false_dst)
       : val{src}, true_target{true_dst}, false_target{false_dst} {}
+
+  virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&val}; }
 };
 
 } // namespace insns

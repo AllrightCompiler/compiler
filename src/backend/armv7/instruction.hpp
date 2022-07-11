@@ -14,8 +14,8 @@ enum RegType {
   Fp,
 };
 
-inline constexpr RegType ir_to_machine_reg_type(const Type &t) {
-  return (t.base_type == Float && !t.is_array()) ? Fp : General;
+inline constexpr RegType ir_to_machine_reg_type(ScalarType t) {
+  return t == Float ? Fp : General;
 }
 
 // 此结构几乎与ir::Reg一致
@@ -46,7 +46,7 @@ struct Reg {
   static Reg from(ir::Reg ir_reg) {
     return Reg{ir_to_machine_reg_type(ir_reg.type), -ir_reg.id};
   }
-  static Reg from(::Type t, int id) {
+  static Reg from(ScalarType t, int id) {
     return Reg{ir_to_machine_reg_type(t), id};
   }
 };

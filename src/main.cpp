@@ -11,6 +11,8 @@
 #include "backend/armv7/passes.hpp"
 #include "backend/armv7/program.hpp"
 
+#include "backend/llvm/program.hpp"
+
 #include "common/argparse.hpp"
 #include "common/errors.hpp"
 #include "common/utils.hpp"
@@ -98,10 +100,16 @@ int main(int argc, char *argv[]) {
       return 0;
     }
 
-    auto program = armv7::translate(*ir_program);
-    armv7::backend_passes(*program);
-    armv7::emit_global(os, *ir_program);
-    program->emit(os);
+    if (has_option(argc, argv, "--llvm")) {
+      auto program = llvm::translate(*ir_program);
+      llvm::emit_global(os, *ir_program);
+      program->emit(os);
+    } else {
+      auto program = armv7::translate(*ir_program);
+      armv7::backend_passes(*program);
+      armv7::emit_global(os, *ir_program);
+      program->emit(os);
+    }
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;
   } catch (const CompileError &e) {

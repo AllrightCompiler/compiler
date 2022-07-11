@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG")
 
+set(CMAKE_BUILD_TYPE Debug)
+
 file(GLOB_RECURSE SRC "src/*.cpp")
 
 include_directories(src)

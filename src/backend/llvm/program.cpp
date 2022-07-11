@@ -1,0 +1,300 @@
+#include "backend/llvm/program.hpp"
+#include "backend/llvm/instruction.hpp"
+
+#include "common/ir.hpp"
+
+#include <cassert>
+#include <set>
+#include <string>
+
+namespace llvm {
+
+class ProgramTranslator {
+  const ir::Program &src;
+  llvm::Program &dst;
+
+  std::unordered_map<ir::BasicBlock *, llvm::BasicBlock *> bb_map;
+  std::unordered_map<ir::Reg, ir::Reg> reg_map;
+  std::map<ir::Reg, Type> reg_type; // 只保存非标量寄存器 (String)
+  std::set<ir::Reg> cmp_results;    // 比较结果寄存器，类型为i1
+
+  void translate_instruction(llvm::BasicBlock *bb, ir::Instruction *insn,
+                             Function &f) {
+    using namespace ir::insns;
+    Instruction *copy = nullptr;
+
+    TypeCase(alloca, Alloca *, insn) {
+      auto dst = reg_map.at(alloca->dst);
+      assert(dst.type == String);
+      reg_type[dst] = alloca->type.get_pointer_type();
+
+      copy = new Alloca{dst, alloca->type};
+    }
+    else TypeCase(load, Load *, insn) {
+      auto addr = reg_map.at(load->addr);
+      auto dst = reg_map.at(load->dst);
+      assert(addr.type == String);
+      assert(dst.type == Int || dst.type == Float);
+
+      copy = new Load{dst, addr};
+    }
+    else TypeCase(load_addr, LoadAddr *, insn) {
+      auto dst = reg_map.at(load_addr->dst);
+      assert(dst.type == String);
+
+      auto &var_name = load_addr->var_name;
+      if (src.global_vars.count(var_name)) {
+        reg_type[dst] = src.global_vars.at(var_name)->type.get_addr_type();
+      } else if (var_name.substr(0, 5) == ".str.") {
+        int index = std::stoi(var_name.substr(5));
+        assert(index < src.string_table.size());
+        // NOTE: 这次是真的String，应该是i8*之类的
+        // TODO
+        reg_type[dst] = Type{String};
+      } else {
+        assert(false);
+      }
+
+      copy = new LoadAddr{dst, var_name};
+    }
+    else TypeCase(load_imm, LoadImm *, insn) {
+      auto dst = reg_map.at(load_imm->dst);
+      copy = new LoadImm{dst, load_imm->imm};
+    }
+    else TypeCase(store, Store *, insn) {
+      auto addr = reg_map.at(store->addr);
+      auto val = reg_map.at(store->val);
+      copy = new Store{addr, val};
+    }
+    else TypeCase(gep, GetElementPtr *, insn) {
+      auto dst = reg_map.at(gep->dst);
+      auto base = reg_map.at(gep->base);
+      assert(dst.type == String);
+
+      std::vector<ir::Reg> indices;
+      for (auto r : gep->indices)
+        indices.push_back(reg_map.at(r));
+
+      copy = new GetElementPtr{dst, gep->type, base, indices};
+    }
+    else TypeCase(convert, Convert *, insn) {
+      auto dst = reg_map.at(convert->dst);
+      auto src = reg_map.at(convert->src);
+      copy = new Convert{dst, src};
+    }
+    else TypeCase(call, Call *, insn) {
+      auto dst = reg_map.at(call->dst);
+      std::vector<ir::Reg> args;
+      for (auto r : call->args)
+        args.push_back(reg_map.at(r));
+
+      copy = new Call{dst, call->func, args};
+    }
+    else TypeCase(ret, Return *, insn) {
+      std::optional<ir::Reg> ret_val;
+      if (ret->val)
+        ret_val = reg_map.at(ret->val.value());
+      copy = new Return{ret_val};
+    }
+    else TypeCase(unary, Unary *, insn) {
+      auto dst = reg_map.at(unary->dst);
+      auto src = reg_map.at(unary->src);
+      copy = new Unary{dst, unary->op, src};
+    }
+    else TypeCase(binary, Binary *, insn) {
+      auto dst = reg_map.at(binary->dst);
+      auto src1 = reg_map.at(binary->src1);
+      auto src2 = reg_map.at(binary->src2);
+      copy = new Binary{dst, binary->op, src1, src2};
+    }
+    else TypeCase(jump, Jump *, insn) {
+      auto target = bb_map.at(jump->target);
+      copy = new SimpleJump{target};
+    }
+    else TypeCase(br, Branch *, insn) {
+      auto src = reg_map.at(br->val);
+      auto true_target = bb_map.at(br->true_target);
+      auto false_target = bb_map.at(br->false_target);
+      copy = new SimpleBranch{src, true_target, false_target};
+    }
+    else TypeCase(phi, Phi *, insn) {
+      auto dst = reg_map.at(phi->dst);
+      auto s_phi = new SimplePhi{dst};
+      for (auto &[bb, reg] : phi->incoming)
+        s_phi->srcs[bb_map.at(bb)] = reg_map.at(reg);
+      copy = s_phi;
+    }
+    else {
+      assert(false);
+    }
+
+    bb->push(copy);
+  }
+
+  void translate_function(llvm::Function &df, const ir::Function &sf) {
+    bb_map.clear();
+    reg_map.clear();
+    reg_type.clear();
+
+    df.name = sf.name;
+    df.sig = sf.sig;
+    df.nr_regs = sf.sig.param_types.size();
+    for (int i = 0; i < df.nr_regs; ++i) {
+      auto &type = df.sig.param_types[i];
+      auto scalar_type = type.is_array() ? String : type.base_type;
+      ir::Reg old_param{scalar_type, i + 1};
+      ir::Reg new_param{scalar_type, i};
+
+      reg_map[old_param] = new_param;
+      if (scalar_type == String)
+        reg_type[new_param] = type;
+    }
+
+    for (auto &sbb : sf.bbs) {
+      auto dbb = new BasicBlock;
+      dbb->label = sbb->label;
+      bb_map[sbb.get()] = dbb;
+      df.bbs.emplace_back(dbb);
+
+      for (auto &insn : sbb->insns) {
+        // 先更新寄存器映射, LLVM IR要求寄存器编号连续
+        TypeCase(output, ir::insns::Output *, insn.get()) {
+          auto old_dst = output->dst;
+          if (output->is<ir::insns::Call>() && old_dst.type == String) {
+            reg_map[old_dst] = ir::Reg{String, -1}; // 此寄存器实际并不存在
+            continue;
+          }
+
+          auto new_dst = df.new_reg(old_dst.type);
+          reg_map[old_dst] = new_dst;
+        }
+      }
+    }
+
+    auto it = df.bbs.begin();
+    for (auto &sbb : sf.bbs) {
+      for (auto &insn : sbb->insns)
+        translate_instruction(it->get(), insn.get(), df);
+      ++it;
+    }
+  }
+
+public:
+  ProgramTranslator(llvm::Program &dst, const ir::Program &src)
+      : dst{dst}, src{src} {}
+
+  void translate() {
+    dst.global_vars = src.global_vars;
+    dst.string_table = src.string_table;
+    for (auto &[name, lib_f] : src.lib_funcs)
+      dst.lib_funcs[name] = lib_f;
+    for (auto &[name, src_f] : src.functions) {
+      auto &dst_f = dst.functions[name];
+      translate_function(dst_f, src_f);
+    }
+  }
+};
+
+Program::Program()
+    : lib_func_decls{
+          "declare i32 @getint()",     "declare i32 @getch()",
+          "declare float @getfloat()", "declare void @putint(i32)",
+          "declare void @putch(i32)",  "declare void @putfloat(float)"} {}
+
+// 需要重写的特殊指令(如 getelementptr)
+bool Program::emit_special_instruction(std::ostream &os,
+                                       const Instruction &insn) const {
+  using namespace ir::insns;
+  using namespace ir;
+
+  auto ins = &insn;
+  TypeCase(call, const Call *, ins) {
+    if (call->dst.id >= 0)
+      call->write_reg(os);
+    auto &sig = get_signature(call->func);
+    os << "call " << type_string(sig.ret_type) << ' ' << var_name(call->func)
+       << '(';
+    for (size_t i = 0; i < call->args.size(); ++i) {
+      if (i != 0)
+        os << ", ";
+      os << type_string(sig.param_types[i]) << " " << reg_name(call->args[i]);
+    }
+    os << ')';
+    return true;
+  }
+  TypeCase(load_imm, const LoadImm *, ins) {
+    load_imm->write_reg(os) << "add " << type_string(load_imm->dst.type) << ' '
+                            << load_imm->imm.to_string() << ", 0";
+    return true;
+  }
+  TypeCase(load_addr, const LoadAddr *, ins) {
+    auto &var = global_vars.at(load_addr->var_name);
+    if (!var->type.is_array()) {
+      auto ts = type_string(var->type.base_type);
+      load_addr->write_reg(os) << "getelementptr " << ts << ", " << ts << "* "
+                               << var_name(load_addr->var_name) << ", i32 0";
+      return true;
+    }
+    return false;
+  }
+  TypeCase(unary, const Unary *, ins) {}
+  return false;
+}
+
+void Program::emit_basic_block(std::ostream &os, const BasicBlock &bb) const {
+  os << bb.label << ":\n";
+  for (auto &insn : bb.insns) {
+    os << "  ";
+    if (!emit_special_instruction(os, *insn))
+      insn->emit(os);
+    os << '\n';
+  }
+}
+
+void Program::emit_function(std::ostream &os, const Function &f) const {
+  os << "define " << ir::type_string(f.sig.ret_type) << " "
+     << ir::var_name(f.name) << "(";
+
+  auto &types = f.sig.param_types;
+  for (size_t i = 0; i < types.size(); ++i) {
+    if (i != 0)
+      os << ", ";
+    os << ir::type_string(types[i]) << " %" << std::to_string(i);
+  }
+  os << ") {\n";
+  int i = 0;
+  for (auto &bb : f.bbs) {
+    if (i != 0)
+      os << "\n";
+    emit_basic_block(os, *bb);
+    ++i;
+  }
+  os << "}\n\n";
+}
+
+void Program::emit(std::ostream &os) const {
+  emit_header(os);
+  os << '\n';
+  for (auto &[_, f] : functions)
+    emit_function(os, f);
+}
+
+void Program::emit_header(std::ostream &os) const {
+  for (auto &func_decl : lib_func_decls)
+    os << func_decl << '\n';
+  os << '\n';
+}
+
+std::unique_ptr<Program> translate(const ir::Program &ir_program) {
+  auto program = std::make_unique<Program>();
+  ProgramTranslator translator{*program, ir_program};
+  translator.translate();
+  return std::move(program);
+};
+
+void emit_global(std::ostream &os, const ir::Program &ir_program) {
+  for (auto &[name, var] : ir_program.global_vars)
+    ir::emit_global_var(os, name, var.get());
+}
+
+} // namespace llvm
