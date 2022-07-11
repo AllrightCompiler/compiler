@@ -114,9 +114,13 @@ Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
     for (auto i : vnSet) {
       TypeCase(phi_i, ir::insns::Phi *, i) {
         bool same = true;
-        Reg first = (*phi_i->incoming.begin()).second;
-        for (auto income : phi_i->incoming) {
-          same &= (first == income.second);
+        if (phi->incoming.size() != phi_i->incoming.size()) continue;
+        for (auto income : phi->incoming) {
+          if (phi_i->incoming.count(income.first)) {
+            same &= (income.second == phi_i->incoming[income.first]);
+          } else {
+            same = false;
+          }
         }
         if (same) {
           hashTable[inst] = phi_i->dst;
