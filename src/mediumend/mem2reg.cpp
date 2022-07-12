@@ -47,10 +47,16 @@ void main_global_var_to_local(ir::Program *prog){
     auto &var = prog->global_vars[each];
     Reg reg = func.new_reg(var->type.base_type);
     global_addr_to_local_reg[each] = reg;
+    Reg val_reg = func.new_reg(var->type.base_type);
+    entry->push_front(new ir::insns::Store(reg, val_reg));
     if(var->val.has_value()){
-      Reg val_reg = func.new_reg(var->type.base_type);
       entry->push_front(new ir::insns::LoadImm(val_reg, var->val.value()));
-      entry->push_front(new ir::insns::Store(reg, val_reg));
+    } else {
+      if(var->type.base_type == ScalarType::Float){
+        entry->push_front(new ir::insns::LoadImm(val_reg, ConstValue(0.0f)));
+      } else {
+        entry->push_front(new ir::insns::LoadImm(val_reg, ConstValue(0)));
+      }
     }
     entry->push_front(new ir::insns::Alloca(reg, var->type));
   }
