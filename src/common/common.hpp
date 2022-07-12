@@ -116,6 +116,15 @@ struct ConstValue {
     if (type == Float) return fv + b.fv == 0;
     assert(false);
   }
+  ConstValue getOpposite() const {
+    ConstValue new_const = (*this);
+    if (type == Int) {
+      new_const.iv = -new_const.iv;
+    } else if (type == Float) {
+      new_const.fv = -new_const.fv;
+    } else assert(false);
+    return new_const;
+  }
 
   bool operator == (const ConstValue &b) const {
     if (type != b.type) return false;
@@ -133,6 +142,14 @@ struct ConstValue {
     assert(false);
   }
 };
+
+namespace std{
+template<>
+class hash<ConstValue> {
+public:
+	size_t operator()(const ConstValue& r) const{ return r.iv; }
+};
+}
 
 // variable or constant
 struct Var {
