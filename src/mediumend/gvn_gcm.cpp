@@ -267,6 +267,7 @@ void gvn(Function *f) {
   // rpo set
 
   for (auto bb : f->cfg->rpo) {
+    unordered_map<Reg, Reg> loadMap; // only in same bb
     for (auto &insn : bb->insns) {
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         unordered_map <Reg, Reg> regsToChange;
@@ -374,6 +375,21 @@ void gvn(Function *f) {
         if (new_reg != call->dst) {
           copy_propagation(f->use_list, call->dst, new_reg);
         }
+      }
+      TypeCase(load, ir::insns::Load *, insn.get()) {
+        Reg new_addr = load->addr;
+        if (!f->has_param(load->addr)) {
+          new_addr = vn_get(f->def_list.at(load->addr));
+        }
+        if (load->addr != new_addr) load->change_use(load->addr, new_addr);
+        if (loadMap.count(load->addr)) {
+          copy_propagation(f->use_list, load->dst, loadMap.at(load->addr));
+        } else {
+          loadMap[load->addr] = load->dst;
+        }
+      }
+      TypeCase(store, ir::insns::Store *, insn.get()) {
+        loadMap.clear();
       }
       // TODO: more inst types
     }
