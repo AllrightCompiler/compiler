@@ -93,7 +93,7 @@ struct BasicBlock {
   // not modify use-def
   void insert_after_phi(Instruction *insn);
   // not modify use-def
-  void insert_after(list<Instruction *> pred, Instruction *insn);
+  void insert_after(unordered_set<Instruction *> pred, Instruction *insn);
   // not modify use-def
   bool remove(Instruction *insn);
   // modify use-def

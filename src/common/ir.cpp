@@ -137,7 +137,7 @@ void BasicBlock::insert_after_phi(Instruction *insn) {
   // insn->add_use_def();
 }
 
-void BasicBlock::insert_after(list<Instruction *> pred, Instruction *insn) {
+void BasicBlock::insert_after(unordered_set<Instruction *> pred, Instruction *insn) {
   auto it = insns.end();
   if (insns.begin() != insns.end()) {
     do {
@@ -149,7 +149,7 @@ void BasicBlock::insert_after(list<Instruction *> pred, Instruction *insn) {
         // insn->add_use_def();
         return;
       }
-      if (std::find(pred.begin(), pred.end(), it->get()) != pred.end()) {
+      if (pred.count(it->get())) {
         it++;
         insns.emplace(it, insn);
         insn->bb = this;
