@@ -382,66 +382,18 @@ BasicBlock *find_lca(BasicBlock *a, BasicBlock *b) {
   return a;
 }
 
-void get_pinned_pred(unordered_set<Instruction *> &visited,
-                  unordered_map<Instruction *, unordered_set<Instruction *> > &pred,
-                  Instruction *inst);
-
-void update_pred(unordered_set<Instruction *> &visited,
-                unordered_map<Instruction *, unordered_set<Instruction *> > &pred,
-                Instruction *inst, Reg reg_use) {
-  if (inst->bb->func->has_param(reg_use)) return;
-  Instruction *inst_use = inst->bb->func->def_list.at(reg_use);
-  get_pinned_pred(visited, pred, inst_use);
-  if (pred.count(inst_use)) {
-    for (auto i : pred[inst_use])
-      pred[inst].insert(i);
-  }
-}
-
-// pinned inst (load, impure call) can not be moved, therefore we need pred of pinned insts for position limit
-void get_pinned_pred(unordered_set<Instruction *> &visited,
-                  unordered_map<Instruction *, unordered_set<Instruction *> > &pred,
-                  Instruction *inst) {
-  if (visited.count(inst)) return;
-  visited.insert(inst);
-  TypeCase(load, ir::insns::Load *, inst) {
-    update_pred(visited, pred, inst, load->addr);
-    for (auto i : load->bb->func->use_list[load->dst]) {
-      pred[i].insert(load);
-    }
-  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
-    for (auto i : loadaddr->bb->func->use_list[loadaddr->dst]) {
-      pred[i].insert(loadaddr);
-    }
-  } else TypeCase(store, ir::insns::Store *, inst) {
-    update_pred(visited, pred, inst, store->addr);
-    update_pred(visited, pred, inst, store->val);
-  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
-    update_pred(visited, pred, inst, gep->base);
-    for (auto idx : gep->indices) {
-      update_pred(visited, pred, inst, idx);
-    }
-  } else TypeCase(convert, ir::insns::Convert *, inst) {
-    update_pred(visited, pred, inst, convert->src);
-  } else TypeCase(call, ir::insns::Call *, inst) {
-    for (auto arg : call->args) {
-      update_pred(visited, pred, inst, arg);
-    }
-    if (!program->functions.count(call->func) || !program->functions[call->func].is_pure()) { // lib func or impure
-      for (auto i : call->bb->func->use_list[call->dst]) {
-        pred[i].insert(call);
-      }
-    }
-  } else TypeCase(unary, ir::insns::Unary *, inst) {
-    update_pred(visited, pred, inst, unary->src);
-  } else TypeCase(binary, ir::insns::Binary *, inst) {
-    update_pred(visited, pred, inst, binary->src1);
-    update_pred(visited, pred, inst, binary->src2);
-  } else TypeCase(phi, ir::insns::Phi *, inst) {
-    for (auto [_, reg] : phi->incoming) {
-      update_pred(visited, pred, inst, reg);
+// pinned inst (phi, load, impure call) can not be moved
+bool is_pinned(Instruction *inst) {
+  TypeCase(load, ir::insns::Load *, inst) return true;
+  TypeCase(phi, ir::insns::Phi *, inst) return true;
+  TypeCase(call, ir::insns::Call *, inst) {
+    if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
+      return false;
+    } else {
+      return true;
     }
   }
+  return false;
 }
 
 // 3. Schedule (select basic blocks for) all instructions
@@ -543,39 +495,16 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
                   const CFG *cfg,
                   list<unique_ptr<BasicBlock>> &bbs,
                   const unordered_map<Reg, list<Instruction *>> &use_list,
-                  const unordered_map<Instruction*, unordered_set<Instruction *>> &pred,
                   ir::Instruction *inst) {
   if (visited.count(inst)) return;
   visited.insert(inst);
-  TypeCase(phi, ir::insns::Phi *, inst) {
-    return;
-  } else TypeCase(load, ir::insns::Load *, inst) {
-    if (use_list.count(load->dst)) {
-      for (auto i : use_list.at(load->dst)) {
-        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
-      }
-    }
-    return;
-  } else TypeCase(call, ir::insns::Call *, inst) {
-    if (use_list.count(call->dst)) {
-      for (auto i : use_list.at(call->dst)) {
-        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
-      }
-    }
-    return;
-  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
-    if (use_list.count(loadaddr->dst)) {
-      for (auto i : use_list.at(loadaddr->dst)) {
-        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
-      }
-    }
-    return;
-  } else TypeCase(output, ir::insns::Output *, inst) {
+  TypeCase(output, ir::insns::Output *, inst) {
+    if (is_pinned(inst)) return;
     // Find latest legal block for instruction
     BasicBlock *lca = nullptr, *use;
     if(use_list.count(output->dst)) {
       for (auto i : use_list.at(output->dst)) {
-        schedule_late(visited, placement, cfg, bbs, use_list, pred, i);
+        schedule_late(visited, placement, cfg, bbs, use_list, i);
         TypeCase(phi, ir::insns::Phi *, i) {
           for (auto pair : phi->incoming) {
             if (pair.second == output->dst) {
@@ -600,10 +529,8 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
         }
       } while (lca != placement[inst]);
     }
-    inst->bb->remove(inst);
-    if (pred.count(inst)) {
-      best->insert_after(pred.at(inst), inst);
-    } else {
+    if (inst->bb != best) {
+      inst->bb->remove(inst);
       best->insert_after_phi(inst);
     }
     placement[inst] = best;
@@ -622,17 +549,12 @@ void gcm(Function *f) {
   
   unordered_set<ir::Instruction *> visited;
   unordered_map<ir::Instruction *, BasicBlock *> placement;
-  unordered_map<Instruction*, unordered_set<Instruction *>> pred;
-  for (auto inst : all_insts) {
-    get_pinned_pred(visited, pred, inst);
-  }
-  visited.clear();
   for (auto inst : all_insts) {
     schedule_early(visited, placement, f->bbs, f->def_list, f->bbs.front().get(), inst);
   }
   visited.clear();
   for (auto inst : all_insts) {
-    schedule_late(visited, placement, f->cfg, f->bbs, f->use_list, pred, inst);
+    schedule_late(visited, placement, f->cfg, f->bbs, f->use_list, inst);
   }
 }
 

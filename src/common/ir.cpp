@@ -137,33 +137,6 @@ void BasicBlock::insert_after_phi(Instruction *insn) {
   // insn->add_use_def();
 }
 
-void BasicBlock::insert_after(unordered_set<Instruction *> pred, Instruction *insn) {
-  auto it = insns.end();
-  if (insns.begin() != insns.end()) {
-    do {
-      it--;
-      TypeCase(phi, ir::insns::Phi *, it->get()) {
-        it++;
-        insns.emplace(it, insn);
-        insn->bb = this;
-        // insn->add_use_def();
-        return;
-      }
-      if (pred.count(it->get())) {
-        it++;
-        insns.emplace(it, insn);
-        insn->bb = this;
-        // insn->add_use_def();
-        return;
-      }
-    } while (it != insns.begin());
-  }
-  it++;
-  insns.emplace(it, insn);
-  insn->bb = this;
-  // insn->add_use_def();
-}
-
 bool BasicBlock::remove(Instruction *insn) {
   for (auto it = insns.begin(); it != insns.end(); it++) {
     if (it->get() == insn) {

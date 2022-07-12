@@ -93,8 +93,6 @@ struct BasicBlock {
   // not modify use-def
   void insert_after_phi(Instruction *insn);
   // not modify use-def
-  void insert_after(unordered_set<Instruction *> pred, Instruction *insn);
-  // not modify use-def
   bool remove(Instruction *insn);
   // modify use-def
   std::vector<Instruction *> remove_if(std::function<bool(Instruction *)> f);
