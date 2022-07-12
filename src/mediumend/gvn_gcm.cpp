@@ -148,6 +148,7 @@ static unordered_map<ConstValue, Reg> hashTable_loadimm;
 static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
 static unordered_map<std::string, Reg> hashTable_loadaddr;
 static unordered_map<tuple<Reg, vector<Reg> >, Reg> hashTable_gep;
+static unordered_map<tuple<std::string, vector<Reg> >, Reg> hashTable_call;
 static unordered_map<Reg, ConstValue> constMap;
 static unordered_map<ConstValue, Reg> rConstMap;
 static unordered_map<Instruction *, Reg> hashTable;
@@ -231,6 +232,17 @@ Reg vn_get(Instruction *inst) {
       hashTable[inst] = gep->dst;
       hashTable_gep[make_tuple(gep->base, gep->indices)] = gep->dst;
     }
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
+      if (hashTable_call.count(std::make_tuple(call->func, call->args))) {
+        hashTable[inst] = hashTable_call[make_tuple(call->func, call->args)];
+      } else {
+        hashTable[inst] = call->dst;
+        hashTable_call[make_tuple(call->func, call->args)] = call->dst;
+      }
+    } else {
+      hashTable[inst] = call->dst;
+    }
   } else TypeCase(other, ir::insns::Output *, inst) {
     hashTable[inst] = other->dst;
   } else assert(false);
@@ -293,6 +305,18 @@ void gvn(Function *f) {
         }
       }
       TypeCase(gep, ir::insns::GetElementPtr *, insn.get()) {
+        Reg new_base = gep->base;
+        if (!f->has_param(gep->base)) {
+          new_base = vn_get(f->def_list.at(gep->base));
+        }
+        if (new_base != gep->base) gep->change_use(gep->base, new_base);
+        for (auto idx : gep->indices) {
+          Reg new_idx = idx;
+          if (!f->has_param(idx)) {
+            new_idx = vn_get(f->def_list.at(idx));
+          }
+          if (new_idx != idx) gep->change_use(idx, new_idx);
+        }
         Reg new_reg = vn_get(gep);
         if (new_reg != gep->dst) {
           copy_propagation(f->use_list, gep->dst, new_reg);
@@ -336,6 +360,19 @@ void gvn(Function *f) {
             auto reg = std::get<Reg>(ret.value());
             copy_propagation(f->use_list, binary->dst, reg);
           }
+        }
+      }
+      TypeCase(call, ir::insns::Call *, insn.get()) {
+        for (auto arg : call->args) {
+          Reg new_arg = arg;
+          if (!f->has_param(arg)) {
+            new_arg = vn_get(f->def_list.at(arg));
+          }
+          if (new_arg != arg) call->change_use(arg, new_arg);
+        }
+        Reg new_reg = vn_get(call);
+        if (new_reg != call->dst) {
+          copy_propagation(f->use_list, call->dst, new_reg);
         }
       }
       // TODO: more inst types
@@ -539,6 +576,7 @@ void gvn_gcm(ir::Program *prog) {
     hashTable_binary.clear();
     hashTable_loadaddr.clear();
     hashTable_gep.clear();
+    hashTable_call.clear();
     constMap.clear();
     rConstMap.clear();
     hashTable.clear();
