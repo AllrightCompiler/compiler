@@ -14,7 +14,6 @@ class ProgramTranslator {
   llvm::Program &dst;
 
   std::unordered_map<ir::BasicBlock *, llvm::BasicBlock *> bb_map;
-  std::unordered_map<ir::Reg, ir::Reg> reg_map;
   std::map<ir::Reg, Type> reg_type; // 只保存非标量寄存器 (String)
   std::set<ir::Reg> cmp_results;    // 比较结果寄存器，类型为i1
 
@@ -24,22 +23,22 @@ class ProgramTranslator {
     Instruction *copy = nullptr;
 
     TypeCase(alloca, Alloca *, insn) {
-      auto dst = reg_map.at(alloca->dst);
+      auto dst = alloca->dst;
       assert(dst.type == String);
       reg_type[dst] = alloca->type.get_pointer_type();
 
       copy = new Alloca{dst, alloca->type};
     }
     else TypeCase(load, Load *, insn) {
-      auto addr = reg_map.at(load->addr);
-      auto dst = reg_map.at(load->dst);
+      auto addr = load->addr;
+      auto dst = load->dst;
       assert(addr.type == String);
       assert(dst.type == Int || dst.type == Float);
 
       copy = new Load{dst, addr};
     }
     else TypeCase(load_addr, LoadAddr *, insn) {
-      auto dst = reg_map.at(load_addr->dst);
+      auto dst = load_addr->dst;
       assert(dst.type == String);
 
       auto &var_name = load_addr->var_name;
@@ -58,53 +57,53 @@ class ProgramTranslator {
       copy = new LoadAddr{dst, var_name};
     }
     else TypeCase(load_imm, LoadImm *, insn) {
-      auto dst = reg_map.at(load_imm->dst);
+      auto dst = load_imm->dst;
       copy = new LoadImm{dst, load_imm->imm};
     }
     else TypeCase(store, Store *, insn) {
-      auto addr = reg_map.at(store->addr);
-      auto val = reg_map.at(store->val);
+      auto addr = store->addr;
+      auto val = store->val;
       copy = new Store{addr, val};
     }
     else TypeCase(gep, GetElementPtr *, insn) {
-      auto dst = reg_map.at(gep->dst);
-      auto base = reg_map.at(gep->base);
+      auto dst = gep->dst;
+      auto base = gep->base;
       assert(dst.type == String);
 
       std::vector<ir::Reg> indices;
       for (auto r : gep->indices)
-        indices.push_back(reg_map.at(r));
+        indices.push_back(r);
 
       copy = new GetElementPtr{dst, gep->type, base, indices};
     }
     else TypeCase(convert, Convert *, insn) {
-      auto dst = reg_map.at(convert->dst);
-      auto src = reg_map.at(convert->src);
+      auto dst = convert->dst;
+      auto src = convert->src;
       copy = new Convert{dst, src};
     }
     else TypeCase(call, Call *, insn) {
-      auto dst = reg_map.at(call->dst);
+      auto dst = call->dst;
       std::vector<ir::Reg> args;
       for (auto r : call->args)
-        args.push_back(reg_map.at(r));
+        args.push_back(r);
 
       copy = new Call{dst, call->func, args};
     }
     else TypeCase(ret, Return *, insn) {
       std::optional<ir::Reg> ret_val;
       if (ret->val)
-        ret_val = reg_map.at(ret->val.value());
+        ret_val = ret->val.value();
       copy = new Return{ret_val};
     }
     else TypeCase(unary, Unary *, insn) {
-      auto dst = reg_map.at(unary->dst);
-      auto src = reg_map.at(unary->src);
+      auto dst = unary->dst;
+      auto src = unary->src;
       copy = new Unary{dst, unary->op, src};
     }
     else TypeCase(binary, Binary *, insn) {
-      auto dst = reg_map.at(binary->dst);
-      auto src1 = reg_map.at(binary->src1);
-      auto src2 = reg_map.at(binary->src2);
+      auto dst = binary->dst;
+      auto src1 = binary->src1;
+      auto src2 = binary->src2;
       copy = new Binary{dst, binary->op, src1, src2};
     }
     else TypeCase(jump, Jump *, insn) {
@@ -112,16 +111,16 @@ class ProgramTranslator {
       copy = new SimpleJump{target};
     }
     else TypeCase(br, Branch *, insn) {
-      auto src = reg_map.at(br->val);
+      auto src = br->val;
       auto true_target = bb_map.at(br->true_target);
       auto false_target = bb_map.at(br->false_target);
       copy = new SimpleBranch{src, true_target, false_target};
     }
     else TypeCase(phi, Phi *, insn) {
-      auto dst = reg_map.at(phi->dst);
+      auto dst = phi->dst;
       auto s_phi = new SimplePhi{dst};
       for (auto &[bb, reg] : phi->incoming)
-        s_phi->srcs[bb_map.at(bb)] = reg_map.at(reg);
+        s_phi->srcs[bb_map.at(bb)] = reg;
       copy = s_phi;
     }
     else {
@@ -131,33 +130,22 @@ class ProgramTranslator {
     bb->push(copy);
   }
 
-  void translate_function(llvm::Function &df, const ir::Function &sf) {
-    bb_map.clear();
-    reg_map.clear();
-    reg_type.clear();
+  void rename_registers(llvm::Function &f) {
+    std::unordered_map<ir::Reg, ir::Reg> reg_map;
 
-    df.name = sf.name;
-    df.sig = sf.sig;
-    df.nr_regs = sf.sig.param_types.size();
-    for (int i = 0; i < df.nr_regs; ++i) {
-      auto &type = df.sig.param_types[i];
+    int nr_params = f.sig.param_types.size();
+    for (int i = 0; i < nr_params; ++i) {
+      auto &type = f.sig.param_types[i];
       auto scalar_type = type.is_array() ? String : type.base_type;
       ir::Reg old_param{scalar_type, i + 1};
       ir::Reg new_param{scalar_type, i};
 
       reg_map[old_param] = new_param;
-      if (scalar_type == String)
-        reg_type[new_param] = type;
     }
 
-    for (auto &sbb : sf.bbs) {
-      auto dbb = new BasicBlock;
-      dbb->label = sbb->label;
-      bb_map[sbb.get()] = dbb;
-      df.bbs.emplace_back(dbb);
-
-      for (auto &insn : sbb->insns) {
-        // 先更新寄存器映射, LLVM IR要求寄存器编号连续
+    int nr_regs = nr_params;
+    for (auto &bb : f.bbs) {
+      for (auto &insn : bb->insns) {
         TypeCase(output, ir::insns::Output *, insn.get()) {
           auto old_dst = output->dst;
           if (output->is<ir::insns::Call>() && old_dst.type == String) {
@@ -165,10 +153,45 @@ class ProgramTranslator {
             continue;
           }
 
-          auto new_dst = df.new_reg(old_dst.type);
+          auto new_dst = ir::Reg{old_dst.type, nr_regs++};
           reg_map[old_dst] = new_dst;
         }
       }
+    }
+
+    f.nr_regs = nr_regs;
+    for (auto &bb : f.bbs) {
+      for (auto &insn : bb->insns) {
+        auto reg_ptrs = insn->reg_ptrs();
+        for (auto p : reg_ptrs) {
+          *p = reg_map.at(*p);
+        }
+      }
+    }
+  }
+
+  void translate_function(llvm::Function &df, const ir::Function &sf) {
+    bb_map.clear();
+    reg_type.clear();
+
+    df.name = sf.name;
+    df.sig = sf.sig;
+    df.nr_regs = sf.nr_regs;
+
+    // 标注参数类型
+    for (size_t i = 0; i < sf.sig.param_types.size(); ++i) {
+      auto &type = sf.sig.param_types[i];
+      auto scalar_type = type.is_array() ? String : type.base_type;
+      ir::Reg param{scalar_type, int(i + 1)};
+      if (scalar_type == String)
+        reg_type[param] = type;
+    }
+
+    for (auto &sbb : sf.bbs) {
+      auto dbb = new BasicBlock;
+      dbb->label = sbb->label;
+      bb_map[sbb.get()] = dbb;
+      df.bbs.emplace_back(dbb);
     }
 
     auto it = df.bbs.begin();
@@ -177,6 +200,8 @@ class ProgramTranslator {
         translate_instruction(it->get(), insn.get(), df);
       ++it;
     }
+
+    rename_registers(df);
   }
 
 public:

@@ -24,7 +24,7 @@ struct Function {
   ir::FunctionSignature sig;
   int nr_regs;
 
-  ir::Reg new_reg(ScalarType t) { return ir::Reg{t, nr_regs++}; }
+  ir::Reg new_reg(ScalarType t) { return ir::Reg{t, ++nr_regs}; }
 
   list<unique_ptr<BasicBlock>> bbs;
 };
