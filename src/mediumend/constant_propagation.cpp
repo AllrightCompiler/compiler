@@ -169,7 +169,7 @@ void constant_propagation(ir::Program *prog) {
             Reg use_reg;
             for (auto iter = phi->incoming.begin(); iter != phi->incoming.end();) {
               if (!bb->prev.count(iter->first)) {
-                func->use_list.at(iter->second).remove(phi);
+                func->use_list.at(iter->second).erase(phi);
                 iter = phi->incoming.erase(iter);
               } else {
                 if (!set_reg) {

@@ -220,7 +220,7 @@ void simplification_phi(ir::Program *prog){
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
           for(auto in_iter = inst->incoming.begin(); in_iter != inst->incoming.end();){
             if(!bb.get()->prev.count(in_iter->first)){
-              func->use_list[in_iter->second].remove(inst);
+              func->use_list[in_iter->second].erase(inst);
               in_iter = inst->incoming.erase(in_iter);
             } else {
               in_iter++;
@@ -229,7 +229,7 @@ void simplification_phi(ir::Program *prog){
           if(inst->incoming.size() == 1){
             auto &dst_use_list = func->use_list[inst->dst];
             while(dst_use_list.size()){
-              auto uses = dst_use_list.front();
+              auto uses = *dst_use_list.begin();
               auto dmy = dynamic_cast<ir::Instruction *>(uses);
               if(!dmy){
                 assert(false);

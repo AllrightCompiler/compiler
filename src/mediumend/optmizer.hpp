@@ -28,7 +28,7 @@ extern std::vector<std::function<void(ir::Program *)> > passes;
 
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &op1, const ConstValue &op2);
-void copy_propagation(unordered_map<ir::Reg, std::list<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
+void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){

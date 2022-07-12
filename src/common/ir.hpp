@@ -117,7 +117,7 @@ struct Function {
   mediumend::CFG* cfg = nullptr;
   int pure = -1;
 
-  unordered_map<Reg, list<Instruction *>> use_list;
+  unordered_map<Reg, unordered_set<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
   unordered_set<Reg> global_addr;
 

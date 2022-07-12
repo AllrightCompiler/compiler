@@ -239,9 +239,9 @@ Reg vn_get(Instruction *inst) {
 
 // reg_dst = reg_src
 // change all reg_dst -> reg_src
-void copy_propagation(unordered_map<Reg, list<Instruction *> > &use_list, Reg dst, Reg src) {
+void copy_propagation(unordered_map<Reg, unordered_set<Instruction *> > &use_list, Reg dst, Reg src) {
   while (use_list[dst].size() > 0) {
-    auto inst = use_list[dst].front();
+    auto inst = *use_list[dst].begin();
     inst->change_use(dst, src);
   }
 }
@@ -467,7 +467,7 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
                   unordered_map<ir::Instruction *, BasicBlock *> &placement,
                   const CFG *cfg,
                   list<unique_ptr<BasicBlock>> &bbs,
-                  const unordered_map<Reg, list<Instruction *>> &use_list,
+                  const unordered_map<Reg, unordered_set<Instruction *>> &use_list,
                   ir::Instruction *inst) {
   if (visited.count(inst)) return;
   visited.insert(inst);
