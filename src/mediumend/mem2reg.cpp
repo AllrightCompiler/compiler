@@ -45,7 +45,7 @@ void main_global_var_to_local(ir::Program *prog){
       continue;
     }
     auto &var = prog->global_vars[each];
-    Reg reg = func.new_reg(var->type.base_type);
+    Reg reg = func.new_reg(var->type.getpointer_type());
     global_addr_to_local_reg[each] = reg;
     Reg val_reg = func.new_reg(var->type.base_type);
     entry->push_front(new ir::insns::Store(reg, val_reg));
