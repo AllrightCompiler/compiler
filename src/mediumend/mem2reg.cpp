@@ -47,10 +47,16 @@ void main_global_var_to_local(ir::Program *prog){
     auto &var = prog->global_vars[each];
     Reg reg = func.new_reg(var->type.base_type);
     global_addr_to_local_reg[each] = reg;
+    Reg val_reg = func.new_reg(var->type.base_type);
+    entry->push_front(new ir::insns::Store(reg, val_reg));
     if(var->val.has_value()){
-      Reg val_reg = func.new_reg(var->type.base_type);
       entry->push_front(new ir::insns::LoadImm(val_reg, var->val.value()));
-      entry->push_front(new ir::insns::Store(reg, val_reg));
+    } else {
+      if(var->type.base_type == ScalarType::Float){
+        entry->push_front(new ir::insns::LoadImm(val_reg, ConstValue(0.0f)));
+      } else {
+        entry->push_front(new ir::insns::LoadImm(val_reg, ConstValue(0)));
+      }
     }
     entry->push_front(new ir::insns::Alloca(reg, var->type));
   }
@@ -220,7 +226,7 @@ void simplification_phi(ir::Program *prog){
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
           for(auto in_iter = inst->incoming.begin(); in_iter != inst->incoming.end();){
             if(!bb.get()->prev.count(in_iter->first)){
-              func->use_list[in_iter->second].remove(inst);
+              func->use_list[in_iter->second].erase(inst);
               in_iter = inst->incoming.erase(in_iter);
             } else {
               in_iter++;
@@ -229,7 +235,7 @@ void simplification_phi(ir::Program *prog){
           if(inst->incoming.size() == 1){
             auto &dst_use_list = func->use_list[inst->dst];
             while(dst_use_list.size()){
-              auto uses = dst_use_list.front();
+              auto uses = *dst_use_list.begin();
               auto dmy = dynamic_cast<ir::Instruction *>(uses);
               if(!dmy){
                 assert(false);

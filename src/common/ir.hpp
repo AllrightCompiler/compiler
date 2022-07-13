@@ -97,8 +97,6 @@ struct BasicBlock {
   // not modify use-def
   void insert_after_phi(Instruction *insn);
   // not modify use-def
-  void insert_after(list<Instruction *> pred, Instruction *insn);
-  // not modify use-def
   bool remove(Instruction *insn);
   // modify use-def
   std::vector<Instruction *> remove_if(std::function<bool(Instruction *)> f);
@@ -123,7 +121,7 @@ struct Function {
   mediumend::CFG *cfg = nullptr;
   int pure = -1;
 
-  unordered_map<Reg, list<Instruction *>> use_list;
+  unordered_map<Reg, unordered_set<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
   unordered_set<Reg> global_addr;
 
@@ -360,7 +358,7 @@ struct Binary : Output {
 };
 
 struct Phi : Output {
-  std::map<BasicBlock *, Reg> incoming;
+  std::unordered_map<BasicBlock *, Reg> incoming;
 
   Phi(Reg dst) : Output{dst} {}
 

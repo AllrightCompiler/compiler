@@ -102,7 +102,7 @@ struct ConstValue {
   ConstValue(float v) : type{Float} { fv = v; }
 
   // check ConstValue == 0 / 1
-  bool equals(int x) const {
+  bool isValue(int x) const {
     if (type == Int) {
       return iv == x;
     } else {
@@ -110,7 +110,7 @@ struct ConstValue {
     }
   }
 
-  bool is_opposite(const ConstValue &b) const {
+  bool isOpposite(const ConstValue &b) const {
     if (type != b.type)
       return false;
     if (type == Int)
@@ -119,6 +119,16 @@ struct ConstValue {
       return fv + b.fv == 0;
     assert(false);
     return false;
+  }
+  
+  ConstValue getOpposite() const {
+    ConstValue new_const = (*this);
+    if (type == Int) {
+      new_const.iv = -new_const.iv;
+    } else if (type == Float) {
+      new_const.fv = -new_const.fv;
+    } else assert(false);
+    return new_const;
   }
 
   bool operator==(const ConstValue &b) const {
@@ -141,6 +151,14 @@ struct ConstValue {
     assert(false);
   }
 };
+
+namespace std{
+template<>
+class hash<ConstValue> {
+public:
+	size_t operator()(const ConstValue& r) const{ return r.iv; }
+};
+}
 
 // variable or constant
 struct Var {

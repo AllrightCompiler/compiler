@@ -139,11 +139,11 @@ void CFG::compute_dom() {
   for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
     iter->get()->domby = all_bb;
   }
+  this->compute_rpo();
   bool modify = true;
   while (modify) {
     modify = false;
-    for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
-      auto bb = iter->get();
+    for (auto bb : rpo) {
       auto &domby_bb = bb->domby;
       auto &dom_bb = bb->dom;
       for (auto iter = domby_bb.begin(); iter != domby_bb.end();) {

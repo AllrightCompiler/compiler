@@ -5,7 +5,7 @@
 
 namespace mediumend {
 
-ConstValue const_compute(ir::Instruction *inst, ConstValue &oprand) {
+ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand) {
   ConstValue res;
   TypeCase(unary, ir::insns::Unary *, inst) {
     res.type = unary->dst.type;
@@ -36,7 +36,7 @@ ConstValue const_compute(ir::Instruction *inst, ConstValue &oprand) {
   return res;
 }
 
-ConstValue const_compute(ir::Instruction *inst, ConstValue &op1, ConstValue &op2) {
+ConstValue const_compute(ir::Instruction *inst, const ConstValue &op1, const ConstValue &op2) {
   ConstValue res;
   TypeCase(binary, ir::insns::Binary *, inst) {
     res.type = binary->dst.type;
