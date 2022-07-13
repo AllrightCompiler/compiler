@@ -82,7 +82,7 @@ void constant_propagation(ir::Program *prog) {
                 continue;
               }
             }
-            auto reg_use = get_inst_use_reg(output);
+            auto reg_use = output->use();
             for (auto &use : reg_use) {
               if(!func->has_param(use)){
                 auto def = func->def_list.at(use);

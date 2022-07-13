@@ -7,53 +7,6 @@ namespace mediumend {
 using std::vector;
 using std::unordered_set;
 
-
-vector<ir::Reg> get_inst_use_reg(ir::Instruction *inst){
-  vector<ir::Reg> regs;
-  TypeCase(unary, ir::insns::Unary *, inst){
-    regs.push_back(unary->src);
-  }
-  TypeCase(binary, ir::insns::Binary *, inst){
-    regs.push_back(binary->src1);
-    regs.push_back(binary->src2);
-  }
-  TypeCase(load, ir::insns::Load *, inst){
-    regs.push_back(load->addr);
-  }
-  TypeCase(store, ir::insns::Store *, inst){
-    regs.push_back(store->addr);
-    regs.push_back(store->val);
-  }
-  TypeCase(call, ir::insns::Call *, inst){
-    for(auto &r : call->args){
-      regs.push_back(r);
-    }
-  }
-  TypeCase(phi, ir::insns::Phi *, inst){
-    for(auto &r : phi->incoming){
-      regs.push_back(r.second);
-    }
-  }
-  TypeCase(convey, ir::insns::Convert *, inst){
-    regs.push_back(convey->src);
-  }
-  TypeCase(ret, ir::insns::Return *, inst){
-    if(ret->val.has_value()){
-      regs.push_back(ret->val.value());
-    }
-  }
-  TypeCase(branch, ir::insns::Branch *, inst){
-    regs.push_back(branch->val);
-  }
-  TypeCase(ptr, ir::insns::GetElementPtr *, inst){
-    regs.push_back(ptr->base);
-    for(auto &r : ptr->indices){
-      regs.push_back(r);
-    }
-  }
-  return regs;
-}
-
 void detect_pure_function(ir::Program *prog, ir::Function *func) {
   if(func->pure != -1){
     return;
@@ -160,7 +113,7 @@ void remove_uneffective_inst(ir::Program *prog){
     while(!stack.empty()){
       auto inst = stack.back();
       stack.pop_back();
-      auto regs = get_inst_use_reg(inst);
+      auto regs = inst->use();
       inst->remove_use_def();
       for(auto reg : regs){
         if(func->use_list[reg].size() == 0){

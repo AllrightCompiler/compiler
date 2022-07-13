@@ -178,8 +178,8 @@ struct Load : Output {
   Load(Reg dst, Reg addr) : addr{addr}, Output{dst} {}
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
-  unordered_set<Reg> use() const override { return {addr}; }
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  unordered_set<Reg> use() const override { return {addr}; }
 };
 
 // 将全局变量地址加载到dst寄存器
@@ -187,14 +187,12 @@ struct LoadAddr : Output {
   string var_name;
 
   LoadAddr(Reg dst, string name) : var_name{std::move(name)}, Output{dst} {}
-  unordered_set<Reg> use() const override { return {}; }
 };
 
 struct LoadImm : Output {
   ConstValue imm;
 
   LoadImm(Reg dst, ConstValue immediate) : imm{immediate}, Output{dst} {}
-  unordered_set<Reg> use() const override { return {}; }
 };
 
 struct Store : Instruction {
@@ -204,7 +202,6 @@ struct Store : Instruction {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-  unordered_set<Reg> def() const override { return {}; }
   unordered_set<Reg> use() const override { return {addr, val}; }
 };
 
