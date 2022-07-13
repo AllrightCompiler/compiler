@@ -52,9 +52,9 @@ inline std::string op_string(BinaryOp op, ScalarType t) {
     std::string mode = (t == Float) ? "o" : "s";
     switch (op) {
     case BinaryOp::Eq:
-      return prefix + "eq";
+      return prefix + (t == Float ? "o" : "") + "eq";
     case BinaryOp::Neq:
-      return prefix + "ne";
+      return prefix + (t == Float ? "o" : "") + "ne";
     case BinaryOp::Lt:
       return prefix + mode + "lt";
     case BinaryOp::Leq:

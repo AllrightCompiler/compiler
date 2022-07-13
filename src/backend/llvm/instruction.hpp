@@ -17,7 +17,7 @@ struct SimplePhi : Output {
 
   void emit(std::ostream &os) const override;
   std::vector<Reg *> reg_ptrs() override {
-    std::vector<Reg *> ptrs;
+    std::vector<Reg *> ptrs{&dst};
     for (auto &[bb, _] : srcs)
       ptrs.push_back(&srcs[bb]);
     return ptrs;
@@ -66,7 +66,20 @@ struct IntCast : Output {
   Op op;
   Reg src;
 
-  IntCast(Op op, Reg dst, Reg src) : op{op}, Output{dst}, src{src} {}
+  IntCast(Reg dst, Op op, Reg src) : op{op}, Output{dst}, src{src} {}
+
+  void emit(std::ostream &os) const override;
+  std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
+};
+
+struct ZeroCmp : Output {
+  enum Op {
+    Eq,
+    Ne,
+  } op;
+  Reg src;
+
+  ZeroCmp(Reg dst, Op op, Reg src) : op{op}, Output{dst}, src{src} {}
 
   void emit(std::ostream &os) const override;
   std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }

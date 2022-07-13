@@ -130,8 +130,8 @@ struct Function {
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(ScalarType t) { return ir::Reg{t, ++nr_regs}; }
   ~Function();
-  bool has_param(Reg r){ return r.id <= sig.param_types.size(); }
-  bool is_pure() const {return pure == 1;}
+  bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
+  bool is_pure() const { return pure == 1; }
   void clear_visit();
   void clear_graph();
   void clear_dom();
@@ -275,14 +275,17 @@ struct Store : Instruction {
   virtual std::vector<Reg *> reg_ptrs() override { return {&addr, &val}; }
 };
 
+// NOTE: 在LLVM阶段之前，type标注的是base对应的变量的类型
+// LLVM阶段后，type即指令模板中的<ty>
 struct GetElementPtr : Output {
   Type type;
   Reg base;
   vector<Reg> indices;
+  bool omit_first_index; // 如果为true，则在输出为LLVM IR时需要首位添0
 
   GetElementPtr(Reg dst, Type tp, Reg base, vector<Reg> indexes)
       : type{std::move(tp)}, indices{std::move(indexes)}, base{base},
-        Output{dst} {}
+        Output{dst}, omit_first_index(false) {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;

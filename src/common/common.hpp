@@ -63,21 +63,16 @@ struct Type {
     return true;
   }
   bool operator!=(const Type &b) const { return !this->operator==(b); }
-  Type get_addr_type() const {
-    Type new_type = *this;
-    if (is_array()) {
-      if (new_type.dims[0] == 0) {
-        new_type.dims.erase(new_type.dims.begin());
-      }
-      new_type.dims[0] = 0;
-    } else
-      new_type.dims.push_back(0);
-    return new_type;
-  }
   Type get_pointer_type() const {
     Type new_type = *this;
     new_type.dims.insert(new_type.dims.begin(), 0);
     return new_type;
+  }
+  bool is_pointer() const {
+    return dims.size() > 0 && dims[0] == 0;
+  }
+  bool is_pointer_to_scalar() const {
+    return dims.size() == 1 && dims[0] == 0;
   }
 
   Type() {}

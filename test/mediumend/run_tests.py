@@ -37,7 +37,12 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
     
     command = f'{compiler_path} --llvm -O2 {code_path}'
     proc = subprocess.Popen(command, stdout=open(ll_path, "w"), stderr=open("/dev/null", "w"), shell=True)
-    proc.wait()
+    try:
+        proc.wait(TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        print('\033[0;31mTranslator TLE\033[0m')
+        return False
     if proc.returncode:
         print('\033[0;31mTranslator Error\033[0m')
         return False
@@ -51,12 +56,17 @@ def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
 
     command = f'llc {ll_path} -filetype=obj -o {obj_path}'
     proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
-    proc.wait()
+    try:
+        proc.wait(TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        print('\033[0;31mllc TLE\033[0m')
+        return False
     if proc.returncode:
         print('\033[0;31mllc Error\033[0m')
         return False
 
-    command = f'gcc {obj_path} {lib_path} -o {exe_path}'
+    command = f'clang {obj_path} {lib_path} -o {exe_path}'
     proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
     proc.wait()
     if proc.returncode:

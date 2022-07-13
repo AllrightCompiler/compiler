@@ -4,6 +4,7 @@
 #include "common/ir.hpp"
 
 #include <cassert>
+#include <iostream>
 #include <set>
 #include <string>
 
@@ -14,8 +15,8 @@ class ProgramTranslator {
   llvm::Program &dst;
 
   std::unordered_map<ir::BasicBlock *, llvm::BasicBlock *> bb_map;
-  std::map<ir::Reg, Type> reg_type; // 只保存非标量寄存器 (String)
-  std::set<ir::Reg> cmp_results;    // 比较结果寄存器，类型为i1
+  std::map<ir::Reg, Type> reg_type;   // 只保存非标量寄存器 (String)
+  std::map<ir::Reg, ir::Reg> i1_regs; // 保存逻辑结果, i1 -> i32
 
   void translate_instruction(llvm::BasicBlock *bb, ir::Instruction *insn,
                              Function &f) {
@@ -34,6 +35,7 @@ class ProgramTranslator {
       auto dst = load->dst;
       assert(addr.type == String);
       assert(dst.type == Int || dst.type == Float);
+      assert(reg_type.at(addr).is_pointer_to_scalar());
 
       copy = new Load{dst, addr};
     }
@@ -43,7 +45,7 @@ class ProgramTranslator {
 
       auto &var_name = load_addr->var_name;
       if (src.global_vars.count(var_name)) {
-        reg_type[dst] = src.global_vars.at(var_name)->type.get_addr_type();
+        reg_type[dst] = src.global_vars.at(var_name)->type.get_pointer_type();
       } else if (var_name.substr(0, 5) == ".str.") {
         int index = std::stoi(var_name.substr(5));
         assert(index < src.string_table.size());
@@ -63,18 +65,55 @@ class ProgramTranslator {
     else TypeCase(store, Store *, insn) {
       auto addr = store->addr;
       auto val = store->val;
+      assert(reg_type.at(addr).is_pointer_to_scalar());
       copy = new Store{addr, val};
     }
     else TypeCase(gep, GetElementPtr *, insn) {
       auto dst = gep->dst;
       auto base = gep->base;
-      assert(dst.type == String);
+      assert(dst.type == String && base.type == String);
 
       std::vector<ir::Reg> indices;
       for (auto r : gep->indices)
         indices.push_back(r);
 
-      copy = new GetElementPtr{dst, gep->type, base, indices};
+      auto &ptr_type = reg_type.at(base);
+      auto &src_type = gep->type;
+      Type actual_ptr_type;
+      bool omit_first_index = true;
+      int deref_dims; // 相对于actual_ptr_type需要移除的维数
+
+      if (src_type.get_pointer_type() == ptr_type) {
+        // 常规数组访问
+        actual_ptr_type = ptr_type;
+        omit_first_index = true;
+        deref_dims = indices.size();
+      } else {
+        // 应当有以下2种情况:
+        // 1. src_type == ptr_type 源操作数类型为指针，实际上是函数数组参数
+        // 2. src_type != ptr_type 数组手动初始化发生了强制转换，转换后与1一致
+        if (src_type != ptr_type) {
+          auto new_base = f.new_reg(String);
+          bb->push(new PtrCast{new_base, base, src_type, ptr_type});
+          base = new_base;
+        }
+        actual_ptr_type = src_type;
+        omit_first_index = false;
+        deref_dims = indices.size() - 1;
+      }
+
+      Type dst_type = actual_ptr_type;
+      auto pos = dst_type.dims.begin() + 1;
+      dst_type.dims.erase(pos, pos + deref_dims);
+      reg_type[dst] = std::move(dst_type);
+
+      Type actual_src_type = actual_ptr_type;
+      actual_src_type.dims.erase(actual_src_type.dims.begin());
+
+      auto new_gep = new GetElementPtr{dst, std::move(actual_src_type), base,
+                                       std::move(indices)};
+      new_gep->omit_first_index = omit_first_index;
+      copy = new_gep;
     }
     else TypeCase(convert, Convert *, insn) {
       auto dst = convert->dst;
@@ -98,7 +137,14 @@ class ProgramTranslator {
     else TypeCase(unary, Unary *, insn) {
       auto dst = unary->dst;
       auto src = unary->src;
-      copy = new Unary{dst, unary->op, src};
+
+      if (unary->op == UnaryOp::Not) {
+        auto tmp = f.new_reg(Int);
+        bb->push(new ZeroCmp{tmp, ZeroCmp::Eq, src});
+        copy = new IntCast{dst, IntCast::Zext, tmp};
+      } else {
+        copy = new Unary{dst, unary->op, src};
+      }
     }
     else TypeCase(binary, Binary *, insn) {
       auto dst = binary->dst;
@@ -112,6 +158,12 @@ class ProgramTranslator {
     }
     else TypeCase(br, Branch *, insn) {
       auto src = br->val;
+      if (!i1_regs.count(src)) {
+        auto tmp = f.new_reg(Int);
+        bb->push(new ZeroCmp{tmp, ZeroCmp::Ne, src});
+        src = tmp;
+      }
+
       auto true_target = bb_map.at(br->true_target);
       auto false_target = bb_map.at(br->false_target);
       copy = new SimpleBranch{src, true_target, false_target};
@@ -128,6 +180,24 @@ class ProgramTranslator {
     }
 
     bb->push(copy);
+
+    // 对于cmp，生成i32结果
+    TypeCase(binary, Binary *, insn) {
+      switch (binary->op) {
+      case BinaryOp::Eq:
+      case BinaryOp::Neq:
+      case BinaryOp::Lt:
+      case BinaryOp::Leq:
+      case BinaryOp::Gt:
+      case BinaryOp::Geq: {
+        auto dst = f.new_reg(Int);
+        bb->push(new IntCast{dst, IntCast::Zext, binary->dst});
+        i1_regs[binary->dst] = dst;
+      }
+      default:
+        break;
+      }
+    }
   }
 
   void rename_registers(llvm::Function &f) {
@@ -173,6 +243,7 @@ class ProgramTranslator {
   void translate_function(llvm::Function &df, const ir::Function &sf) {
     bb_map.clear();
     reg_type.clear();
+    i1_regs.clear();
 
     df.name = sf.name;
     df.sig = sf.sig;
@@ -254,15 +325,32 @@ bool Program::emit_special_instruction(std::ostream &os,
   }
   TypeCase(load_addr, const LoadAddr *, ins) {
     auto &var = global_vars.at(load_addr->var_name);
-    if (!var->type.is_array()) {
-      auto ts = type_string(var->type.base_type);
-      load_addr->write_reg(os) << "getelementptr " << ts << ", " << ts << "* "
-                               << var_name(load_addr->var_name) << ", i32 0";
+    auto ts = type_string(var->type);
+    load_addr->write_reg(os) << "getelementptr " << ts << ", " << ts << "* "
+                             << var_name(load_addr->var_name) << ", i32 0";
+    return true;
+  }
+  TypeCase(unary, const Unary *, ins) {
+    if (unary->op == UnaryOp::Sub) {
+      unary->write_reg(os);
+      if (unary->src.type == Float) {
+        os << "fneg float " << reg_name(unary->src);
+      } else {
+        os << "sub i32 0, " << reg_name(unary->src);
+      }
       return true;
     }
     return false;
   }
-  TypeCase(unary, const Unary *, ins) {}
+  TypeCase(gep, const GetElementPtr *, ins) {
+    auto ts = type_string(gep->type);
+    gep->write_reg(os) << "getelementptr " << ts << ", " << ts << "* " << reg_name(gep->base);
+    if (gep->omit_first_index)
+      os << ", i32 0";
+    for (auto r : gep->indices)
+      os << ", i32 " << reg_name(r);
+    return true;
+  }
   return false;
 }
 
