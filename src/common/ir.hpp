@@ -7,19 +7,19 @@
 
 #include <ostream>
 
-namespace mediumend{
+namespace mediumend {
 class CFG;
 }
 
 namespace ir {
 
+using std::list;
 using std::optional;
 using std::string;
 using std::unique_ptr;
-using std::vector;
-using std::list;
 using std::unordered_map;
 using std::unordered_set;
+using std::vector;
 
 struct Reg {
   Type type;
@@ -27,24 +27,19 @@ struct Reg {
 
   Reg() {}
   Reg(Type type_, int id_) : type{type_}, id{id_} {}
-  bool operator== (const Reg &b)const{
-    return id == b.id;
-  }
-  bool operator!= (const Reg &b)const{
-    return !this->operator==(b);
-  }
+  bool operator==(const Reg &b) const { return id == b.id; }
+  bool operator!=(const Reg &b) const { return !this->operator==(b); }
 };
-}
+} // namespace ir
 
-namespace std{
-template<>
-class hash<ir::Reg> {
+namespace std {
+template <> class hash<ir::Reg> {
 public:
-	size_t operator()(const ir::Reg& r) const{ return r.id; }
+  size_t operator()(const ir::Reg &r) const { return r.id; }
 };
-}
+} // namespace std
 
-namespace ir{
+namespace ir {
 struct Storage {
   bool global;
   Reg reg; // reg的type字段无效，此reg表示变量的地址。全局变量的此字段无效。
@@ -57,17 +52,19 @@ struct Instruction : Display {
   BasicBlock *bb;
   virtual void print(std::ostream &, unsigned) const override;
   virtual ~Instruction();
-  virtual void add_use_def() {};
-  virtual void remove_use_def() {};
-  virtual void change_use(Reg , Reg ) {};
+  virtual void add_use_def(){};
+  virtual void remove_use_def(){};
+  virtual void change_use(Reg, Reg){};
+  virtual unordered_set<Reg> def() const { return {}; }
+  virtual unordered_set<Reg> use() const { return {}; }
 };
 
 class Loop {
 public:
-    Loop *outer;
-    BasicBlock *header;
-    int level;
-    Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1) {}
+  Loop *outer;
+  BasicBlock *header;
+  int level;
+  Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1) {}
 };
 
 struct BasicBlock {
@@ -82,6 +79,8 @@ struct BasicBlock {
   BasicBlock *idom;
   // dom by (recursive)
   unordered_set<BasicBlock *> domby;
+  unordered_set<Reg> def, live_use, live_in, live_out; // for liveness analysis
+
   Loop *loop = nullptr;
   bool visit;
   int domlevel;
@@ -114,7 +113,7 @@ struct Function {
   FunctionSignature sig;
   int nr_regs;
 
-  mediumend::CFG* cfg = nullptr;
+  mediumend::CFG *cfg = nullptr;
   int pure = -1;
 
   unordered_map<Reg, unordered_set<Instruction *>> use_list;
@@ -122,15 +121,14 @@ struct Function {
   unordered_set<Reg> global_addr;
 
   list<unique_ptr<BasicBlock>> bbs;
-  Reg new_reg(::Type t) {
-    return ir::Reg{t, ++nr_regs};
-  }
+  Reg new_reg(::Type t) { return ir::Reg{t, ++nr_regs}; }
   ~Function();
-  bool has_param(Reg r){ return r.id <= sig.param_types.size(); }
-  bool is_pure() const {return pure == 1;}
+  bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
+  bool is_pure() const { return pure == 1; }
   void clear_visit();
   void clear_graph();
   void clear_dom();
+  void do_liveness_analysis();
 };
 
 struct LibFunction {
@@ -160,6 +158,7 @@ struct Output : Instruction {
   Output(Reg r) : dst{r} {}
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
+  unordered_set<Reg> def() const override { return {dst}; }
 };
 
 // 栈空间分配
@@ -179,6 +178,7 @@ struct Load : Output {
   Load(Reg dst, Reg addr) : addr{addr}, Output{dst} {}
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
+  unordered_set<Reg> use() const override { return {addr}; }
   virtual void change_use(Reg old_reg, Reg new_reg) override;
 };
 
@@ -187,12 +187,14 @@ struct LoadAddr : Output {
   string var_name;
 
   LoadAddr(Reg dst, string name) : var_name{std::move(name)}, Output{dst} {}
+  unordered_set<Reg> use() const override { return {}; }
 };
 
 struct LoadImm : Output {
   ConstValue imm;
 
   LoadImm(Reg dst, ConstValue immediate) : imm{immediate}, Output{dst} {}
+  unordered_set<Reg> use() const override { return {}; }
 };
 
 struct Store : Instruction {
@@ -202,6 +204,8 @@ struct Store : Instruction {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  unordered_set<Reg> def() const override { return {}; }
+  unordered_set<Reg> use() const override { return {addr, val}; }
 };
 
 struct GetElementPtr : Output {
@@ -215,6 +219,13 @@ struct GetElementPtr : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  unordered_set<Reg> use() const override {
+    unordered_set<Reg> ret{base};
+    for (auto each : indices) {
+      ret.insert(each);
+    }
+    return ret;
+  }
 };
 
 struct Convert : Output {
@@ -224,7 +235,7 @@ struct Convert : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-
+  unordered_set<Reg> use() const override { return {src}; }
 };
 
 struct Call : Output {
@@ -236,6 +247,13 @@ struct Call : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  unordered_set<Reg> use() const override {
+    unordered_set<Reg> ret;
+    for (auto each : args) {
+      ret.insert(each);
+    }
+    return ret;
+  }
 };
 
 struct Unary : Output {
@@ -246,6 +264,7 @@ struct Unary : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  unordered_set<Reg> use() const override { return {src}; }
 };
 
 struct Binary : Output {
@@ -257,6 +276,7 @@ struct Binary : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  unordered_set<Reg> use() const override { return {src1, src2}; }
 };
 
 struct Phi : Output {
@@ -264,7 +284,7 @@ struct Phi : Output {
 
   Phi(Reg dst) : Output{dst} {}
 
-  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs): Output{dst} {
+  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst} {
     for (int i = 0; i < bbs.size(); i++) {
       incoming[bbs[i]] = regs[i];
     }
@@ -273,6 +293,13 @@ struct Phi : Output {
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
   void remove_prev(BasicBlock *bb);
+  unordered_set<Reg> use() const override {
+    unordered_set<Reg> ret;
+    for (auto each : incoming) {
+      ret.insert(each.second);
+    }
+    return ret;
+  }
 };
 
 struct Return : Terminator {
@@ -282,6 +309,12 @@ struct Return : Terminator {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  unordered_set<Reg> use() const override {
+    if (val.has_value())
+      return {val.value()};
+    else
+      return {};
+  }
 };
 
 struct Jump : Terminator {
@@ -299,9 +332,9 @@ struct Branch : Terminator {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
+  unordered_set<Reg> use() const override { return {val}; }
 };
 
 } // namespace insns
 
 } // namespace ir
-

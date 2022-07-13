@@ -80,10 +80,10 @@ void mem2reg(ir::Program *prog) {
     cfg->remove_unreachable_bb();
     cfg->compute_dom();
     auto df = cfg->compute_df();
+    func->do_liveness_analysis();
     unordered_map<Reg, BasicBlock *> alloc_set;
     unordered_map<Reg, ScalarType> alloc2type;
-    unordered_map<Reg, vector<BasicBlock *>> defs;
-    unordered_map<Reg, vector<Reg>> defs_reg;
+    unordered_map<Reg, unordered_set<BasicBlock *>> defs;
     unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
     unordered_map<ir::insns::Phi *, Reg> phi2mem;
 
@@ -93,13 +93,11 @@ void mem2reg(ir::Program *prog) {
           alloc_set[inst->dst] = bb.get();
           alloc2type[inst->dst] = inst->type.base_type;
           defs[inst->dst] = {};
-          defs_reg[inst->dst] = {};
         }
         // 先定义后使用，此处不会出现Store到没有alloca的地址
         TypeCase(inst, ir::insns::Store *, i.get()) {
           if (alloc_set.find(inst->addr) != alloc_set.end()) {
-            defs[inst->addr].push_back(bb.get());
-            defs_reg[inst->addr].push_back(inst->val);
+            defs[inst->addr].insert(bb.get());
           }
         }
       }
@@ -116,20 +114,16 @@ void mem2reg(ir::Program *prog) {
         W.erase(W.begin());
         for (auto &Y : df[bb]) {
           if (F.find(Y) == F.end()) {
+            if(!Y->live_in.count(v.first)){
+              continue;
+            }
             Reg r = func->new_reg(alloc2type[v.first]);
             auto phi = new ir::insns::Phi(r);
             Y->insns.emplace_front(phi); // add phi
             phi->bb = Y;
             phi2mem[phi] = v.first;
             F.insert(Y);
-            bool find = false;
-            for (auto &each : defs[v.first]) {
-              if (each == Y) {
-                find = true;
-                break;
-              }
-            }
-            if (!find) {
+            if (!defs[v.first].count(Y)) {
               W.insert(Y);
             }
           }
