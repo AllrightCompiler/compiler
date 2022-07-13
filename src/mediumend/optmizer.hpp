@@ -14,7 +14,6 @@ void constant_propagation(ir::Program *prog);
 void mark_pure_func(ir::Program *);
 void remove_uneffective_inst(ir::Program *prog);
 void clean_useless_cf(ir::Program *prog);
-void simplification_phi(ir::Program *prog);
 void main_global_var_to_local(ir::Program *prog);
 void gvn_gcm(ir::Program *prog);
 void function_inline(ir::Program *prog);

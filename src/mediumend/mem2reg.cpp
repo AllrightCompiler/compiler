@@ -14,6 +14,53 @@ using std::unordered_set;
 using std::vector;
 using std::string;
 
+void add_phi_reg(ir::insns::Phi *phi, unordered_set<ir::insns::Phi *> &used_phi, Function *func){
+  auto used_reg = phi->use();
+  used_phi.insert(phi);
+  for(auto &reg : used_reg){
+    if(!func->has_param(reg)){
+      auto def = func->def_list[reg];
+      TypeCase(new_phi, ir::insns::Phi *, def){
+        if(!used_phi.count(new_phi)){
+          add_phi_reg(new_phi, used_phi, func);
+        }
+      }
+    }
+  }
+}
+
+void remove_unused_phi(ir::Function *func){
+  unordered_set<ir::insns::Phi *> used_phi;
+  for(auto &bb : func->bbs){
+    for(auto &inst : bb->insns){
+      TypeCase(phi, ir::insns::Phi *, inst.get()){
+        continue;
+      }
+      auto used_reg = inst->use();
+      for(auto &reg : used_reg){
+        if(!func->has_param(reg)){
+          auto def = func->def_list[reg];
+          TypeCase(phi, ir::insns::Phi *, def){
+            add_phi_reg(phi, used_phi, func);
+          }
+        }
+      }
+    }
+  }
+  for(auto &bb : func->bbs){
+    for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
+      TypeCase(phi, ir::insns::Phi *, iter->get()){
+        if(!used_phi.count(phi)){
+          iter->get()->remove_use_def();
+          iter = bb->insns.erase(iter);
+          continue;
+        }
+      }
+      iter++;
+    }
+  }
+}
+
 void main_global_var_to_local(ir::Program *prog){
   mark_global_addr_reg(prog);
   unordered_set<string> used_vars; // 变量被除了main函数以外的函数使用过
@@ -206,44 +253,7 @@ void mem2reg(ir::Program *prog) {
     for(auto phi : phi2mem){
       phi.first->add_use_def();
     }
-  }
-}
-
-void simplification_phi(ir::Program *prog){
-  for(auto &f : prog->functions){
-    Function* func = &f.second;
-    for(auto &bb : func->bbs){
-      for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
-        TypeCase(inst, ir::insns::Phi *, iter->get()) {
-          for(auto in_iter = inst->incoming.begin(); in_iter != inst->incoming.end();){
-            if(!bb.get()->prev.count(in_iter->first)){
-              func->use_list[in_iter->second].erase(inst);
-              in_iter = inst->incoming.erase(in_iter);
-            } else {
-              in_iter++;
-            }
-          }
-          if(inst->incoming.size() == 1){
-            auto &dst_use_list = func->use_list[inst->dst];
-            while(dst_use_list.size()){
-              auto uses = *dst_use_list.begin();
-              auto dmy = dynamic_cast<ir::Instruction *>(uses);
-              if(!dmy){
-                assert(false);
-              }
-              auto reg = inst->incoming.begin()->second;
-              uses->change_use(inst->dst, reg);
-            }
-            iter->get()->remove_use_def();
-            iter = bb->insns.erase(iter);
-            continue;
-          }
-          iter++;
-        } else {
-          break;
-        }
-      }
-    }
+    remove_unused_phi(func);
   }
 }
 
