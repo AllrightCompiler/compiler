@@ -70,6 +70,9 @@ void main_global_var_to_local(ir::Program *prog){
       for (auto &bb : func.bbs) {
         for (auto &insn : bb->insns) {
           TypeCase(loadaddr, ir::insns::LoadAddr *, insn.get()) {
+            auto &var = prog->global_vars[loadaddr->var_name];
+            if (var->type.is_array()) // 只改写非数组的全局变量
+              continue;
             main_used_vars.insert(loadaddr->var_name);
           }
         }
@@ -93,8 +96,6 @@ void main_global_var_to_local(ir::Program *prog){
       continue;
 
     auto &var = prog->global_vars[var_name];
-    if (var->type.is_array()) // 只改写非数组的全局变量
-      continue;
 
     Reg reg = func.new_reg(String);
     Reg val_reg = func.new_reg(var->type.base_type);
@@ -115,9 +116,12 @@ void main_global_var_to_local(ir::Program *prog){
   for (auto &bb : func.bbs) {
     for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
       TypeCase(loadaddr, ir::insns::LoadAddr *, iter->get()) {
-        if (!used_vars.count(loadaddr->var_name)) {
+        auto &var = prog->global_vars[loadaddr->var_name];
+        if (!var->type.is_array() && !used_vars.count(loadaddr->var_name)) {
           copy_propagation(func.use_list, loadaddr->dst,
                            global_name_to_local_reg[loadaddr->var_name]);
+          iter = bb->insns.erase(iter);
+          continue;
         }
       }
       ++iter;
