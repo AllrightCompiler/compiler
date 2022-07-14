@@ -37,7 +37,7 @@ struct Reg {
 namespace std {
 template <> class hash<ir::Reg> {
 public:
-  size_t operator()(const ir::Reg &r) const { return hash<int>()(r.id); }
+  size_t operator()(const ir::Reg &r) const { return r.id; }
 };
 } // namespace std
 
@@ -64,6 +64,8 @@ struct Instruction {
   virtual void remove_use_def() {}
   virtual void change_use(Reg, Reg) {}
   virtual std::vector<Reg *> reg_ptrs() { return {}; }
+  virtual unordered_set<Reg> def() const { return {}; }
+  virtual unordered_set<Reg> use() const { return {}; }
 };
 
 class Loop {
@@ -86,6 +88,8 @@ struct BasicBlock {
   BasicBlock *idom;
   // dom by (recursive)
   unordered_set<BasicBlock *> domby;
+  unordered_set<Reg> def, live_use, live_in, live_out; // for liveness analysis
+
   Loop *loop = nullptr;
   bool visit;
   int domlevel;
@@ -133,6 +137,7 @@ struct Function {
   void clear_visit();
   void clear_graph();
   void clear_dom();
+  void do_liveness_analysis();
 };
 
 struct LibFunction {
@@ -220,6 +225,7 @@ struct Output : Instruction {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual std::vector<Reg *> reg_ptrs() override { return {&dst}; }
+  unordered_set<Reg> def() const override { return {dst}; }
 };
 
 // 栈空间分配
@@ -242,6 +248,7 @@ struct Load : Output {
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
   virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &addr}; }
+  unordered_set<Reg> use() const override { return {addr}; }
 };
 
 // 将全局变量地址加载到dst寄存器
@@ -271,6 +278,7 @@ struct Store : Instruction {
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
   virtual std::vector<Reg *> reg_ptrs() override { return {&addr, &val}; }
+  unordered_set<Reg> use() const override { return {addr, val}; }
 };
 
 // NOTE: 在LLVM阶段之前，type标注的是base对应的变量的类型
@@ -295,6 +303,13 @@ struct GetElementPtr : Output {
       ptrs.push_back(&r);
     return ptrs;
   }
+  unordered_set<Reg> use() const override {
+    unordered_set<Reg> ret{base};
+    for (auto each : indices) {
+      ret.insert(each);
+    }
+    return ret;
+  }
 };
 
 struct Convert : Output {
@@ -307,6 +322,7 @@ struct Convert : Output {
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
   virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
+  unordered_set<Reg> use() const override { return {src}; }
 };
 
 struct Call : Output {
@@ -326,6 +342,13 @@ struct Call : Output {
       ptrs.push_back(&r);
     return ptrs;
   }
+  unordered_set<Reg> use() const override {
+    unordered_set<Reg> ret;
+    for (auto each : args) {
+      ret.insert(each);
+    }
+    return ret;
+  }
 };
 
 struct Unary : Output {
@@ -339,6 +362,7 @@ struct Unary : Output {
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
   virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
+  unordered_set<Reg> use() const override { return {src}; }
 };
 
 struct Binary : Output {
@@ -355,6 +379,7 @@ struct Binary : Output {
   virtual std::vector<Reg *> reg_ptrs() override {
     return {&dst, &src1, &src2};
   }
+  unordered_set<Reg> use() const override { return {src1, src2}; }
 };
 
 struct Phi : Output {
@@ -380,6 +405,13 @@ struct Phi : Output {
       ptrs.push_back(&r);
     return ptrs;
   }
+  unordered_set<Reg> use() const override {
+    unordered_set<Reg> ret;
+    for (auto each : incoming) {
+      ret.insert(each.second);
+    }
+    return ret;
+  }
 };
 
 struct Return : Terminator {
@@ -395,6 +427,12 @@ struct Return : Terminator {
     if (val.has_value())
       return {&val.value()};
     return {};
+  }
+  unordered_set<Reg> use() const override {
+    if (val.has_value())
+      return {val.value()};
+    else
+      return {};
   }
 };
 
@@ -418,6 +456,7 @@ struct Branch : Terminator {
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
   virtual std::vector<Reg *> reg_ptrs() override { return {&val}; }
+  unordered_set<Reg> use() const override { return {val}; }
 };
 
 } // namespace insns

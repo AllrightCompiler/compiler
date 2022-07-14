@@ -82,7 +82,7 @@ void constant_propagation(ir::Program *prog) {
                 continue;
               }
             }
-            auto reg_use = get_inst_use_reg(output);
+            auto reg_use = output->use();
             for (auto &use : reg_use) {
               if(!func->has_param(use)){
                 auto def = func->def_list.at(use);
@@ -167,6 +167,21 @@ void constant_propagation(ir::Program *prog) {
             bool use_same_reg = true;
             bool set_reg = false;
             Reg use_reg;
+            if(func->use_list[phi->dst].size() == 1){
+              if(*func->use_list[phi->dst].begin() == phi){
+                auto reg_use = phi->use();
+                for (auto &use : reg_use) {
+                  if(!func->has_param(use) && use != phi->dst){
+                    auto def = func->def_list.at(use);
+                    stack.insert(def->bb);
+                    checkbb(def->bb);
+                  }
+                }
+                phi->remove_use_def();
+                remove_inst_list.insert(phi);
+                continue;
+              }
+            }
             for (auto iter = phi->incoming.begin(); iter != phi->incoming.end();) {
               if (!bb->prev.count(iter->first)) {
                 func->use_list.at(iter->second).erase(phi);
@@ -222,6 +237,7 @@ void constant_propagation(ir::Program *prog) {
               }
             }
           }
+          continue;
         }
         TypeCase(br, ir::insns::Branch *, ins.get()) {
           if (const_map.find(br->val) != const_map.end()) {

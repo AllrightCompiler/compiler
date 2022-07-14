@@ -10,7 +10,6 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"mark_pure_func", mark_pure_func},
   {"remove_uneffective_inst", remove_uneffective_inst},
   {"clean_useless_cf", clean_useless_cf},
-  {"simplification_phi", simplification_phi},
   {"main_global_var_to_local", main_global_var_to_local},
   {"gvn_gcm", gvn_gcm},
   {"function_inline", function_inline},
