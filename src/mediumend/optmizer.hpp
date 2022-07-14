@@ -31,6 +31,8 @@ void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction 
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){
     func.second.cfg = new CFG(&func.second);
+    func.second.cfg->build();
+    func.second.cfg->remove_unreachable_bb();
   }
   compute_use_def_list(prog);
 

@@ -143,6 +143,9 @@ void mem2reg(ir::Program *prog) {
     for (auto &bb : func->bbs) {
       for (auto &i : bb->insns) {
         TypeCase(inst, ir::insns::Alloca *, i.get()) {
+          if(inst->type.is_array()){
+            continue;
+          }
           alloc_set[inst->dst] = bb.get();
           alloc2type[inst->dst] = inst->type.base_type;
           defs[inst->dst] = {};
@@ -178,7 +181,6 @@ void mem2reg(ir::Program *prog) {
             }
           }
         }
-        F.insert(bb);
       }
     }
 
