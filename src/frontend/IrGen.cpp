@@ -147,6 +147,15 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
         emit(new insns::Store{reg, val});
       }
     }
+  } else {
+    if (!is_global && !var_type.is_array()){
+      Reg zero_reg = new_reg(var_type.base_type);
+      ConstValue zero_imm = (var_type.base_type == Float)
+                                ? ConstValue{float(0)}
+                                : ConstValue{0};
+      emit(new insns::LoadImm{zero_reg, zero_imm});
+      emit(new insns::Store{reg, zero_reg});
+    }
   }
 }
 
