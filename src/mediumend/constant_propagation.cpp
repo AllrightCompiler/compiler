@@ -3,7 +3,7 @@
 #include "mediumend/optmizer.hpp"
 
 #include <cassert>
-#define FRW_DEBUG
+
 namespace mediumend {
 
 using ir::Reg;
@@ -290,6 +290,7 @@ void constant_propagation(ir::Program *prog) {
         iter++;
       }
     }
+    remove_unused_phi(func);
   }
 }
 
