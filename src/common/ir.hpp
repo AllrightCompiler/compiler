@@ -155,7 +155,9 @@ struct Program {
 
 // 指令输出相关
 std::ostream &operator<<(std::ostream &os, const Program &);
+std::ostream &operator<<(std::ostream &os, const ConstValue &);
 void emit_global_var(std::ostream &os, const std::string &name, Var *var);
+
 void set_print_context(const Program &);
 const Program *get_print_context();
 

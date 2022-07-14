@@ -352,8 +352,12 @@ bool Program::emit_special_instruction(std::ostream &os,
     return true;
   }
   TypeCase(load_imm, const LoadImm *, ins) {
-    load_imm->write_reg(os) << "add " << type_string(load_imm->dst.type) << ' '
-                            << load_imm->imm.to_string() << ", 0";
+    load_imm->write_reg(os);
+    if (load_imm->dst.type != Float) {
+      os << "add i32 " << load_imm->imm << ", 0";
+    } else {
+      os << "fadd float " << load_imm->imm << ", 0.0";
+    }
     return true;
   }
   TypeCase(load_addr, const LoadAddr *, ins) {

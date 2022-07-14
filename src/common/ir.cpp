@@ -31,15 +31,16 @@ inline std::string op_string(UnaryOp op) {
 }
 
 inline std::string op_string(BinaryOp op, ScalarType t) {
+  bool f = t == Float;
   switch (op) {
   case BinaryOp::Add:
-    return "add";
+    return f ? "fadd" : "add";
   case BinaryOp::Sub:
-    return "sub";
+    return f ? "fsub" : "sub";
   case BinaryOp::Mul:
-    return "mul";
+    return f ? "fmul" : "mul";
   case BinaryOp::Div:
-    return t == Float ? "fdiv" : "sdiv";
+    return f ? "fdiv" : "sdiv";
   case BinaryOp::Mod:
     return "srem";
   case BinaryOp::Eq:
@@ -48,13 +49,13 @@ inline std::string op_string(BinaryOp op, ScalarType t) {
   case BinaryOp::Leq:
   case BinaryOp::Gt:
   case BinaryOp::Geq: {
-    std::string prefix = (t == Float) ? "fcmp " : "icmp ";
-    std::string mode = (t == Float) ? "o" : "s";
+    std::string prefix = f ? "fcmp " : "icmp ";
+    std::string mode = f ? "o" : "s";
     switch (op) {
     case BinaryOp::Eq:
-      return prefix + (t == Float ? "o" : "") + "eq";
+      return prefix + (f ? "o" : "") + "eq";
     case BinaryOp::Neq:
-      return prefix + (t == Float ? "o" : "") + "ne";
+      return prefix + (f ? "o" : "") + "ne";
     case BinaryOp::Lt:
       return prefix + mode + "lt";
     case BinaryOp::Leq:
@@ -107,7 +108,7 @@ void Function::do_liveness_analysis() {
       unordered_set<Reg> new_out;
       for (auto succ : bb->succ)
         new_out.insert(succ->live_in.begin(), succ->live_in.end());
-      
+
       if (bb->live_out != new_out) {
         bb->live_out = std::move(new_out);
         changed = true;
@@ -116,7 +117,7 @@ void Function::do_liveness_analysis() {
         for (auto &e : bb->live_out)
           if (!bb->def.count(e))
             new_in.insert(e);
-        
+
         bb->live_in = std::move(new_in);
       }
     }
@@ -254,8 +255,13 @@ void GetElementPtr::emit(std::ostream &os) const {
 }
 
 void Convert::emit(std::ostream &os) const {
-  write_reg(os) << "convert " << type_string(src.type) << " " << reg_name(src)
-                << " to " << type_string(dst.type);
+  write_reg(os);
+  if (src.type == Int && dst.type == Float)
+    os << "sitofp i32 " << reg_name(src) << " to float";
+  else if (src.type == Float && dst.type == Int)
+    os << "fptosi float " << reg_name(src) << " to i32";
+  else
+    assert(false);
 }
 
 void Call::emit(std::ostream &os) const {
@@ -362,7 +368,10 @@ ostream &operator<<(ostream &os, const ConstValue &p) {
   if (p.type == Int) {
     os << p.iv;
   } else if (p.type == Float) {
-    os << p.fv;
+    char buf[32];
+    double v = p.fv;
+    std::sprintf(buf, "0x%016llx", *reinterpret_cast<const long long *>(&v));
+    os << buf;
   } else
     assert(false);
   return os;
