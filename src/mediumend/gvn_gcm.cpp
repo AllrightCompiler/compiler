@@ -506,6 +506,10 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
   } else {
     placement[inst] = inst->bb;
   }
+  if (inst->bb != placement[inst]) {
+    inst->bb->remove(inst);
+    placement[inst]->insert_before_ter(inst);
+  }
   // TODO: more inst types
 }
 

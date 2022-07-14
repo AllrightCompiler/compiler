@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <string>
 
 #define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 

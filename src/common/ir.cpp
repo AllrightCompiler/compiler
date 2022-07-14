@@ -146,6 +146,13 @@ void BasicBlock::insert_after_phi(Instruction *insn) {
   // insn->add_use_def();
 }
 
+void BasicBlock::insert_before_ter(Instruction *insn) {
+  auto it = insns.end();
+  insns.emplace(--it, insn);
+  insn->bb = this;
+  // insn->add_use_def();
+}
+
 bool BasicBlock::remove(Instruction *insn) {
   for (auto it = insns.begin(); it != insns.end(); it++) {
     if (it->get() == insn) {
