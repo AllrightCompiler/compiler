@@ -232,12 +232,8 @@ void mem2reg(ir::Program *prog) {
         iter++;
         continue;
       }
-      for (auto &succ : bb->succ) {
-        if (!succ->visit) {
-          succ->visit = true;
-          stack.push_back(succ);
-        }
-        for (auto &inst : succ->insns) {
+      for(auto &succ : bb->succ){
+        for(auto &inst : succ->insns){
           TypeCase(phi, ir::insns::Phi *, inst.get()) {
             if (!phi2mem.count(phi)) {
               continue;
@@ -255,6 +251,9 @@ void mem2reg(ir::Program *prog) {
             break;
           }
         }
+      }
+      for(auto dom : bb->dom){
+        stack.push_back(dom);
       }
     }
     for (auto phi : phi2mem) {
