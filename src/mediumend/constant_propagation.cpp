@@ -27,8 +27,8 @@ void constant_propagation(ir::Program *prog) {
     ir::BasicBlock *entry = func->bbs.front().get();
     std::unordered_map<Reg, ConstValue> const_map;
     unordered_set<ir::BasicBlock *> stack;
-    unordered_set<ir::BasicBlock *> remove_list;
     unordered_set<ir::Instruction *> remove_inst_list;
+    func->clear_visit();
     for (auto &bb : func->bbs) {
       for (auto &ins : bb->insns) {
         TypeCase(loadimm, ir::insns::LoadImm *, ins.get()) {
@@ -50,7 +50,7 @@ void constant_propagation(ir::Program *prog) {
       auto s_iter = stack.begin();
       auto bb = *s_iter;
       stack.erase(s_iter);
-      if (remove_list.count(bb)) {
+      if (bb->visit) {
         continue;
       }
       if (bb->prev.empty() && bb != entry) {
@@ -62,7 +62,7 @@ void constant_propagation(ir::Program *prog) {
           checkbb(each);
         }
         bb->succ.clear();
-        remove_list.insert(bb);
+        bb->visit = true;;
         for (auto &inst : bb->insns) {
           inst->remove_use_def();
         }
@@ -216,10 +216,15 @@ void constant_propagation(ir::Program *prog) {
             if (phi_const) {
               Reg reg = phi->dst;
               for (auto &in : phi->incoming) {
-                for (auto &uses : func->use_list[in.second]) {
-                  stack.insert(uses->bb);
-                  checkbb(uses->bb);
+                if(!func->has_param(in.second)){
+                  auto def = func->def_list.at(in.second);
+                  stack.insert(def->bb);
+                  checkbb(def->bb);
                 }
+              }
+              for (auto &uses : func->use_list[reg]) {
+                stack.insert(uses->bb);
+                checkbb(uses->bb);
               }
               ins->remove_use_def();
               ins.reset(new ir::insns::LoadImm(phi->dst, val));
@@ -241,9 +246,10 @@ void constant_propagation(ir::Program *prog) {
         }
         TypeCase(br, ir::insns::Branch *, ins.get()) {
           if (const_map.find(br->val) != const_map.end()) {
-            for (auto &uses : func->use_list[br->val]) {
-              stack.insert(uses->bb);
-              checkbb(uses->bb);
+            if(!func->has_param(br->val)) {
+              auto def = func->def_list.at(br->val);
+              stack.insert(def->bb);
+              checkbb(def->bb);
             }
             ir::BasicBlock *target;
             if (const_map.at(br->val).iv) {
@@ -276,7 +282,7 @@ void constant_propagation(ir::Program *prog) {
       }
     }
     for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
-      if (remove_list.count(iter->get())) {
+      if (iter->get()->visit) {
         iter = func->bbs.erase(iter);
       } else {
         for (auto inst_iter = iter->get()->insns.begin();
