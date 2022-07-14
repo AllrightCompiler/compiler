@@ -41,7 +41,7 @@ inline std::string op_string(BinaryOp op, ScalarType t) {
   case BinaryOp::Div:
     return t == Float ? "fdiv" : "sdiv";
   case BinaryOp::Mod:
-    return "rem";
+    return "srem";
   case BinaryOp::Eq:
   case BinaryOp::Neq:
   case BinaryOp::Lt:

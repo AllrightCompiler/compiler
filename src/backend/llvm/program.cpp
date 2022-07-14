@@ -124,11 +124,27 @@ class ProgramTranslator {
     }
     else TypeCase(call, Call *, insn) {
       auto dst = call->dst;
-      std::vector<ir::Reg> args;
-      for (auto r : call->args)
-        args.push_back(r);
 
-      copy = new Call{dst, call->func, args};
+      auto &fn_name = call->func;
+      auto &sig = src.functions.count(fn_name) ? src.functions.at(fn_name).sig
+                                               : src.lib_funcs.at(fn_name).sig;
+      auto &params = sig.param_types;
+
+      std::vector<ir::Reg> args;
+      int nr_args = call->args.size();
+      int nr_params = params.size();
+      for (int i = 0; i < nr_args; ++i) {
+        auto arg = call->args[i];
+        if (i < nr_params && params[i].is_array() && arg.type == String &&
+            reg_type.at(arg) != params[i]) {
+          auto new_arg = f.new_reg(String);
+          bb->push(new PtrCast{new_arg, arg, params[i], reg_type.at(arg)});
+          arg = new_arg;
+        }
+        args.push_back(arg);
+      }
+
+      copy = new Call{dst, call->func, std::move(args)};
     }
     else TypeCase(ret, Return *, insn) {
       std::optional<ir::Reg> ret_val;
@@ -302,10 +318,17 @@ public:
 };
 
 Program::Program()
-    : lib_func_decls{
-          "declare i32 @getint()",     "declare i32 @getch()",
-          "declare float @getfloat()", "declare void @putint(i32)",
-          "declare void @putch(i32)",  "declare void @putfloat(float)"} {}
+    : lib_func_decls{"declare i32 @getint()",
+                     "declare i32 @getch()",
+                     "declare float @getfloat()",
+                     "declare void @putint(i32)",
+                     "declare void @putch(i32)",
+                     "declare void @putfloat(float)",
+                     "declare i32 @getarray(i32*)",
+                     "declare i32 @getfarray(float*)",
+                     "declare void @putarray(i32, i32*)",
+                     "declare void @putfarray(i32, float*)",
+                     "declare void @putf(i8*, i32, ...)"} {}
 
 // 需要重写的特殊指令(如 getelementptr)
 bool Program::emit_special_instruction(std::ostream &os,
