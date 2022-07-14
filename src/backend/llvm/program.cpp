@@ -1,6 +1,8 @@
 #include "backend/llvm/program.hpp"
 #include "backend/llvm/instruction.hpp"
 
+#include "mediumend/cfg.hpp"
+
 #include "common/ir.hpp"
 
 #include <cassert>
@@ -265,11 +267,19 @@ class ProgramTranslator {
       df.bbs.emplace_back(dbb);
     }
 
-    auto it = df.bbs.begin();
-    for (auto &sbb : sf.bbs) {
-      for (auto &insn : sbb->insns)
-        translate_instruction(it->get(), insn.get(), df);
-      ++it;
+    if (sf.cfg) {
+      sf.cfg->compute_rpo();
+      for (auto sbb : sf.cfg->rpo) {
+        for (auto &insn : sbb->insns)
+          translate_instruction(bb_map.at(sbb), insn.get(), df);
+      }
+    } else {
+      auto it = df.bbs.begin();
+      for (auto &sbb : sf.bbs) {
+        for (auto &insn : sbb->insns)
+          translate_instruction(it->get(), insn.get(), df);
+        ++it;
+      }
     }
 
     rename_registers(df);
@@ -344,7 +354,8 @@ bool Program::emit_special_instruction(std::ostream &os,
   }
   TypeCase(gep, const GetElementPtr *, ins) {
     auto ts = type_string(gep->type);
-    gep->write_reg(os) << "getelementptr " << ts << ", " << ts << "* " << reg_name(gep->base);
+    gep->write_reg(os) << "getelementptr " << ts << ", " << ts << "* "
+                       << reg_name(gep->base);
     if (gep->omit_first_index)
       os << ", i32 0";
     for (auto r : gep->indices)
