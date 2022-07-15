@@ -5,8 +5,8 @@
 #include "common/common.hpp"
 #include "common/config.hpp"
 
-#include <string>
 #include <cstring>
+#include <string>
 
 namespace armv7 {
 
@@ -130,7 +130,8 @@ ostream &operator<<(ostream &os, const Operand2 &opd) {
   return os;
 }
 
-int get_padding_length(const char *op, ExCond cond, bool is_float, bool is_ldst) {
+int get_padding_length(const char *op, ExCond cond, bool is_float,
+                       bool is_ldst) {
   int base_len = std::strlen(op);
   int cond_len = cond == ExCond::Always ? 0 : 2;
   base_len += cond_len;
@@ -184,7 +185,10 @@ void FullRType::emit(std::ostream &os) const {
 
 void Move::emit(std::ostream &os) const {
   auto op = flip ? "mvn" : "mov";
-  write_op(os, op) << dst << ", " << src;
+  write_op(os, op,
+           dst.is_float() ||
+               src.is_imm_shift() && src.get<RegImmShift>().r.is_float())
+      << dst << ", " << src;
 }
 
 void MovW::emit(std::ostream &os) const {
@@ -251,9 +255,7 @@ void LoadStackAddr::emit(std::ostream &os) const {
   os << "*local-addr " << dst << ", obj[" << base << "]+" << offset;
 }
 
-void AdjustSp::emit(std::ostream &os) const {
-  os << "*sp-adjust " << offset;
-}
+void AdjustSp::emit(std::ostream &os) const { os << "*sp-adjust " << offset; }
 
 void Push::emit(std::ostream &os) const {
   write_op(os, "push") << '{';
@@ -277,13 +279,9 @@ void Pop::emit(std::ostream &os) const {
   os << '}';
 }
 
-void Call::emit(std::ostream &os) const {
-  write_op(os, "bl") << func;
-}
+void Call::emit(std::ostream &os) const { write_op(os, "bl") << func; }
 
-void Return::emit(std::ostream &os) const {
-  write_op(os, "bx") << "lr";
-}
+void Return::emit(std::ostream &os) const { write_op(os, "bx") << "lr"; }
 
 void CountLeadingZero::emit(std::ostream &os) const {
   write_op(os, "clz") << dst << ", " << src;

@@ -133,10 +133,10 @@ void ColoringRegAllocator::make_worklist() {
       auto def = insn->def();
       auto use = insn->use();
       for (Reg d : def)
-        if (d.is_virt())
+        if (d.is_virt() && this->reg_filter(d))
           vregs.insert(d);
       for (Reg u : use)
-        if (u.is_virt())
+        if (u.is_virt() && this->reg_filter(u))
           vregs.insert(u);
     }
   }
@@ -401,7 +401,28 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
       }
     }
   } else {
-    // TODO
+    // spill 到通用虚拟寄存器，到 gp_pass 一并处理
+    // 指令插入位置同 gp_pass
+    for (auto r : nodes) {
+      auto const gr = f->new_reg(RegType::General);
+      for (auto &bb : f->bbs) {
+        auto &instrs = bb->insns;
+        auto last_def = instrs.cend();
+        for (auto iter = instrs.cbegin(); iter != instrs.cend(); ++iter) {
+          auto instr = iter->get();
+          if (instr->def().count(r)) {
+            last_def = iter;
+            continue;
+          }
+          if (instr->use().count(r)) {
+            instrs.emplace(iter, new Move{r, Operand2::from(gr)});
+          }
+        }
+        if (last_def != instrs.cend()) {
+          instrs.emplace(std::next(last_def), new Move{gr, Operand2::from(r)});
+        }
+      }
+    }
   }
 }
 
@@ -410,8 +431,10 @@ void ColoringRegAllocator::init(Function &func, bool is_gp_pass) {
   this->is_gp_pass = is_gp_pass;
   if (is_gp_pass) {
     K = 14; // 16个通用寄存器去掉sp和pc
+    this->reg_filter = [](Reg const &_) { return true; };
   } else {
     K = NR_FPRS; // 32个单精度vfp寄存器
+    this->reg_filter = [](Reg const &reg) { return reg.is_float(); };
   }
 
   alias.clear();
@@ -471,7 +494,7 @@ void ColoringRegAllocator::do_reg_alloc(Function &func, bool is_gp_pass) {
   do {
     // printf("function %s loop %d\n", f->name.c_str(), ++i);
 
-    f->do_liveness_analysis();
+    f->do_liveness_analysis(this->reg_filter);
     build();
     make_worklist();
 

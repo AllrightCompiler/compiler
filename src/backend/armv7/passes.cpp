@@ -19,6 +19,10 @@ void backend_passes(Program &p) {
 
     // f.emit(std::cerr);
 
+    reg_allocator.do_reg_alloc(f, false); // fp reg
+
+    // f.emit(std::cerr);
+
     reg_allocator.do_reg_alloc(f);
 
     // 以下步骤必须进行
