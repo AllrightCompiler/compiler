@@ -178,6 +178,9 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
         if(auto phi = dynamic_cast<ir::insns::Phi *>(target->insns.front().get())){
           continue;
         }
+        if(entry == bb){
+          continue;
+        }
         for(auto &pre : bb->prev){
           auto &last = pre->insns.back();
           TypeCase(br, ir::insns::Branch *, last.get()){
@@ -215,9 +218,6 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           }
         }
         bb->visit = true;
-        if(entry == bb){
-          entry = target;
-        }
         ret = true;
         continue;
       }
@@ -299,15 +299,9 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     if(iter->get()->visit){
       iter = func->bbs.erase(iter);
     } else {
-      if(iter->get() == entry){
-        iter->release();
-        iter = func->bbs.erase(iter);
-        continue;
-      }
       iter++;
     }
   }
-  func->bbs.emplace_front(entry);
   return ret;
 }
 
