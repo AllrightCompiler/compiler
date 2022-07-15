@@ -100,9 +100,14 @@ void constant_propagation(ir::Program *prog) {
           TypeCase(unary, ir::insns::Unary *, ins.get()) {
             if (const_map.count(unary->src)) {
               Reg reg = unary->dst;
-              for (auto &uses : func->use_list[unary->src]) {
+              for (auto &uses : func->use_list[unary->dst]) {
                 stack.insert(uses->bb);
                 checkbb(uses->bb);
+              }
+              if(!func->has_param(unary->src)){
+                auto def = func->def_list.at(unary->src);
+                stack.insert(def->bb);
+                checkbb(def->bb);
               }
               unary->remove_use_def();
               ConstValue new_val =
@@ -120,13 +125,19 @@ void constant_propagation(ir::Program *prog) {
             if (const_map.count(binary->src1) &&
                 const_map.count(binary->src2)) {
               Reg reg = binary->dst;
-              for (auto &uses : func->use_list[binary->src1]) {
+              for (auto &uses : func->use_list[binary->dst]) {
                 stack.insert(uses->bb);
                 checkbb(uses->bb);
               }
-              for (auto &uses : func->use_list[binary->src2]) {
-                stack.insert(uses->bb);
-                checkbb(uses->bb);
+              if(!func->has_param(binary->src1)){
+                auto def = func->def_list.at(binary->src1);
+                stack.insert(def->bb);
+                checkbb(def->bb);
+              }
+              if(!func->has_param(binary->src2)){
+                auto def = func->def_list.at(binary->src2);
+                stack.insert(def->bb);
+                checkbb(def->bb);
               }
               ConstValue new_val =
                   const_compute(binary, const_map.at(binary->src1),
@@ -144,9 +155,14 @@ void constant_propagation(ir::Program *prog) {
           TypeCase(convey, ir::insns::Convert *, ins.get()) {
             if (const_map.find(convey->src) != const_map.end()) {
               Reg reg = convey->dst;
-              for (auto &uses : func->use_list[convey->src]) {
+              for (auto &uses : func->use_list[convey->dst]) {
                 stack.insert(uses->bb);
                 checkbb(uses->bb);
+              }
+              if(!func->has_param(convey->src)){
+                auto def = func->def_list.at(convey->src);
+                stack.insert(def->bb);
+                checkbb(def->bb);
               }
               ConstValue new_val =
                   const_compute(convey, const_map.at(convey->src));
@@ -185,6 +201,11 @@ void constant_propagation(ir::Program *prog) {
             for (auto iter = phi->incoming.begin(); iter != phi->incoming.end();) {
               if (!bb->prev.count(iter->first)) {
                 func->use_list.at(iter->second).erase(phi);
+                if(!func->has_param(iter->second) && func->def_list.count(iter->second)){
+                  auto def = func->def_list.at(iter->second);
+                  stack.insert(def->bb);
+                  checkbb(def->bb);
+                }
                 iter = phi->incoming.erase(iter);
               } else {
                 if (!set_reg) {
