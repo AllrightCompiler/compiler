@@ -294,4 +294,10 @@ void PseudoCompare::emit(std::ostream &os) const {
   cmp->emit(os);
 }
 
+void Phi::emit(std::ostream &os) const {
+  os << "*phi " << dst;
+  for (auto &[bb, src] : srcs)
+    os << ", " << '[' << bb->label << ", " << src << ']';
+}
+
 } // namespace armv7

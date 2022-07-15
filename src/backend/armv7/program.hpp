@@ -25,6 +25,7 @@ struct BasicBlock {
     insn->cond = cond;
     insns.emplace_back(insn);
   }
+  void insert_before_branch(Instruction *insn);
 
   static void add_edge(BasicBlock *from, BasicBlock *to) {
     from->succ.push_back(to);
@@ -55,6 +56,7 @@ struct Function {
   void do_liveness_analysis(RegFilter filter = [](const Reg &){ return true; });
   bool check_and_resolve_stack_store();
   void defer_stack_param_load(Reg r, StackObject *obj);
+  void resolve_phi();
   
   // post-register allocation passes
   void emit_prologue_epilogue();

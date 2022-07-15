@@ -544,4 +544,26 @@ struct PseudoCompare : Instruction {
   }
 };
 
+struct Phi : Instruction {
+  std::vector<std::pair<BasicBlock *, Reg>> srcs;
+  Reg dst;
+
+  Phi(Reg dst, std::vector<std::pair<BasicBlock *, Reg>> srcs) : dst{dst}, srcs{std::move(srcs)} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override {
+    std::set<Reg> uses;
+    for (auto &[_, r] : srcs)
+      uses.insert(r);
+    return uses;
+  }
+  std::vector<Reg *> reg_ptrs() override {
+    std::vector<Reg *> ptrs{&dst};
+    for (auto &[_, r] : srcs)
+      ptrs.push_back(&r);
+    return ptrs;
+  }
+};
+
 } // namespace armv7

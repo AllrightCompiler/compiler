@@ -1,6 +1,9 @@
 import os
+import subprocess
 
-compiler = './compiler'
+TIMEOUT = 10
+
+compiler = './compiler -O2'
 testcases_dir = '/mnt/d/compiler-testcases/functional'
 cross_gcc = 'arm-linux-gnueabihf-gcc'
 
@@ -14,8 +17,20 @@ def assembly(testcases, output_dir='asm'):
         asm_name = testcase.replace('.sy', '.S')
         in_path = os.path.join(testcases_dir, testcase)
         out_path = os.path.join(output_dir, asm_name)
-        ok = os.system('%s %s > %s' % (compiler, in_path, out_path))
-        if ok == 0:
+
+        command = f'{compiler} {in_path}'
+        proc = subprocess.Popen(command, stdout=open(out_path, 'w'), shell=True)
+        ok = True
+        try:
+            proc.wait(TIMEOUT)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            print('\033[31m[TLE]\033[0m %s' % testcase)
+            ok = False
+        if proc.returncode:
+            ok = False
+
+        if ok:
             print('\033[32m[ok]\033[0m %s' % testcase)
             success += 1
         else:

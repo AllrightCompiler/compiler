@@ -6,6 +6,7 @@
 #include "common/ir.hpp"
 
 #include <cassert>
+#include <iostream>
 #include <map>
 #include <unordered_map>
 
@@ -31,6 +32,14 @@ void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
 
 void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
   emit_load_imm(bb->insns, bb->insns.end(), dst, imm);
+}
+
+void BasicBlock::insert_before_branch(Instruction *insn) {
+  auto it = insns.begin();
+  for (; it != insns.end(); ++it)
+    if (it->get()->is<Branch>())
+      break;
+  insns.emplace(it, insn);
 }
 
 class ProgramTranslator {
@@ -396,6 +405,12 @@ class ProgramTranslator {
           emit_branch(cond);
         }
       }
+    }
+    else TypeCase(phi, ii::Phi *, ins) {
+      std::vector<std::pair<BasicBlock *, Reg>> srcs;
+      for (auto &[ir_bb, reg] : phi->incoming)
+        srcs.emplace_back(bb_map.at(ir_bb), Reg::from(reg));
+      bb->push(new Phi{Reg::from(phi->dst), std::move(srcs)});
     }
   }
 
@@ -826,6 +841,32 @@ void Function::replace_pseudo_insns() {
       }
     }
   }
+}
+
+void Function::resolve_phi() {
+  // de-SSA (phi resolution)
+  std::vector<std::tuple<BasicBlock *, Reg, Reg>> pending_moves; // bb, dst, src
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end();) {
+      TypeCase(phi, Phi *, it->get()) {
+        for (auto &[bb, src] : phi->srcs) {
+          // 在跳转前插入mov
+          // Reg dst = phi->dst;
+          // Reg mid = new_reg(dst.type);
+          // bb->insert_before_branch(new Move{mid, Operand2::from(src)});
+          // pending_moves.push_back({bb, dst, mid});
+          bb->insert_before_branch(new Move{phi->dst, Operand2::from(src)});
+        }
+        it = insns.erase(it);
+      }
+      else {
+        ++it;
+      }
+    }
+  }
+  // for (auto &[bb, dst, src] : pending_moves)
+  //   bb->insert_before_branch(new Move{dst, Operand2::from(src)});
 }
 
 } // namespace armv7
