@@ -7,10 +7,10 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <string>
 
 #define TypeCase(res, type, expr) if (auto res = dynamic_cast<type>(expr))
 
@@ -46,12 +46,13 @@ struct Type {
 
   int nr_dims() const { return dims.size(); }
   bool is_array() const { return dims.size() > 0; }
-  int size() const {
-    int size = 4;
+  int nr_elems() const {
+    int count = 1;
     for (int n : dims)
-      size *= n;
-    return size;
+      count *= n;
+    return count;
   }
+  int size() const { return nr_elems() * 4; }
   bool operator==(const Type &b) const {
     if (base_type != b.base_type)
       return false;
@@ -69,12 +70,8 @@ struct Type {
     new_type.dims.insert(new_type.dims.begin(), 0);
     return new_type;
   }
-  bool is_pointer() const {
-    return dims.size() > 0 && dims[0] == 0;
-  }
-  bool is_pointer_to_scalar() const {
-    return dims.size() == 1 && dims[0] == 0;
-  }
+  bool is_pointer() const { return dims.size() > 0 && dims[0] == 0; }
+  bool is_pointer_to_scalar() const { return dims.size() == 1 && dims[0] == 0; }
 
   Type() {}
   Type(ScalarType btype) : base_type{btype}, is_const{false} {}
@@ -121,14 +118,15 @@ struct ConstValue {
     assert(false);
     return false;
   }
-  
+
   ConstValue getOpposite() const {
     ConstValue new_const = (*this);
     if (type == Int) {
       new_const.iv = -new_const.iv;
     } else if (type == Float) {
       new_const.fv = -new_const.fv;
-    } else assert(false);
+    } else
+      assert(false);
     return new_const;
   }
 
@@ -153,13 +151,12 @@ struct ConstValue {
   }
 };
 
-namespace std{
-template<>
-class hash<ConstValue> {
+namespace std {
+template <> class hash<ConstValue> {
 public:
-	size_t operator()(const ConstValue& r) const{ return r.iv; }
+  size_t operator()(const ConstValue &r) const { return r.iv; }
 };
-}
+} // namespace std
 
 // variable or constant
 struct Var {

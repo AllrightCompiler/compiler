@@ -37,6 +37,9 @@ IrGen::IrGen() : program{new Program} {
       .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}}};
   lib["putf"].sig = {.ret_type = std::nullopt,
                      .param_types = {Type{String}, Type{Int}}};
+  lib["__builtin_array_init"].sig = {
+      .ret_type = std::nullopt,
+      .param_types = {Type{Int, std::vector<int>{0}}, Type{Int}}};
 }
 
 BasicBlock *IrGen::new_bb() {
@@ -105,13 +108,26 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
     }
 
     if (var_type.is_array()) {
+      bool zeroed = false;
+      int nr_elems = var_type.nr_elems();
+
+      // 对较大的局部数组直接调用内置清零初始化函数
+      if (nr_elems > 16 && !is_global) {
+        Reg n = new_reg(Int);
+        emit(new insns::LoadImm{n, nr_elems});
+        emit(
+            new insns::Call{new_reg(String), "__builtin_array_init", {reg, n}});
+        zeroed = true;
+      }
+
       int index = 0;
       std::set<int> assigned_indices;
       visit_initializer(
           std::get<std::vector<std::unique_ptr<ast::Initializer>>>(value), var,
           reg, 0, index, assigned_indices);
+
       // 如果非全局变量，在其他索引处填充0
-      if (!is_global) {
+      if (!is_global && !zeroed) {
         Reg zero_reg = new_reg(var_type.base_type);
         ConstValue zero_imm = (var_type.base_type == Float)
                                   ? ConstValue{float(0)}
@@ -119,7 +135,6 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
         emit(new insns::LoadImm{zero_reg, zero_imm});
 
         int cur_idx = 0;
-        int nr_elems = var_type.size() / 4;
         for (int idx : assigned_indices) {
           while (cur_idx < idx) {
             emit_array_init(reg, zero_reg, cur_idx);
@@ -148,11 +163,10 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
       }
     }
   } else {
-    if (!is_global && !var_type.is_array()){
+    if (!is_global && !var_type.is_array()) {
       Reg zero_reg = new_reg(var_type.base_type);
-      ConstValue zero_imm = (var_type.base_type == Float)
-                                ? ConstValue{float(0)}
-                                : ConstValue{0};
+      ConstValue zero_imm =
+          (var_type.base_type == Float) ? ConstValue{float(0)} : ConstValue{0};
       emit(new insns::LoadImm{zero_reg, zero_imm});
       emit(new insns::Store{reg, zero_reg});
     }
@@ -245,7 +259,7 @@ void IrGen::visit_function(const ast::Function &node) {
     emit(new insns::Call{new_reg(String), ".init", {}});
 
   visit_statement(*node.body());
-  
+
   // 总是添加return作为兜底
   emit(new insns::Return{std::nullopt});
 

@@ -317,18 +317,35 @@ public:
   }
 };
 
-Program::Program()
-    : lib_func_decls{"declare i32 @getint()",
-                     "declare i32 @getch()",
-                     "declare float @getfloat()",
-                     "declare void @putint(i32)",
-                     "declare void @putch(i32)",
-                     "declare void @putfloat(float)",
-                     "declare i32 @getarray(i32*)",
-                     "declare i32 @getfarray(float*)",
-                     "declare void @putarray(i32, i32*)",
-                     "declare void @putfarray(i32, float*)",
-                     "declare void @putf(i8*, i32, ...)"} {}
+Program::Program() {
+  auto p = [this](const char *s) { builtin_code.emplace_back(s); };
+  p("declare i32 @getint()");
+  p("declare i32 @getch()");
+  p("declare float @getfloat()");
+  p("declare void @putint(i32)");
+  p("declare void @putch(i32)");
+  p("declare void @putfloat(float)");
+  p("declare i32 @getarray(i32*)");
+  p("declare i32 @getfarray(float*)");
+  p("declare void @putarray(i32, i32*)");
+  p("declare void @putfarray(i32, float*)");
+  p("declare void @putf(i8*, i32, ...)");
+  p("\n");
+  p("define void @__builtin_array_init(i32* %0, i32 %1) {");
+  p("B0:");
+  p("  %zero = add i32 0, 0");
+  p("  br label %B1");
+  p("B1:");
+  p("  %i = phi i32 [%zero, %B0], [%i1, %B1]");
+  p("  %p = getelementptr i32, i32* %0, i32 %i");
+  p("  store i32 0, i32* %p");
+  p("  %i1 = add i32 %i, 1");
+  p("  %c = icmp sge i32 %i1, %1");
+  p("  br i1 %c, label %B2, label %B1");
+  p("B2:");
+  p("  ret void");
+  p("}");
+}
 
 // 需要重写的特殊指令(如 getelementptr)
 bool Program::emit_special_instruction(std::ostream &os,
@@ -431,8 +448,8 @@ void Program::emit(std::ostream &os) const {
 }
 
 void Program::emit_header(std::ostream &os) const {
-  for (auto &func_decl : lib_func_decls)
-    os << func_decl << '\n';
+  for (auto &line : builtin_code)
+    os << line << '\n';
   os << '\n';
 }
 

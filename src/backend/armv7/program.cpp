@@ -453,11 +453,29 @@ void Function::emit(std::ostream &os) {
   }
 }
 
+Program::Program() : labels_used{0} {
+  auto p = [this](const char *s) { builtin_code.emplace_back(s); };
+  p("__builtin_array_init:");
+  p("    add r1, r0, r1, lsl #2");
+  p("    mov r2, #0");
+  p("1:");
+  p("    str r2, [r0]");
+  p("    add r0, r0, #4");
+  p("    cmp r0, r1");
+  p("    blt 1b");
+  p("    bx  lr");
+}
+
 void Program::emit(std::ostream &os) {
   os << ".cpu cortex-a72\n";
   os << ".arm\n";
+  os << ".fpu vfp\n";
   os << ".global main\n";
   os << ".section .text\n\n";
+
+  for (auto &line : builtin_code)
+    os << line << '\n';
+  os << '\n';
 
   for (auto &[_, f] : functions)
     f.emit(os);

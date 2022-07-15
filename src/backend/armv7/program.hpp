@@ -67,12 +67,13 @@ struct Function {
 };
 
 struct Program {
+  std::vector<std::string> builtin_code;
   std::unordered_map<std::string, Function> functions;
 
   int labels_used;
   std::string new_label() { return ".L" + std::to_string(labels_used++); }
 
-  Program() : labels_used{0} {}
+  Program();
 
   void emit(std::ostream &os);
 };

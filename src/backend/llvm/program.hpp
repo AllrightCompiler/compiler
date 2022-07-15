@@ -30,7 +30,7 @@ struct Function {
 };
 
 struct Program {
-  vector<string> lib_func_decls;
+  vector<string> builtin_code;
   map<string, ir::LibFunction> lib_funcs;
   map<string, Function> functions;
   frontend::VarTable global_vars;
