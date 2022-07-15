@@ -244,15 +244,18 @@ void RegBranch::emit(std::ostream &os) const {
 }
 
 void LoadStack::emit(std::ostream &os) const {
-  os << "*load-stack " << dst << ", obj[" << base << "]+" << offset;
+  os << "*load-stack " << dst << ", obj[" << base->size << ", " << base->offset
+     << "]+" << offset;
 }
 
 void StoreStack::emit(std::ostream &os) const {
-  os << "*store-stack " << src << ", obj[" << base << "]+" << offset;
+  os << "*store-stack " << src << ", obj[" << base->size << ", " << base->offset
+     << "]+" << offset;
 }
 
 void LoadStackAddr::emit(std::ostream &os) const {
-  os << "*local-addr " << dst << ", obj[" << base << "]+" << offset;
+  os << "*local-addr " << dst << ", obj[" << base->size << ", " << base->offset
+     << "]+" << offset;
 }
 
 void AdjustSp::emit(std::ostream &os) const { os << "*sp-adjust " << offset; }
@@ -290,6 +293,19 @@ void CountLeadingZero::emit(std::ostream &os) const {
 void PseudoCompare::emit(std::ostream &os) const {
   os << "*compare-" << cond << ' ' << dst << ' ';
   cmp->emit(os);
+}
+
+void Convert::emit(std::ostream &os) const {
+  os << "vcvt";
+  switch (this->type) {
+  case ConvertType::Float2Int:
+    os << ".s32.f32 ";
+    break;
+  case ConvertType::Int2Float:
+    os << ".f32.s32 ";
+    break;
+  }
+  os << this->dst << ", " << this->src;
 }
 
 } // namespace armv7

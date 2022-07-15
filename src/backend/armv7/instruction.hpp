@@ -544,4 +544,24 @@ struct PseudoCompare : Instruction {
   }
 };
 
+enum class ConvertType {
+  Float2Int,
+  Int2Float,
+};
+
+struct Convert : Instruction {
+  Reg dst, src;
+  ConvertType type;
+
+  Convert(Reg dst, Reg src, ConvertType type) : dst{dst}, src{src}, type{type} {
+    assert(dst.is_float());
+    assert(src.is_float());
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
+};
+
 } // namespace armv7

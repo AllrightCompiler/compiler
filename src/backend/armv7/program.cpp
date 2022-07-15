@@ -198,7 +198,18 @@ class ProgramTranslator {
                              Operand2::from(LSL, index_reg, 2)});
     }
     else TypeCase(cvt, ii::Convert *, ins) {
-      // TODO: emit vmov + vcvt
+      auto const dst = Reg::from(cvt->dst);
+      auto const src = Reg::from(cvt->src);
+      auto const temp = fn.new_reg(RegType::Fp);
+      if (cvt->dst.type != cvt->src.type) {
+        if (cvt->dst.type == ScalarType::Float) { // int -> float
+          bb->push(new Move(temp, Operand2::from(src)));
+          bb->push(new Convert(dst, temp, ConvertType::Int2Float));
+        } else { // float -> int
+          bb->push(new Convert(temp, src, ConvertType::Float2Int));
+          bb->push(new Move(dst, Operand2::from(temp)));
+        }
+      }
     }
     else TypeCase(unary, ii::Unary *, ins) {
       Reg dst = Reg::from(unary->dst);
