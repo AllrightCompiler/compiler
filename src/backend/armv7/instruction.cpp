@@ -125,8 +125,12 @@ ostream &operator<<(ostream &os, const Operand2 &opd) {
     os << "#" << opd.get<int>();
   else if (opd.is_imm_shift())
     os << opd.get<RegImmShift>();
-  else
+  else if (opd.is_reg_shift())
     os << opd.get<RegRegShift>();
+  else {
+    assert(opd.is_fpimm());
+    os << '#' << opd.get<float>();
+  }
   return os;
 }
 
@@ -145,12 +149,15 @@ int get_padding_length(const char *op, ExCond cond, bool is_float,
 }
 
 ostream &Instruction::write_op(std::ostream &os, const char *op, bool is_float,
-                               bool is_ldst) const {
+                               bool is_ldst, bool is_push_pop) const {
   if (is_float) {
-    os << 'v' << op << cond << '.';
-    if (!is_ldst)
-      os << 'f';
-    os << "32 ";
+    os << 'v' << op << cond;
+    if (!is_push_pop) {
+      os << '.';
+      if (!is_ldst)
+        os << 'f';
+      os << "32 ";
+    }
   } else {
     os << op << cond << ' ';
   }
@@ -166,9 +173,14 @@ void RType::emit(std::ostream &os) const {
       [Add] = "add",
       [Sub] = "sub",
       [Mul] = "mul",
-      [Div] = "sdiv",
+      [Div] = "div",
   };
-  write_op(os, OP_NAMES[op], dst.is_float()) << dst << ", " << s1 << ", " << s2;
+  std::string op_name = OP_NAMES[op];
+  if (op == Div && !dst.is_float()) {
+    op_name = 's' + op_name;
+  }
+  write_op(os, op_name.c_str(), dst.is_float())
+      << dst << ", " << s1 << ", " << s2;
 }
 
 void IType::emit(std::ostream &os) const {
@@ -208,8 +220,13 @@ void LoadAddr::emit(std::ostream &os) const {
 void Compare::emit(std::ostream &os) const {
   // vcmpe.f32
   // vmrs APSR_nzcv, FPSCR
+  auto const fp = s1.is_float();
   auto op = neg ? "cmn" : "cmp";
-  write_op(os, op) << s1 << ", " << s2;
+  write_op(os, op, fp) << s1 << ", " << s2;
+  if (fp) {
+    next_instruction(os);
+    write_op(os, "vmrs") << "APSR_nzcv, FPSCR";
+  }
 }
 
 void Load::emit(std::ostream &os) const {
@@ -261,7 +278,7 @@ void LoadStackAddr::emit(std::ostream &os) const {
 void AdjustSp::emit(std::ostream &os) const { os << "*sp-adjust " << offset; }
 
 void Push::emit(std::ostream &os) const {
-  write_op(os, "push") << '{';
+  write_op(os, "push", srcs.front().is_float(), false, true) << '{';
   int n = srcs.size();
   for (int i = 0; i < n; ++i) {
     if (i != 0)
@@ -272,7 +289,7 @@ void Push::emit(std::ostream &os) const {
 }
 
 void Pop::emit(std::ostream &os) const {
-  write_op(os, "pop") << '{';
+  write_op(os, "pop", dsts.front().is_float(), false, true) << '{';
   int n = dsts.size();
   for (int i = 0; i < n; ++i) {
     if (i != 0)
@@ -296,16 +313,16 @@ void PseudoCompare::emit(std::ostream &os) const {
 }
 
 void Convert::emit(std::ostream &os) const {
-  os << "vcvt";
+  std::string op = "vcvt";
   switch (this->type) {
   case ConvertType::Float2Int:
-    os << ".s32.f32 ";
+    op += ".s32.f32";
     break;
   case ConvertType::Int2Float:
-    os << ".f32.s32 ";
+    op += ".f32.s32";
     break;
   }
-  os << this->dst << ", " << this->src;
+  write_op(os, op.c_str()) << this->dst << ", " << this->src;
 }
 
 } // namespace armv7

@@ -140,18 +140,17 @@ class ProgramTranslator {
       bb->push(new LoadAddr{Reg::from(load->dst), load->var_name});
     }
     else TypeCase(load, ii::LoadImm *, ins) {
-      // TODO: 对于某些浮点立即数，可以生成vmov.f32
       Reg dst = Reg::from(load->dst);
       if (!dst.is_float()) {
         emit_load_imm(bb, dst, load->imm.iv);
       } else {
         float imm = load->imm.fv;
-        if (is_vmov_f32_imm(imm))
-          ; // TODO
-        else {
+        if (false && is_vmov_f32_imm(imm)) { // TODO
+          bb->push(new Move(dst, Operand2::from(imm)));
+        } else {
           Reg t = fn.new_reg(General);
           emit_load_imm(bb, t, *reinterpret_cast<int *>(&imm));
-          // TODO: emit vmov
+          bb->push(new Move(dst, Operand2::from(t)));
         }
       }
     }
@@ -223,7 +222,7 @@ class ProgramTranslator {
         }
         break;
       case UnaryOp::Not: {
-        if (!dst.is_float()) {
+        if (!dst.is_float() && !src.is_float()) {
           // bb->push(new Move{dst, Operand2::from(0)});
           // bb->push(new Compare{src, Operand2::from(0)});
           // bb->push(ExCond::Eq, new Move{dst, Operand2::from(1)});
@@ -231,7 +230,8 @@ class ProgramTranslator {
           bb->push(new CountLeadingZero{dst, src});
           bb->push(new Move{dst, Operand2::from(LSR, dst, 5)});
         } else {
-          // TODO: emit vcmp vmrs etc.
+          auto cmp = std::make_unique<Compare>(src, Operand2::from(0));
+          bb->push(ExCond::Eq, new PseudoCompare(cmp.release(), dst));
         }
 
         if (cmp_info.count(src)) {

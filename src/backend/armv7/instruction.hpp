@@ -96,11 +96,12 @@ struct RegRegShift {
 // using Operand2 = std::variant<int, RegImmShift, RegRegShift>;
 
 struct Operand2 {
-  std::variant<int, RegImmShift, RegRegShift> opd;
+  std::variant<int, RegImmShift, RegRegShift, float> opd;
 
   bool is_imm8m() const { return opd.index() == 0; }
   bool is_imm_shift() const { return opd.index() == 1; }
   bool is_reg_shift() const { return opd.index() == 2; }
+  bool is_fpimm() const { return opd.index() == 3; }
 
   template <typename T> auto &get() const { return std::get<T>(opd); }
 
@@ -131,6 +132,7 @@ struct Operand2 {
   static Operand2 from(ShiftType type, Reg r, int s) {
     return Operand2{.opd = RegImmShift{type, r, s}};
   }
+  static Operand2 from(float imm) { return Operand2{.opd = imm}; }
 };
 
 struct Instruction {
@@ -155,7 +157,8 @@ struct Instruction {
   }
 
   std::ostream &write_op(std::ostream &os, const char *op,
-                         bool is_float = false, bool is_ldst = false) const;
+                         bool is_float = false, bool is_ldst = false,
+                         bool is_push_pop = false) const;
 };
 
 void next_instruction(std::ostream &os);
