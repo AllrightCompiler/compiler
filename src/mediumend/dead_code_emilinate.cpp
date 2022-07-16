@@ -268,7 +268,6 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
             TypeCase(phi, ir::insns::Phi *, ins.get()){
               if(phi->incoming.count(target)){
                 phi->incoming[bb] = phi->incoming[target];
-                phi->incoming.erase(target);
               }
             } else {
               break;
