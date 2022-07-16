@@ -237,11 +237,13 @@ struct Move : Instruction {
   }
 
   // “正规”的mov Rd, Rs
+  // 不允许通用寄存器与浮点寄存器之间的 vmov
   bool is_reg_mov() const {
     if (!src.is_imm_shift())
       return false;
     auto &reg_shift = std::get<RegImmShift>(src.opd);
-    return !flip && reg_shift.s == 0;
+    return !flip && reg_shift.s == 0 &&
+           (dst.is_float() == reg_shift.r.is_float());
   }
 };
 

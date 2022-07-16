@@ -101,26 +101,53 @@ void ColoringRegAllocator::build() {
       auto use = ins->use();
       TypeCase(mov, Move *, ins) {
         if (mov->is_reg_mov()) {
-          for (Reg u : use)
-            live.erase(u);
-          for (Reg n : def)
-            move_list[n].insert(mov);
-          for (Reg n : use)
-            move_list[n].insert(mov);
-          worklist_moves.insert(mov);
+          auto consider = false;
+          for (Reg u : use) {
+            if (this->reg_filter(u)) {
+              consider = true;
+              live.erase(u);
+            }
+          }
+          for (Reg n : def) {
+            if (this->reg_filter(n)) {
+              consider = true;
+              move_list[n].insert(mov);
+            }
+          }
+          for (Reg n : use) {
+            if (this->reg_filter(n)) {
+              move_list[n].insert(mov);
+            }
+          }
+          if (consider) {
+            worklist_moves.insert(mov);
+          }
         }
       }
 
-      for (Reg d : def)
-        live.insert(d);
-      for (Reg d : def)
-        for (Reg l : live)
-          add_edge(l, d);
+      for (Reg d : def) {
+        if (this->reg_filter(d)) {
+          live.insert(d);
+        }
+      }
+      for (Reg d : def) {
+        if (this->reg_filter(d)) {
+          for (Reg l : live) {
+            add_edge(l, d);
+          }
+        }
+      }
       // live := use(I) ∪ (live - def(I))
-      for (Reg d : def)
-        live.erase(d);
-      for (Reg u : use)
-        live.insert(u);
+      for (Reg d : def) {
+        if (this->reg_filter(d)) {
+          live.erase(d);
+        }
+      }
+      for (Reg u : use) {
+        if (this->reg_filter(u)) {
+          live.insert(u);
+        }
+      }
     }
   }
 }
