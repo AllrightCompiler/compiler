@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-TIMEOUT = 10
+TIMEOUT = 60
 
 compiler = './compiler -O2'
 testcases_dir = '/mnt/d/compiler-testcases/functional'
