@@ -68,14 +68,14 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     for(auto iter = caller->bbs.begin(); iter != caller->bbs.end(); ++iter){
       if(iter->get() == inst_bb){
         iter++;
-        caller->bbs.insert(iter, std::unique_ptr<BasicBlock>(ret_bb));
-        for(auto riter = callee->bbs.rbegin(); riter != callee->bbs.rend(); ++riter){
+        for(auto riter = callee->bbs.begin(); riter != callee->bbs.end(); ++riter){
           auto copy = new BasicBlock;
           copy->label = name + "_" + riter->get()->label;
           copy->func = caller;
           bb2bb[riter->get()] = copy;
           caller->bbs.insert(iter, std::unique_ptr<BasicBlock>(copy));
         }
+        caller->bbs.insert(iter, std::unique_ptr<BasicBlock>(ret_bb));
         break;
       }
     }
