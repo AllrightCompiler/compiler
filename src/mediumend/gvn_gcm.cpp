@@ -516,11 +516,12 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
     BasicBlock *lca = nullptr, *use;
     if(use_list.count(output->dst)) {
       for (auto i : use_list.at(output->dst)) {
+        use = nullptr;
         schedule_late(visited, placement, cfg, bbs, use_list, i);
         TypeCase(phi, ir::insns::Phi *, i) {
           for (auto pair : phi->incoming) {
             if (pair.second == output->dst) {
-              use = pair.first;
+              use = (use == nullptr) ? pair.first : find_lca(use, pair.first);
             }
           }
         } else {
