@@ -6,16 +6,6 @@
 #include <variant>
 
 namespace std {
-template <class K, class V>
-struct hash<unordered_map<K, V> > {
-  size_t operator()(const unordered_map<K, V> &r) const {
-    size_t res = 0;
-    for (auto t : r) {
-      res = res + hash<K>()(t.first) * 1221821 + hash<V>()(t.second);
-    }
-    return res;
-  }
-};
 template <class T>
 struct hash<vector<T>> {
   size_t operator()(const vector<T> &r) const {
@@ -143,7 +133,6 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(const unordered_ma
 }
 
 // use reg as value number
-static unordered_map<unordered_map<BasicBlock *, Reg>, Reg> hashTable_phi;
 static unordered_map<ConstValue, Reg> hashTable_loadimm;
 static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
 static unordered_map<std::string, Reg> hashTable_loadaddr;
@@ -156,14 +145,7 @@ static unordered_map<Instruction *, Reg> hashTable;
 // lookup Value Number of inst, insert when not found
 Reg vn_get(Instruction *inst) {
   if (hashTable.find(inst) != hashTable.end()) return hashTable[inst];
-  TypeCase(phi, ir::insns::Phi *, inst) {
-    if (hashTable_phi.count(phi->incoming)) {
-      hashTable[inst] = hashTable_phi[phi->incoming];
-    } else {
-      hashTable[inst] = phi->dst;
-      hashTable_phi[phi->incoming] = phi->dst;
-    }
-  } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
+  TypeCase(loadimm, ir::insns::LoadImm *, inst) {
     if (hashTable_loadimm.count(loadimm->imm)) {
       hashTable[inst] = hashTable_loadimm[loadimm->imm];
     } else {
@@ -591,7 +573,6 @@ void gcm(Function *f) {
 void gvn_gcm(ir::Program *prog) {
   program = prog;
   for(auto &func : prog->functions){
-    hashTable_phi.clear();
     hashTable_loadimm.clear();
     hashTable_binary.clear();
     hashTable_loadaddr.clear();
@@ -601,7 +582,6 @@ void gvn_gcm(ir::Program *prog) {
     rConstMap.clear();
     hashTable.clear();
     func.second.cfg->remove_unreachable_bb();
-    // std::cout << "func: " << func.first << std::endl;
     gvn(&func.second);
     gcm(&func.second);
   }
