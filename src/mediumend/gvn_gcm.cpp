@@ -112,7 +112,7 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(const unordered_ma
 static unordered_map<ConstValue, Reg> hashTable_loadimm;
 static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
 static unordered_map<std::string, Reg> hashTable_loadaddr;
-static unordered_map<tuple<Reg, vector<Reg> >, Reg> hashTable_gep;
+static unordered_map<tuple<Type, Reg, vector<Reg> >, Reg> hashTable_gep;
 static unordered_map<tuple<std::string, vector<Reg> >, Reg> hashTable_call;
 static unordered_map<Reg, ConstValue> constMap;
 static unordered_map<ConstValue, Reg> rConstMap;
@@ -184,11 +184,11 @@ Reg vn_get(Instruction *inst) {
       hashTable_loadaddr[loadaddr->var_name] = loadaddr->dst;
     }
   } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
-    if (hashTable_gep.count(std::make_tuple(gep->base, gep->indices))) {
-      hashTable[inst] = hashTable_gep[make_tuple(gep->base, gep->indices)];
+    if (hashTable_gep.count(std::make_tuple(gep->type, gep->base, gep->indices))) {
+      hashTable[inst] = hashTable_gep[make_tuple(gep->type, gep->base, gep->indices)];
     } else {
       hashTable[inst] = gep->dst;
-      hashTable_gep[make_tuple(gep->base, gep->indices)] = gep->dst;
+      hashTable_gep[make_tuple(gep->type, gep->base, gep->indices)] = gep->dst;
     }
   } else TypeCase(call, ir::insns::Call *, inst) {
     if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {

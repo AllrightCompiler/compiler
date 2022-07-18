@@ -170,3 +170,22 @@ struct Var {
   Var(Type type_, std::optional<ConstValue> value)
       : type{std::move(type_)}, val{std::move(value)} {}
 };
+
+namespace std {
+template <class T>
+struct hash<vector<T>> {
+  size_t operator()(const vector<T> &r) const {
+    size_t res = 0;
+    for (auto t : r) {
+      res = res * 1221821 + hash<T>()(t);
+    }
+    return res;
+  }
+};
+template <> class hash<Type> {
+public:
+  size_t operator()(const Type &r) const {
+    return hash<ScalarType>()(r.base_type) * 17 + hash<std::vector<int> >()(r.dims);
+  }
+};
+} // namespace std

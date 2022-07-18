@@ -39,16 +39,6 @@ template <> class hash<ir::Reg> {
 public:
   size_t operator()(const ir::Reg &r) const { return r.id; }
 };
-template <class T>
-struct hash<vector<T>> {
-  size_t operator()(const vector<T> &r) const {
-    size_t res = 0;
-    for (auto t : r) {
-      res = res * 1221821 + hash<T>()(t);
-    }
-    return res;
-  }
-};
 template <class T1, class T2>
 struct hash<tuple<T1, T2>> {
   size_t operator()(const tuple<T1, T2> &r) const {
