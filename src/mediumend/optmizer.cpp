@@ -33,7 +33,12 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   // 移除无用指令后可能有的函数不会被调用，pure function / unreachable BB里的function
   remove_unused_function,
   clean_useless_cf,
+  
   operator_strength_reduction,
+  gvn_gcm,
+  constant_propagation,
+  remove_unused_function,
+  clean_useless_cf,
 };
 
 }
