@@ -136,6 +136,11 @@ void BasicBlock::push_front(Instruction *insn) {
   insn->add_use_def();
 }
 
+void BasicBlock::pop_front() {
+  insns.front()->remove_use_def();
+  insns.pop_front(); // auto release
+}
+
 void BasicBlock::insert_after_phi(Instruction *insn) {
   auto it = insns.begin();
   for (; it != insns.end(); it++) {
@@ -145,6 +150,18 @@ void BasicBlock::insert_after_phi(Instruction *insn) {
   insns.emplace(it, insn);
   insn->bb = this;
   // insn->add_use_def();
+}
+
+void BasicBlock::insert_after_inst(Instruction *prev, Instruction *insn) {
+  auto it = insns.begin();
+  for (; it != insns.end(); it++) {
+    if (it->get() == prev) break;
+  }
+  assert(it != insns.end());
+  it++;
+  insns.emplace(it, insn);
+  insn->bb = this;
+  insn->add_use_def();
 }
 
 void BasicBlock::insert_before_ter(Instruction *insn) {
@@ -448,6 +465,7 @@ void BasicBlock::rpo_dfs(vector<BasicBlock *> &rpo) {
   for (auto next : succ) {
     next->rpo_dfs(rpo);
   }
+  rpo_num = rpo.size();
   rpo.emplace_back(this);
 }
 

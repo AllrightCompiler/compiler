@@ -13,6 +13,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"main_global_var_to_local", main_global_var_to_local},
   {"gvn_gcm", gvn_gcm},
   {"function_inline", function_inline},
+  {"operator_strength_reduction", operator_strength_reduction},
 };
 
 // define default passes here
@@ -30,6 +31,12 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   // simplification_phi,
   // remove_uneffective_inst,
   // 移除无用指令后可能有的函数不会被调用，pure function / unreachable BB里的function
+  remove_unused_function,
+  clean_useless_cf,
+  
+  operator_strength_reduction,
+  gvn_gcm,
+  constant_propagation,
   remove_unused_function,
   clean_useless_cf,
 };
