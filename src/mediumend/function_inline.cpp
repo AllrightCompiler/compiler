@@ -102,6 +102,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
       auto reg = caller->new_reg(each.first.type);
       reg2reg[each.first] = reg;
     }
+    vector<ir::insns::Alloca *> allocas;
     for(auto iter = callee->bbs.rbegin(); iter != callee->bbs.rend(); ++iter){
       auto raw_bb = iter->get();
       BasicBlock* mapped_bb = bb2bb.at(raw_bb);
@@ -140,7 +141,8 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()){
           inst_copy = new ir::insns::LoadAddr(reg2reg.at(loadaddr->dst), loadaddr->var_name);
         } else TypeCase(alloc, ir::insns::Alloca *, inst.get()){
-          inst_copy = new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type);
+          allocas.push_back(new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type));
+          continue;
         } else TypeCase(getptr, ir::insns::GetElementPtr *, inst.get()){
           vector<Reg> indexs_copy;
           for(auto &index : getptr->indices){
@@ -154,6 +156,10 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         }
         mapped_bb->push_back(inst_copy);
       }
+    }
+    // TODO: 找一个合适的位置插入，或者就等后面指令调度
+    for(int i = allocas.size() - 1; i >= 0; i--){
+      caller->bbs.front()->push_front(allocas[i]);
     }
     if(ret_phi){
       ret_phi->add_use_def();
