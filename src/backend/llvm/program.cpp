@@ -330,6 +330,8 @@ Program::Program() {
   p("declare void @putarray(i32, i32*)");
   p("declare void @putfarray(i32, float*)");
   p("declare void @putf(i8*, i32, ...)");
+  p("declare void @_sysy_starttime(i32)");
+  p("declare void @_sysy_stoptime(i32)");
   p("\n");
   p("define void @__builtin_array_init(i32* %0, i32 %1) {");
   p("B0:");
