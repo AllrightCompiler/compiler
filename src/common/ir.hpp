@@ -39,6 +39,28 @@ template <> class hash<ir::Reg> {
 public:
   size_t operator()(const ir::Reg &r) const { return r.id; }
 };
+template <class T>
+struct hash<vector<T>> {
+  size_t operator()(const vector<T> &r) const {
+    size_t res = 0;
+    for (auto t : r) {
+      res = res * 1221821 + hash<T>()(t);
+    }
+    return res;
+  }
+};
+template <class T1, class T2>
+struct hash<tuple<T1, T2>> {
+  size_t operator()(const tuple<T1, T2> &r) const {
+    return hash<T1>()(get<0>(r)) * 1221821 + hash<T2>()(get<1>(r)) * 31;
+  }
+};
+template <class T1, class T2, class T3>
+struct hash<tuple<T1, T2, T3>> {
+  size_t operator()(const tuple<T1, T2, T3> &r) const {
+    return hash<T1>()(get<0>(r)) * 264893 + hash<T2>()(get<1>(r)) * 1221821 + hash<T3>()(get<2>(r)) * 31;
+  }
+};
 } // namespace std
 
 namespace ir {
@@ -93,13 +115,18 @@ struct BasicBlock {
   Loop *loop = nullptr;
   bool visit;
   int domlevel;
+  int rpo_num; // id in rpo, available after compute_rpo
 
   // modify use-def
   void push_back(Instruction *insn);
   // modify use-def
   void push_front(Instruction *insn);
+  // modify use-def
+  void pop_front();
   // not modify use-def
   void insert_after_phi(Instruction *insn);
+  // modify use-def
+  void insert_after_inst(Instruction *prev, Instruction *insn);
   // not modify use-def
   void insert_before_ter(Instruction *insn);
   // not modify use-def
