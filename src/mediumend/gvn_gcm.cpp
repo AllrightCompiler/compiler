@@ -231,9 +231,12 @@ void gvn(Function *f) {
         unordered_map <Reg, Reg> regsToChange;
         for (auto income : phi->incoming) {
           Reg new_reg = income.second;
-          if (!f->has_param(new_reg)) {
-            new_reg = vn_get(f->def_list.at(income.second));
-          }
+          // TO AVOID WRONG ORDER OF INSTS BE VISITED
+          // if (!f->has_param(new_reg)) {
+          //   if (income.first != bb) {
+          //     new_reg = vn_get(f->def_list.at(income.second));
+          //   }
+          // }
           if (income.second != new_reg) {
             regsToChange[income.second] = new_reg;
           }
@@ -319,6 +322,11 @@ void gvn(Function *f) {
             auto reg = std::get<Reg>(ret.value());
             copy_propagation(f->use_list, binary->dst, reg);
           }
+        } else {
+          Reg new_reg = vn_get(binary); // guarantee right order of insts be visited
+          if (new_reg != binary->dst) {
+            copy_propagation(f->use_list, binary->dst, new_reg);
+          }
         }
       }
       TypeCase(call, ir::insns::Call *, insn.get()) {
@@ -370,6 +378,7 @@ BasicBlock *find_lca(BasicBlock *a, BasicBlock *b) {
 bool is_pinned(Instruction *inst) {
   TypeCase(load, ir::insns::Load *, inst) return true;
   TypeCase(phi, ir::insns::Phi *, inst) return true;
+  TypeCase(alloca, ir::insns::Alloca *, inst) return true; // TODO: Alloca should be able to move
   TypeCase(call, ir::insns::Call *, inst) {
     if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
       return false;
