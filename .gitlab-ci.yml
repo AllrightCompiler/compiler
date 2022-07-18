@@ -10,6 +10,9 @@ build:
     - cd build
     - cmake ..
     - make -j
+  artifacts:
+    paths:
+      - build/compiler
 
 functional2022:
   stage: mediumend-test

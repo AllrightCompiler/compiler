@@ -4,7 +4,7 @@ import time
 import subprocess
 from junit_xml import TestSuite, TestCase
 
-TIMEOUT = 60
+TIMEOUT = 30
 
 def get_testcases(test_dir):
     testcases = []
