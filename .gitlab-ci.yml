@@ -1,0 +1,32 @@
+stages:
+    - build
+    - mediumend-test
+
+build:
+  stage: build
+  script:
+    - rm -r build/ || true
+    - mkdir build
+    - cd build
+    - cmake ..
+    - make -j
+
+functional2022:
+  stage: mediumend-test
+  script:
+    - cd build
+    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2022/functional/ test_result_functional2022.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_functional2022.xml
+
+performance2022:
+  stage: mediumend-test
+  script:
+    - cd build
+    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2022/performance/ test_result_performance2022.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_performance2022.xml
