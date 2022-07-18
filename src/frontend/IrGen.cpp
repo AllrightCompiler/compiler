@@ -261,7 +261,16 @@ void IrGen::visit_function(const ast::Function &node) {
   visit_statement(*node.body());
 
   // 总是添加return作为兜底
-  emit(new insns::Return{std::nullopt});
+  std::optional<Reg> ret_val = std::nullopt;
+  if (ret_type) {
+    ret_val = new_reg(ret_type->type());
+    if(ret_type->type() == ScalarType::Int){
+      emit(new insns::LoadImm(ret_val.value(), ConstValue(0)));
+    } else {
+      emit(new insns::LoadImm(ret_val.value(), ConstValue(0.0f)));
+    }
+  }
+  emit(new insns::Return{ret_val});
 
   cur_func->nr_regs = local_regs;
   cur_func = nullptr;
