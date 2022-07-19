@@ -214,6 +214,9 @@ void CFG::compute_rpo() {
   func->clear_visit();
   rpo.clear();
   func->bbs.front()->rpo_dfs(rpo);
+  for (auto bb: rpo) {
+    bb->rpo_num = rpo.size() - bb->rpo_num; // reverse
+  }
   std::reverse(rpo.begin(), rpo.end());
 }
 
