@@ -37,6 +37,12 @@ IrGen::IrGen() : program{new Program} {
       .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}}};
   lib["putf"].sig = {.ret_type = std::nullopt,
                      .param_types = {Type{String}, Type{Int}}};
+  lib["starttime"].sig = {.ret_type = std::nullopt, .param_types = {}};
+  lib["stoptime"].sig = {.ret_type = std::nullopt, .param_types = {}};
+  lib["_sysy_starttime"].sig = {.ret_type = std::nullopt,
+                                .param_types = {Type{Int}}};
+  lib["_sysy_stoptime"].sig = {.ret_type = std::nullopt,
+                               .param_types = {Type{Int}}};
   lib["__builtin_array_init"].sig = {
       .ret_type = std::nullopt,
       .param_types = {Type{Int, std::vector<int>{0}}, Type{Int}}};
@@ -261,7 +267,16 @@ void IrGen::visit_function(const ast::Function &node) {
   visit_statement(*node.body());
 
   // 总是添加return作为兜底
-  emit(new insns::Return{std::nullopt});
+  std::optional<Reg> ret_val = std::nullopt;
+  if (ret_type) {
+    ret_val = new_reg(ret_type->type());
+    if (ret_type->type() == ScalarType::Int) {
+      emit(new insns::LoadImm(ret_val.value(), ConstValue(0)));
+    } else {
+      emit(new insns::LoadImm(ret_val.value(), ConstValue(0.0f)));
+    }
+  }
+  emit(new insns::Return{ret_val});
 
   cur_func->nr_regs = local_regs;
   cur_func = nullptr;
@@ -377,7 +392,7 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
     return visit_lvalue(*lvalue, false);
   }
   TypeCase(call, const ast::Call *, expr) {
-    auto &callee_name = call->func().name();
+    auto callee_name = call->func().name();
     ir::FunctionSignature *sig = nullptr;
     if (program->functions.count(callee_name))
       sig = &(program->functions[callee_name].sig);
@@ -387,23 +402,32 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
     int nr_params = sig->param_types.size();
     int nr_args = call->args().size();
     std::vector<Reg> arg_regs;
-    for (int i = 0; i < nr_args; ++i) {
-      auto &arg = call->args()[i];
-      if (arg.index() == 0) { // expression
-        auto &arg_expr = std::get<std::unique_ptr<ast::Expression>>(arg);
-        Reg reg = visit_arith_expr(arg_expr);
-        if (i < nr_params && !sig->param_types[i].is_array())
-          reg = scalar_cast(reg, sig->param_types[i].base_type);
-        arg_regs.push_back(reg);
-      } else { // string literal
-        auto &str_literal = std::get<ast::StringLiteral>(arg);
-        int str_id = program->string_table.size();
-        program->string_table.push_back(str_literal.value());
-        auto str_name = ".str." + std::to_string(str_id);
-        Reg reg = new_reg(String);
-        emit(new insns::LoadAddr{reg, str_name});
-        arg_regs.push_back(reg);
+    if (callee_name != "starttime" && callee_name != "stoptime") {
+      for (int i = 0; i < nr_args; ++i) {
+        auto &arg = call->args()[i];
+        if (arg.index() == 0) { // expression
+          auto &arg_expr = std::get<std::unique_ptr<ast::Expression>>(arg);
+          Reg reg = visit_arith_expr(arg_expr);
+          if (i < nr_params && !sig->param_types[i].is_array())
+            reg = scalar_cast(reg, sig->param_types[i].base_type);
+          arg_regs.push_back(reg);
+        } else { // string literal
+          auto &str_literal = std::get<ast::StringLiteral>(arg);
+          int str_id = program->string_table.size();
+          program->string_table.push_back(str_literal.value());
+          auto str_name = ".str." + std::to_string(str_id);
+          Reg reg = new_reg(String);
+          emit(new insns::LoadAddr{reg, str_name});
+          arg_regs.push_back(reg);
+        }
       }
+    } else {
+      // 转写内置宏starttime和stoptime
+      int lineno = call->line();
+      Reg reg = new_reg(Int);
+      emit(new insns::LoadImm{reg, lineno});
+      arg_regs.push_back(reg);
+      callee_name = "_sysy_" + callee_name;
     }
 
     // int和float即相应类型，剩下的随便写个string
@@ -528,7 +552,8 @@ void IrGen::visit_while(const ast::While &node) {
   break_targets.push_back(next_bb);
   continue_targets.push_back(cond_bb);
   visit_statement(*node.body());
-  emit(new insns::Jump{cond_bb});
+  auto body_br_targets = visit_logical_expr(node.cond());
+  body_br_targets.resolve(body_bb, next_bb);
   continue_targets.pop_back();
   break_targets.pop_back();
   cur_bb = next_bb;

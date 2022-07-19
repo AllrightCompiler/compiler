@@ -68,14 +68,14 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     for(auto iter = caller->bbs.begin(); iter != caller->bbs.end(); ++iter){
       if(iter->get() == inst_bb){
         iter++;
-        caller->bbs.insert(iter, std::unique_ptr<BasicBlock>(ret_bb));
-        for(auto riter = callee->bbs.rbegin(); riter != callee->bbs.rend(); ++riter){
+        for(auto riter = callee->bbs.begin(); riter != callee->bbs.end(); ++riter){
           auto copy = new BasicBlock;
           copy->label = name + "_" + riter->get()->label;
           copy->func = caller;
           bb2bb[riter->get()] = copy;
           caller->bbs.insert(iter, std::unique_ptr<BasicBlock>(copy));
         }
+        caller->bbs.insert(iter, std::unique_ptr<BasicBlock>(ret_bb));
         break;
       }
     }
@@ -102,6 +102,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
       auto reg = caller->new_reg(each.first.type);
       reg2reg[each.first] = reg;
     }
+    vector<ir::insns::Alloca *> allocas;
     for(auto iter = callee->bbs.rbegin(); iter != callee->bbs.rend(); ++iter){
       auto raw_bb = iter->get();
       BasicBlock* mapped_bb = bb2bb.at(raw_bb);
@@ -140,7 +141,8 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()){
           inst_copy = new ir::insns::LoadAddr(reg2reg.at(loadaddr->dst), loadaddr->var_name);
         } else TypeCase(alloc, ir::insns::Alloca *, inst.get()){
-          inst_copy = new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type);
+          allocas.push_back(new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type));
+          continue;
         } else TypeCase(getptr, ir::insns::GetElementPtr *, inst.get()){
           vector<Reg> indexs_copy;
           for(auto &index : getptr->indices){
@@ -155,10 +157,21 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         mapped_bb->push_back(inst_copy);
       }
     }
+    // 找一个合适的位置插入，或者就等后面指令调度
+    caller->cfg->build();
+    caller->cfg->loop_analysis();
+    while(inst_bb->loop){
+      inst_bb = inst_bb->loop->header->idom;
+    }
+    auto jmp = inst_bb->insns.back().release();
+    inst_bb->insns.pop_back();
+    for(int i = 0; i < allocas.size(); i++){
+      inst_bb->push_back(allocas[i]);
+    }
+    inst_bb->insns.emplace_back(jmp);
     if(ret_phi){
       ret_phi->add_use_def();
     }
-    caller->cfg->build();
   }
 }
 

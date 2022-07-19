@@ -5,40 +5,6 @@
 #include <iostream>
 #include <variant>
 
-namespace std {
-template <class K, class V>
-struct hash<unordered_map<K, V> > {
-  size_t operator()(const unordered_map<K, V> &r) const {
-    size_t res = 0;
-    for (auto t : r) {
-      res = res + hash<K>()(t.first) * 1221821 + hash<V>()(t.second);
-    }
-    return res;
-  }
-};
-template <class T>
-struct hash<vector<T>> {
-  size_t operator()(const vector<T> &r) const {
-    size_t res = 0;
-    for (auto t : r) {
-      res = res * 1221821 + hash<T>()(t);
-    }
-    return res;
-  }
-};
-template <class T1, class T2>
-struct hash<tuple<T1, T2>> {
-  size_t operator()(const tuple<T1, T2> &r) const {
-    return hash<T1>()(get<0>(r)) * 1221821 + hash<T2>()(get<1>(r)) * 31;
-  }
-};
-template <class T1, class T2, class T3>
-struct hash<tuple<T1, T2, T3>> {
-  size_t operator()(const tuple<T1, T2, T3> &r) const {
-    return hash<T1>()(get<0>(r)) * 264893 + hash<T2>()(get<1>(r)) * 1221821 + hash<T3>()(get<2>(r)) * 31;
-  }
-};
-}
 
 namespace mediumend {
 
@@ -143,11 +109,10 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(const unordered_ma
 }
 
 // use reg as value number
-static unordered_map<unordered_map<BasicBlock *, Reg>, Reg> hashTable_phi;
 static unordered_map<ConstValue, Reg> hashTable_loadimm;
 static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
 static unordered_map<std::string, Reg> hashTable_loadaddr;
-static unordered_map<tuple<Reg, vector<Reg> >, Reg> hashTable_gep;
+static unordered_map<tuple<Type, Reg, vector<Reg> >, Reg> hashTable_gep;
 static unordered_map<tuple<std::string, vector<Reg> >, Reg> hashTable_call;
 static unordered_map<Reg, ConstValue> constMap;
 static unordered_map<ConstValue, Reg> rConstMap;
@@ -156,14 +121,7 @@ static unordered_map<Instruction *, Reg> hashTable;
 // lookup Value Number of inst, insert when not found
 Reg vn_get(Instruction *inst) {
   if (hashTable.find(inst) != hashTable.end()) return hashTable[inst];
-  TypeCase(phi, ir::insns::Phi *, inst) {
-    if (hashTable_phi.count(phi->incoming)) {
-      hashTable[inst] = hashTable_phi[phi->incoming];
-    } else {
-      hashTable[inst] = phi->dst;
-      hashTable_phi[phi->incoming] = phi->dst;
-    }
-  } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
+  TypeCase(loadimm, ir::insns::LoadImm *, inst) {
     if (hashTable_loadimm.count(loadimm->imm)) {
       hashTable[inst] = hashTable_loadimm[loadimm->imm];
     } else {
@@ -226,11 +184,11 @@ Reg vn_get(Instruction *inst) {
       hashTable_loadaddr[loadaddr->var_name] = loadaddr->dst;
     }
   } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
-    if (hashTable_gep.count(std::make_tuple(gep->base, gep->indices))) {
-      hashTable[inst] = hashTable_gep[make_tuple(gep->base, gep->indices)];
+    if (hashTable_gep.count(std::make_tuple(gep->type, gep->base, gep->indices))) {
+      hashTable[inst] = hashTable_gep[make_tuple(gep->type, gep->base, gep->indices)];
     } else {
       hashTable[inst] = gep->dst;
-      hashTable_gep[make_tuple(gep->base, gep->indices)] = gep->dst;
+      hashTable_gep[make_tuple(gep->type, gep->base, gep->indices)] = gep->dst;
     }
   } else TypeCase(call, ir::insns::Call *, inst) {
     if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
@@ -273,9 +231,12 @@ void gvn(Function *f) {
         unordered_map <Reg, Reg> regsToChange;
         for (auto income : phi->incoming) {
           Reg new_reg = income.second;
-          if (!f->has_param(new_reg)) {
-            new_reg = vn_get(f->def_list.at(income.second));
-          }
+          // TO AVOID WRONG ORDER OF INSTS BE VISITED
+          // if (!f->has_param(new_reg)) {
+          //   if (income.first != bb) {
+          //     new_reg = vn_get(f->def_list.at(income.second));
+          //   }
+          // }
           if (income.second != new_reg) {
             regsToChange[income.second] = new_reg;
           }
@@ -361,6 +322,11 @@ void gvn(Function *f) {
             auto reg = std::get<Reg>(ret.value());
             copy_propagation(f->use_list, binary->dst, reg);
           }
+        } else {
+          Reg new_reg = vn_get(binary); // guarantee right order of insts be visited
+          if (new_reg != binary->dst) {
+            copy_propagation(f->use_list, binary->dst, new_reg);
+          }
         }
       }
       TypeCase(call, ir::insns::Call *, insn.get()) {
@@ -412,6 +378,7 @@ BasicBlock *find_lca(BasicBlock *a, BasicBlock *b) {
 bool is_pinned(Instruction *inst) {
   TypeCase(load, ir::insns::Load *, inst) return true;
   TypeCase(phi, ir::insns::Phi *, inst) return true;
+  // TypeCase(alloca, ir::insns::Alloca *, inst) return true; // TODO: Alloca should be able to move
   TypeCase(call, ir::insns::Call *, inst) {
     if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
       return false;
@@ -534,11 +501,12 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
     BasicBlock *lca = nullptr, *use;
     if(use_list.count(output->dst)) {
       for (auto i : use_list.at(output->dst)) {
+        use = nullptr;
         schedule_late(visited, placement, cfg, bbs, use_list, i);
         TypeCase(phi, ir::insns::Phi *, i) {
           for (auto pair : phi->incoming) {
             if (pair.second == output->dst) {
-              use = pair.first;
+              use = (use == nullptr) ? pair.first : find_lca(use, pair.first);
             }
           }
         } else {
@@ -591,7 +559,6 @@ void gcm(Function *f) {
 void gvn_gcm(ir::Program *prog) {
   program = prog;
   for(auto &func : prog->functions){
-    hashTable_phi.clear();
     hashTable_loadimm.clear();
     hashTable_binary.clear();
     hashTable_loadaddr.clear();
@@ -601,7 +568,6 @@ void gvn_gcm(ir::Program *prog) {
     rConstMap.clear();
     hashTable.clear();
     func.second.cfg->remove_unreachable_bb();
-    // std::cout << "func: " << func.first << std::endl;
     gvn(&func.second);
     gcm(&func.second);
   }

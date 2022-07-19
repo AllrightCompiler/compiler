@@ -136,6 +136,11 @@ void BasicBlock::push_front(Instruction *insn) {
   insn->add_use_def();
 }
 
+void BasicBlock::pop_front() {
+  insns.front()->remove_use_def();
+  insns.pop_front(); // auto release
+}
+
 void BasicBlock::insert_after_phi(Instruction *insn) {
   auto it = insns.begin();
   for (; it != insns.end(); it++) {
@@ -145,6 +150,18 @@ void BasicBlock::insert_after_phi(Instruction *insn) {
   insns.emplace(it, insn);
   insn->bb = this;
   // insn->add_use_def();
+}
+
+void BasicBlock::insert_after_inst(Instruction *prev, Instruction *insn) {
+  auto it = insns.begin();
+  for (; it != insns.end(); it++) {
+    if (it->get() == prev) break;
+  }
+  assert(it != insns.end());
+  it++;
+  insns.emplace(it, insn);
+  insn->bb = this;
+  insn->add_use_def();
 }
 
 void BasicBlock::insert_before_ter(Instruction *insn) {
@@ -448,11 +465,13 @@ void BasicBlock::rpo_dfs(vector<BasicBlock *> &rpo) {
   for (auto next : succ) {
     next->rpo_dfs(rpo);
   }
+  rpo_num = rpo.size();
   rpo.emplace_back(this);
 }
 
 void BasicBlock::loop_dfs() {
   // dfs on dom tree
+  this->loop = nullptr;
   for (auto next : dom) {
     next->loop_dfs();
   }
@@ -513,14 +532,14 @@ void Load::add_use_def() {
 
 void Load::remove_use_def() {
   Output::remove_use_def();
-  bb->func->use_list.at(addr).erase(this);
+  bb->func->use_list[addr].erase(this);
 }
 
 void Load::change_use(Reg old_reg, Reg new_reg) {
   if (addr == old_reg) {
     addr = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 
@@ -530,20 +549,20 @@ void Store::add_use_def() {
 }
 
 void Store::remove_use_def() {
-  bb->func->use_list.at(val).erase(this);
-  bb->func->use_list.at(addr).erase(this);
+  bb->func->use_list[val].erase(this);
+  bb->func->use_list[addr].erase(this);
 }
 
 void Store::change_use(Reg old_reg, Reg new_reg) {
   if (val == old_reg) {
     val = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
   if (addr == old_reg) {
     addr = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 
@@ -554,14 +573,14 @@ void Convert::add_use_def() {
 
 void Convert::remove_use_def() {
   Output::remove_use_def();
-  bb->func->use_list.at(src).erase(this);
+  bb->func->use_list[src].erase(this);
 }
 
 void Convert::change_use(Reg old_reg, Reg new_reg) {
   if (src == old_reg) {
     src = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 
@@ -575,7 +594,7 @@ void Call::add_use_def() {
 void Call::remove_use_def() {
   Output::remove_use_def();
   for (auto &reg : args) {
-    bb->func->use_list.at(reg).erase(this);
+    bb->func->use_list[reg].erase(this);
   }
 }
 
@@ -584,7 +603,7 @@ void Call::change_use(Reg old_reg, Reg new_reg) {
     if (reg == old_reg) {
       reg = new_reg;
       bb->func->use_list[new_reg].insert(this);
-      bb->func->use_list.at(old_reg).erase(this);
+      bb->func->use_list[old_reg].erase(this);
     }
   }
 }
@@ -596,14 +615,14 @@ void Unary::add_use_def() {
 
 void Unary::remove_use_def() {
   Output::remove_use_def();
-  bb->func->use_list.at(src).erase(this);
+  bb->func->use_list[src].erase(this);
 }
 
 void Unary::change_use(Reg old_reg, Reg new_reg) {
   if (src == old_reg) {
     src = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 
@@ -615,20 +634,20 @@ void Binary::add_use_def() {
 
 void Binary::remove_use_def() {
   Output::remove_use_def();
-  bb->func->use_list.at(src1).erase(this);
-  bb->func->use_list.at(src2).erase(this);
+  bb->func->use_list[src1].erase(this);
+  bb->func->use_list[src2].erase(this);
 }
 
 void Binary::change_use(Reg old_reg, Reg new_reg) {
   if (src1 == old_reg) {
     src1 = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
   if (src2 == old_reg) {
     src2 = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 
@@ -642,7 +661,7 @@ void Phi::add_use_def() {
 void Phi::remove_use_def() {
   Output::remove_use_def();
   for (auto &[bb, reg] : incoming) {
-    bb->func->use_list.at(reg).erase(this);
+    bb->func->use_list[reg].erase(this);
   }
 }
 
@@ -651,7 +670,7 @@ void Phi::change_use(Reg old_reg, Reg new_reg) {
     if (reg == old_reg) {
       reg = new_reg;
       bb->func->use_list[new_reg].insert(this);
-      bb->func->use_list.at(old_reg).erase(this);
+      bb->func->use_list[old_reg].erase(this);
     }
   }
 }
@@ -659,7 +678,7 @@ void Phi::change_use(Reg old_reg, Reg new_reg) {
 void Phi::remove_prev(BasicBlock *prev) {
   auto iter = this->incoming.find(prev);
   if (iter != this->incoming.end()) {
-    auto &list = this->bb->func->use_list.at(this->incoming.at(prev));
+    auto &list = this->bb->func->use_list[this->incoming.at(prev)];
     list.erase(this);
     this->incoming.erase(iter);
   } else {
@@ -674,26 +693,26 @@ void Return::add_use_def() {
 
 void Return::remove_use_def() {
   if (val.has_value())
-    bb->func->use_list.at(val.value()).erase(this);
+    bb->func->use_list[val.value()].erase(this);
 }
 
 void Return::change_use(Reg old_reg, Reg new_reg) {
   if (val.has_value() && val.value() == old_reg) {
     val = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 
 void Branch::add_use_def() { bb->func->use_list[val].insert(this); }
 
-void Branch::remove_use_def() { bb->func->use_list.at(val).erase(this); }
+void Branch::remove_use_def() { bb->func->use_list[val].erase(this); }
 
 void Branch::change_use(Reg old_reg, Reg new_reg) {
   if (val == old_reg) {
     val = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 
@@ -707,9 +726,9 @@ void GetElementPtr::add_use_def() {
 
 void GetElementPtr::remove_use_def() {
   Output::remove_use_def();
-  bb->func->use_list.at(base).erase(this);
+  bb->func->use_list[base].erase(this);
   for (auto &idx : indices) {
-    bb->func->use_list.at(idx).erase(this);
+    bb->func->use_list[idx].erase(this);
   }
 }
 
@@ -717,13 +736,13 @@ void GetElementPtr::change_use(Reg old_reg, Reg new_reg) {
   if (base == old_reg) {
     base = new_reg;
     bb->func->use_list[new_reg].insert(this);
-    bb->func->use_list.at(old_reg).erase(this);
+    bb->func->use_list[old_reg].erase(this);
   }
   for (auto &idx : indices) {
     if (idx == old_reg) {
       idx = new_reg;
       bb->func->use_list[new_reg].insert(this);
-      bb->func->use_list.at(old_reg).erase(this);
+      bb->func->use_list[old_reg].erase(this);
     }
   }
 }
