@@ -49,6 +49,7 @@ Output *copyDef(Instruction *iv, Reg result) {
 Reg reduce(BinaryOp opcode, ScalarType stype, Output *iv, Output *rc);
 
 Reg apply(BinaryOp opcode, ScalarType stype, Output *op1, Output *op2) {
+  debug(std::cerr) << "apply: " << op1->dst.id << " " << op2->dst.id << std::endl;
   if (hashMap.count(std::make_tuple(opcode, op1, op2))) return hashMap.at(std::make_tuple(opcode, op1, op2));
   if (header.at(op1) != nullptr && isRC(op2, header.at(op1))) {
     return reduce(opcode, stype, op1, op2);
@@ -71,6 +72,7 @@ Reg apply(BinaryOp opcode, ScalarType stype, Output *op1, Output *op2) {
 }
 
 Reg reduce(BinaryOp opcode, ScalarType stype, Output *iv, Output *rc) {
+  debug(std::cerr) << "reduce: " << iv->dst.id << " " << rc->dst.id << std::endl;
   if (hashMap.count(std::make_tuple(opcode, iv, rc))) return hashMap.at(std::make_tuple(opcode, iv, rc));
   Reg result = iv->bb->func->new_reg(stype);
   hashMap[std::make_tuple(opcode, iv, rc)] = result;
@@ -105,7 +107,6 @@ void replace(ir::insns::Binary *node, Instruction *iv, Instruction *rc) {
 // check iv * rc, rc * iv, iv +- rc, rc + iv & replace
 bool check_replace(Instruction *inst) {
   TypeCase(binary, ir::insns::Binary *, inst) {
-    debug(std::cerr) << "check replace: " << binary->dst.id << std::endl;
     Instruction *i1 = binary->bb->func->def_list.at(binary->src1);
     Instruction *i2 = binary->bb->func->def_list.at(binary->src2);
     switch (binary->op) {
