@@ -471,6 +471,7 @@ void BasicBlock::rpo_dfs(vector<BasicBlock *> &rpo) {
 
 void BasicBlock::loop_dfs() {
   // dfs on dom tree
+  this->loop = nullptr;
   for (auto next : dom) {
     next->loop_dfs();
   }

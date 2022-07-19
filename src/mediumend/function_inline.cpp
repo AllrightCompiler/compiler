@@ -157,14 +157,21 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         mapped_bb->push_back(inst_copy);
       }
     }
-    // TODO: 找一个合适的位置插入，或者就等后面指令调度
-    for(int i = allocas.size() - 1; i >= 0; i--){
-      caller->bbs.front()->push_front(allocas[i]);
+    // 找一个合适的位置插入，或者就等后面指令调度
+    caller->cfg->build();
+    caller->cfg->loop_analysis();
+    while(inst_bb->loop){
+      inst_bb = inst_bb->loop->header->idom;
     }
+    auto jmp = inst_bb->insns.back().release();
+    inst_bb->insns.pop_back();
+    for(int i = 0; i < allocas.size(); i++){
+      inst_bb->push_back(allocas[i]);
+    }
+    inst_bb->insns.emplace_back(jmp);
     if(ret_phi){
       ret_phi->add_use_def();
     }
-    caller->cfg->build();
   }
 }
 

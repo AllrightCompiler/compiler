@@ -378,7 +378,7 @@ BasicBlock *find_lca(BasicBlock *a, BasicBlock *b) {
 bool is_pinned(Instruction *inst) {
   TypeCase(load, ir::insns::Load *, inst) return true;
   TypeCase(phi, ir::insns::Phi *, inst) return true;
-  TypeCase(alloca, ir::insns::Alloca *, inst) return true; // TODO: Alloca should be able to move
+  // TypeCase(alloca, ir::insns::Alloca *, inst) return true; // TODO: Alloca should be able to move
   TypeCase(call, ir::insns::Call *, inst) {
     if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
       return false;
