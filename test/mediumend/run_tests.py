@@ -6,7 +6,7 @@ import multiprocessing
 from junit_xml import TestSuite, TestCase
 from multiprocessing import Pool
 
-TIMEOUT = 30
+TIMEOUT = 120
 
 def get_testcases(test_dir):
     testcases = []
