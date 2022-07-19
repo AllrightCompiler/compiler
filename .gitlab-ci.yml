@@ -81,14 +81,3 @@ functional2020:
   artifacts:
     reports:
       junit: build/test_result_functional2020.xml
-
-performance_pri2021:
-  stage: mediumend-test-prev
-  needs: [build]
-  script:
-    - cd build
-    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2021/performance_test2021-private/ test_result_performance_pri2021.xml
-  allow_failure: true
-  artifacts:
-    reports:
-      junit: build/test_result_performance_pri2021.xml
