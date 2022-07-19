@@ -234,6 +234,7 @@ void constant_propagation(ir::Program *prog) {
                 iter++;
               }
             }
+            phi->add_use_def();
             if (phi_const) {
               Reg reg = phi->dst;
               for (auto &in : phi->incoming) {
