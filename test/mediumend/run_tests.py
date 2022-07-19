@@ -2,7 +2,9 @@ import os
 import sys
 import time
 import subprocess
+import multiprocessing
 from junit_xml import TestSuite, TestCase
+from multiprocessing import Pool
 
 TIMEOUT = 30
 
@@ -19,7 +21,8 @@ def ret_err(test_name, timeStarted, msg):
     tc.add_failure_info(msg)
     return tc, False
 
-def run_test(compiler_path, converter_path, lib_path, test_dir, test_name):
+def run_test(args):
+    compiler_path, converter_path, lib_path, test_dir, test_name = args[0], args[1], args[2], args[3], args[4]
     code_path = os.path.join(test_dir, test_name + ".sy")
     input_path = os.path.join(test_dir, test_name + ".in")
     output_path = os.path.join(test_dir, test_name + ".tmp")
@@ -126,16 +129,22 @@ if __name__ == '__main__':
     lib_path = sys.argv[3]
     test_dir = sys.argv[4]
 
-    report_testcases = []
-
     testcases = get_testcases(test_dir)
+
+    # Parallel
+    parallel_args = []
+    for test_name in testcases:
+        parallel_args.append((compiler_path, converter_path, lib_path, test_dir, test_name))
+    with Pool(multiprocessing.cpu_count()) as p:
+        ret = p.map(run_test, parallel_args)
+
     num_tests = len(testcases)
     pass_tests = 0
-    for test_name in testcases:
-        report_tc, ret = run_test(compiler_path, converter_path, lib_path, test_dir, test_name)
-        if ret:
+    report_testcases = []
+    for pair in ret:
+        if pair[1]:
             pass_tests = pass_tests + 1
-        report_testcases.append(report_tc)
+        report_testcases.append(pair[0])
 
     xml_name = "test_result.xml"
     if len(sys.argv) == 6:
