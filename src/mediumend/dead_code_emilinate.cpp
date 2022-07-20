@@ -277,7 +277,6 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
               break;
             }
           }
-          br->remove_use_def();
           auto new_inst = new ir::insns::Branch(br->val, br->true_target, br->false_target);
           bb->insns.back().reset(new_inst);
           new_inst->bb = bb;
