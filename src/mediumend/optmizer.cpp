@@ -36,6 +36,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   
   operator_strength_reduction,
   gvn_gcm,
+  remove_uneffective_inst,
   constant_propagation,
   remove_unused_function,
   clean_useless_cf,

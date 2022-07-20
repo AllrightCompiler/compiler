@@ -89,49 +89,44 @@ void remove_uneffective_inst(ir::Program *prog){
   for(auto &each : prog->functions){
     ir::Function *func = &each.second;
     auto &bbs = func->bbs;
-    vector<ir::Instruction *> stack;
-    unordered_set<ir::Instruction *> remove_inst_set; 
+    unordered_set<ir::Instruction *> stack;
+    unordered_set<ir::Instruction *> useful_inst; 
     for (auto &bb : bbs) {
       auto &insns = bb->insns;
       for (auto &inst : insns) {
-        TypeCase(output, ir::insns::Output *, inst.get()){
-          if(auto call = dynamic_cast<ir::insns::Call *>(output)){
-            if(!prog->functions.count(call->func)){
-              continue;
-            }
-            if(prog->functions.at(call->func).pure == 0){
-              continue;
-            }
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          if(prog->functions.find(call->func) == prog->functions.end() || prog->functions.at(call->func).pure == 0){
+            stack.insert(call);
           }
-          auto &reg = output->dst;
-          if (reg.id && func->use_list[reg].size() == 0) {
-            stack.push_back(output);
-          }
+        } else TypeCase(term, ir::insns::Terminator *, inst.get()){
+          stack.insert(term);
+        } else TypeCase(store, ir::insns::Store *, inst.get()){
+          stack.insert(store);
         }
       }
     }
     while(!stack.empty()){
-      auto inst = stack.back();
-      stack.pop_back();
+      auto ins = stack.begin();
+      auto inst = *ins;
+      stack.erase(ins);
+      if(useful_inst.count(inst)){
+        continue;
+      }
+      useful_inst.insert(inst);
       auto regs = inst->use();
-      inst->remove_use_def();
       for(auto reg : regs){
-        if(func->use_list[reg].size() == 0){
-          auto def = func->def_list.find(reg);
-          if(def != func->def_list.end()){
-            auto output = def->second;
-            if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
-              continue;
-            }
-            stack.push_back(output);
+        if(func->def_list.find(reg) != func->def_list.end()){
+          auto def = func->def_list.at(reg);
+          if(useful_inst.count(def)){
+            continue;
           }
+          stack.insert(def);
         }
       }
-      remove_inst_set.insert(inst);
     }
     for(auto &bb : bbs){
-      bb->remove_if([=](ir::Instruction *ir) {
-        return remove_inst_set.count(ir);
+      bb->remove_if([&](ir::Instruction *ir) {
+        return !useful_inst.count(ir);
       });
     }
   }
