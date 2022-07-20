@@ -252,6 +252,16 @@ void Store::emit(std::ostream &os) const {
      << reg_name(addr);
 }
 
+void MemUse::emit(std::ostream &os) const {
+  auto ts = type_string(dst.type);
+  write_reg(os) << "[" << reg_name(load_src) <<"](" << reg_name(dep) << ")";
+}
+
+void MemDef::emit(std::ostream &os) const {
+  auto ts = type_string(store_val.type);
+  os << "[" << reg_name(store_dst) << "](" << reg_name(dst) <<") = " << ts << " " << reg_name(store_val);
+}
+
 void GetElementPtr::emit(std::ostream &os) const {
   // write_reg(os, ins) << " = getelementptr " << type_string(ins.type) << ", "
   //                    << type_string(ins.base.type) << " " <<
@@ -564,6 +574,32 @@ void Store::change_use(Reg old_reg, Reg new_reg) {
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
   }
+}
+
+void MemUse::add_use_def() {
+  Output::add_use_def();
+  // bb->func->use_list[addr].insert(this);
+}
+
+void MemUse::remove_use_def() {
+  Output::remove_use_def();
+  // bb->func->use_list[addr].erase(this);
+}
+
+void MemUse::change_use(Reg old_reg, Reg new_reg) {
+
+}
+
+void MemDef::add_use_def() {
+  Output::add_use_def();
+}
+
+void MemDef::remove_use_def() {
+  Output::remove_use_def();
+}
+
+void MemDef::change_use(Reg old_reg, Reg new_reg) {
+
 }
 
 void Convert::add_use_def() {
