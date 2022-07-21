@@ -46,32 +46,50 @@ void array_mem2reg(ir::Program *prog) {
 
     unordered_map<Reg, Reg> reg2base;
     unordered_map<std::string, Reg> name2base;
-
-    for (auto &bb : func->bbs) {
+    vector<BasicBlock *> stack;
+    auto entry = func->bbs.front().get();
+    stack.push_back(entry);
+    for(int i = 0; i < func->sig.param_types.size(); i++){
+      auto &param = func->sig.param_types[i];
+      if(param.is_array()){
+        auto reg = Reg(param.base_type, i + 1);
+        reg2base[reg] = reg;
+        alloc_map[entry][reg] = reg;
+      }
+    }
+    while(stack.size()){
+      auto bb = stack.back();
+      stack.pop_back();
+      for(auto dom : bb->dom){
+        stack.push_back(dom);
+      }
       for (auto &ins : bb->insns) {
         auto inst = ins.get();
         TypeCase(loadaddr, ir::insns::LoadAddr *, inst){
+          if(!prog->global_vars.at(loadaddr->var_name)->type.is_array()){
+            continue;
+          }
           if(!name2base.count(loadaddr->var_name)){
             name2base[loadaddr->var_name] = loadaddr->dst;
-            alloc_set[loadaddr->dst] = bb.get();
-            defs[loadaddr->dst].insert(bb.get());
+            alloc_set[loadaddr->dst] = bb;
+            defs[loadaddr->dst].insert(bb);
           }
           reg2base[loadaddr->dst] = name2base[loadaddr->var_name];
         } else TypeCase(alloca, ir::insns::Alloca *, inst){
           reg2base[alloca->dst] = alloca->dst;
-          alloc_set[alloca->dst] = bb.get();
-          defs[alloca->dst].insert(bb.get());
+          alloc_set[alloca->dst] = bb;
+          defs[alloca->dst].insert(bb);
         } else TypeCase(gep, ir::insns::GetElementPtr *, inst){
           reg2base[gep->dst] = reg2base.at(gep->base);
         } else TypeCase(store, ir::insns::Store *, inst) {
           if (reg2base.count(store->addr)) {
-            defs[reg2base.at(store->addr)].insert(bb.get());
+            defs[reg2base.at(store->addr)].insert(bb);
           }
         } else TypeCase(call, ir::insns::Call *, inst) {
           auto use = call->use();
           for(auto &use_reg : use){
             if(reg2base.count(use_reg)){
-              defs[reg2base.at(use_reg)].insert(bb.get());
+              defs[reg2base.at(use_reg)].insert(bb);
             }
           }
         }
@@ -105,7 +123,6 @@ void array_mem2reg(ir::Program *prog) {
     }
 
     // mem2reg第二阶段，寄存器重命名
-    vector<BasicBlock *> stack;
     stack.push_back(func->bbs.front().get());
     func->clear_visit();
     func->bbs.front().get()->visit = true;
