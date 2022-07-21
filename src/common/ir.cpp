@@ -253,13 +253,21 @@ void Store::emit(std::ostream &os) const {
 }
 
 void MemUse::emit(std::ostream &os) const {
-  auto ts = type_string(dst.type);
-  write_reg(os) << "[" << reg_name(load_src) <<"](" << reg_name(dep) << ")";
+  if(call_use){
+    os << "(" << reg_name(dst) << ") = (" << reg_name(dep) << ")";
+  } else {
+    auto ts = type_string(dst.type);
+    write_reg(os) << "(" << reg_name(dep) <<")[" << reg_name(load_src) << "]";
+  }
 }
 
 void MemDef::emit(std::ostream &os) const {
-  auto ts = type_string(store_val.type);
-  os << "[" << reg_name(store_dst) << "](" << reg_name(dst) <<") = " << ts << " " << reg_name(store_val);
+  if(call_def){
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"] = (" << reg_name(store_val) << ")";
+  } else {
+    auto ts = type_string(store_val.type);
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"] = " << ts << " " << reg_name(store_val);
+  }
 }
 
 void GetElementPtr::emit(std::ostream &os) const {

@@ -54,11 +54,13 @@ void array_mem2reg(ir::Program *prog) {
           if(!name2base.count(loadaddr->var_name)){
             name2base[loadaddr->var_name] = loadaddr->dst;
             alloc_set[loadaddr->dst] = bb.get();
+            defs[loadaddr->dst].insert(bb.get());
           }
           reg2base[loadaddr->dst] = name2base[loadaddr->var_name];
         } else TypeCase(alloca, ir::insns::Alloca *, inst){
           reg2base[alloca->dst] = alloca->dst;
           alloc_set[alloca->dst] = bb.get();
+          defs[alloca->dst].insert(bb.get());
         } else TypeCase(gep, ir::insns::GetElementPtr *, inst){
           reg2base[gep->dst] = reg2base.at(gep->base);
         } else TypeCase(store, ir::insns::Store *, inst) {
@@ -125,7 +127,7 @@ void array_mem2reg(ir::Program *prog) {
               reg = alloc_map[pos][base];
             }
             inst->remove_use_def();
-            auto new_inst = new ir::insns::MemUse(inst->dst, reg, inst->addr);
+            auto new_inst = new ir::insns::MemUse(inst->dst, reg, inst->addr, false);
             iter->reset(new_inst);
             new_inst->bb = bb;
             new_inst->add_use_def();
@@ -136,7 +138,7 @@ void array_mem2reg(ir::Program *prog) {
             auto base = reg2base[inst->addr];
             inst->remove_use_def();
             Reg dst = func->new_reg(ScalarType::String);
-            auto new_inst = new ir::insns::MemDef(dst, inst->addr, inst->val);
+            auto new_inst = new ir::insns::MemDef(dst, inst->addr, inst->val, false);
             iter->reset(new_inst);
             new_inst->bb = bb;
             new_inst->add_use_def();
@@ -144,13 +146,36 @@ void array_mem2reg(ir::Program *prog) {
           }
         }
         TypeCase(inst, ir::insns::Call *, iter->get()) {
-          iter++;
           auto use = inst->use();
+          unordered_map<Reg, Reg> use2def;
+          for(auto reg : use){
+            if (reg2base.find(reg) != reg2base.end()) {
+              auto base = reg2base[reg];
+              BasicBlock *pos = bb;
+              while (pos && !alloc_map[pos].count(base)) {
+                pos = pos->idom;
+              }
+              Reg dst = func->new_reg(ScalarType::String);
+              Reg src;
+              if (!pos) {
+                assert(false);
+              } else {
+                src = alloc_map.at(pos).at(base);
+              }
+              auto new_inst = new ir::insns::MemUse(dst, src, src, true);
+              bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
+              new_inst->bb = bb;
+              new_inst->add_use_def();
+              inst->change_use(reg, dst);
+              use2def[reg] = dst;
+            }
+          }
+          iter++;
           for(auto reg : use){
             if (reg2base.find(reg) != reg2base.end()) {
               auto base = reg2base[reg];
               Reg dst = func->new_reg(ScalarType::String);
-              auto new_inst = new ir::insns::MemDef(dst, reg, inst->dst);
+              auto new_inst = new ir::insns::MemDef(dst, use2def.at(reg), inst->dst, true);
               iter = bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
               new_inst->bb = bb;
               new_inst->add_use_def();
@@ -162,6 +187,12 @@ void array_mem2reg(ir::Program *prog) {
           if (phi2mem.count(inst)) {
             alloc_map[bb][phi2mem.at(inst)] = inst->dst;
           }
+        }
+        TypeCase(inst, ir::insns::Alloca *, iter->get()) {
+          alloc_map[bb][inst->dst] = inst->dst;
+        }
+        TypeCase(inst, ir::insns::LoadAddr *, iter->get()) {
+          alloc_map[bb][inst->dst] = inst->dst;
         }
         iter++;
         continue;

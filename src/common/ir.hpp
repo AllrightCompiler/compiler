@@ -438,7 +438,8 @@ struct Phi : Output {
 struct MemUse : Output {
   Reg dep;
   Reg load_src;
-  MemUse(Reg dst, Reg dep, Reg load_src) : dep{dep}, load_src{load_src}, Output{dst} {}
+  bool call_use;
+  MemUse(Reg dst, Reg dep, Reg load_src, bool call_use) : dep{dep}, load_src{load_src}, call_use(call_use), Output{dst} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
@@ -450,7 +451,8 @@ struct MemUse : Output {
 struct MemDef : Output {
   Reg store_dst;
   Reg store_val;
-  MemDef(Reg dst, Reg store_dst, Reg store_val) : store_dst{store_dst}, store_val{store_val}, Output{dst} {}
+  bool call_def;
+  MemDef(Reg dst, Reg store_dst, Reg store_val, bool call_def) : store_dst{store_dst}, store_val{store_val}, call_def(call_def), Output{dst} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
