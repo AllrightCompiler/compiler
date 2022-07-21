@@ -20,6 +20,8 @@ void function_inline(ir::Program *prog);
 void remove_unused_phi(ir::Function *func);
 void operator_strength_reduction(ir::Program *prog);
 void operator_strength_promotion(ir::Program *prog);
+void array_mem2reg(ir::Program *prog);
+void array_ssa_destruction(ir::Program *prog);
 
 // IMPORTANT: if add new pass, modify PASS_MAP in optmizer.cpp
 extern const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP;

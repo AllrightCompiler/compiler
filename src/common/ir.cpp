@@ -252,6 +252,24 @@ void Store::emit(std::ostream &os) const {
      << reg_name(addr);
 }
 
+void MemUse::emit(std::ostream &os) const {
+  if(call_use){
+    os << "(" << reg_name(dst) << ") = (" << reg_name(dep) << ")(" << reg_name(load_src) << ")";
+  } else {
+    auto ts = type_string(dst.type);
+    write_reg(os) << "(" << reg_name(dep) <<")[" << reg_name(load_src) << "]";
+  }
+}
+
+void MemDef::emit(std::ostream &os) const {
+  if(call_def){
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"] = (" << reg_name(store_val) << ")";
+  } else {
+    auto ts = type_string(store_val.type);
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"] = " << ts << " " << reg_name(store_val);
+  }
+}
+
 void GetElementPtr::emit(std::ostream &os) const {
   // write_reg(os, ins) << " = getelementptr " << type_string(ins.type) << ", "
   //                    << type_string(ins.base.type) << " " <<
@@ -561,6 +579,56 @@ void Store::change_use(Reg old_reg, Reg new_reg) {
   }
   if (addr == old_reg) {
     addr = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+}
+
+void MemUse::add_use_def() {
+  Output::add_use_def();
+  bb->func->use_list[dep].insert(this);
+  bb->func->use_list[load_src].insert(this);
+}
+
+void MemUse::remove_use_def() {
+  Output::remove_use_def();
+  bb->func->use_list[dep].erase(this);
+  bb->func->use_list[load_src].erase(this);
+}
+
+void MemUse::change_use(Reg old_reg, Reg new_reg) {
+  if(dep == old_reg){
+    dep = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(load_src == old_reg){
+    load_src = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+}
+
+void MemDef::add_use_def() {
+  Output::add_use_def();
+  bb->func->use_list[store_dst].insert(this);
+  bb->func->use_list[store_val].insert(this);
+}
+
+void MemDef::remove_use_def() {
+  Output::remove_use_def();
+  bb->func->use_list[store_dst].erase(this);
+  bb->func->use_list[store_val].erase(this);
+}
+
+void MemDef::change_use(Reg old_reg, Reg new_reg) {
+  if(store_dst == old_reg){
+    store_dst = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(store_val == old_reg){
+    store_val = new_reg;
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
   }

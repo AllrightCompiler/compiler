@@ -15,6 +15,8 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"function_inline", function_inline},
   {"operator_strength_reduction", operator_strength_reduction},
   {"operator_strength_promotion", operator_strength_promotion},
+  {"array_mem2reg", array_mem2reg},  // 在array ssa之前必须进行一次gvn_gcm
+  {"array_ssa_destruction", array_ssa_destruction},
 };
 
 // define default passes here
@@ -27,7 +29,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   mark_pure_func,
   function_inline,
   gvn_gcm,
-  // 原remove_uneffective_inst, simplification_phi, constant_propagation都被合并进了constant_propagation
+  // 原 simplification_phi, constant_propagation都被合并进了constant_propagation
   constant_propagation,
   // simplification_phi,
   // remove_uneffective_inst,

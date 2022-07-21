@@ -405,8 +405,9 @@ struct Binary : Output {
 
 struct Phi : Output {
   std::unordered_map<BasicBlock *, Reg> incoming;
+  bool array_ssa;
 
-  Phi(Reg dst) : Output{dst} {}
+  Phi(Reg dst, bool array_ssa = false) : Output{dst}, array_ssa(array_ssa) {}
 
   Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst} {
     for (size_t i = 0; i < bbs.size(); i++) {
@@ -433,6 +434,32 @@ struct Phi : Output {
     }
     return ret;
   }
+};
+
+struct MemUse : Output {
+  Reg dep;
+  Reg load_src;
+  bool call_use;
+  MemUse(Reg dst, Reg dep, Reg load_src, bool call_use) : dep{dep}, load_src{load_src}, call_use(call_use), Output{dst} {}
+  virtual void emit(std::ostream &os) const override;
+  virtual void add_use_def() override;
+  virtual void remove_use_def() override;
+  virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &dep, &load_src}; }
+  unordered_set<Reg> use() const override { return {dep, load_src}; }
+};
+
+struct MemDef : Output {
+  Reg store_dst;
+  Reg store_val;
+  bool call_def;
+  MemDef(Reg dst, Reg store_dst, Reg store_val, bool call_def) : store_dst{store_dst}, store_val{store_val}, call_def(call_def), Output{dst} {}
+  virtual void emit(std::ostream &os) const override;
+  virtual void add_use_def() override;
+  virtual void remove_use_def() override;
+  virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&store_dst, &store_val, &dst}; }
+  unordered_set<Reg> use() const override { return {store_dst, store_val}; }
 };
 
 struct Return : Terminator {
