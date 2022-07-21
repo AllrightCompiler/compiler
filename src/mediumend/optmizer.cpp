@@ -14,6 +14,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"gvn_gcm", gvn_gcm},
   {"function_inline", function_inline},
   {"operator_strength_reduction", operator_strength_reduction},
+  {"operator_strength_promotion", operator_strength_promotion},
 };
 
 // define default passes here
@@ -41,6 +42,8 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   constant_propagation,
   remove_unused_function,
   clean_useless_cf,
+
+  operator_strength_promotion,
 };
 
 }
