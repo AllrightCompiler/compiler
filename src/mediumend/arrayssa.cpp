@@ -144,6 +144,7 @@ void array_mem2reg(ir::Program *prog) {
           }
         }
         TypeCase(inst, ir::insns::Call *, iter->get()) {
+          iter++;
           auto use = inst->use();
           for(auto reg : use){
             if (reg2base.find(reg) != reg2base.end()) {
@@ -192,7 +193,7 @@ void array_mem2reg(ir::Program *prog) {
     for (auto phi : phi2mem) {
       phi.first->add_use_def();
     }
-    // remove_unused_phi(func);
+    remove_unused_phi(func);
   }
 }
 

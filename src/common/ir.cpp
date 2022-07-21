@@ -578,28 +578,52 @@ void Store::change_use(Reg old_reg, Reg new_reg) {
 
 void MemUse::add_use_def() {
   Output::add_use_def();
-  // bb->func->use_list[addr].insert(this);
+  bb->func->use_list[dep].insert(this);
+  bb->func->use_list[load_src].insert(this);
 }
 
 void MemUse::remove_use_def() {
   Output::remove_use_def();
-  // bb->func->use_list[addr].erase(this);
+  bb->func->use_list[dep].erase(this);
+  bb->func->use_list[load_src].erase(this);
 }
 
 void MemUse::change_use(Reg old_reg, Reg new_reg) {
-
+  if(dep == old_reg){
+    dep = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(load_src == old_reg){
+    load_src = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
 }
 
 void MemDef::add_use_def() {
   Output::add_use_def();
+  bb->func->use_list[store_dst].insert(this);
+  bb->func->use_list[store_val].insert(this);
 }
 
 void MemDef::remove_use_def() {
   Output::remove_use_def();
+  bb->func->use_list[store_dst].erase(this);
+  bb->func->use_list[store_val].erase(this);
 }
 
 void MemDef::change_use(Reg old_reg, Reg new_reg) {
-
+  if(store_dst == old_reg){
+    store_dst = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(store_val == old_reg){
+    store_val = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
 }
 
 void Convert::add_use_def() {

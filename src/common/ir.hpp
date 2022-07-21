@@ -443,8 +443,8 @@ struct MemUse : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-  // virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &base}; }
-  // unordered_set<Reg> use() const override { return {base, load_src}; }
+  virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &dep, &load_src}; }
+  unordered_set<Reg> use() const override { return {dep, load_src}; }
 };
 
 struct MemDef : Output {
@@ -455,8 +455,8 @@ struct MemDef : Output {
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-  // virtual std::vector<Reg *> reg_ptrs() override { return {&base, &store_dst, &store_val}; }
-  // unordered_set<Reg> use() const override { return {base, store_dst, store_val}; }
+  virtual std::vector<Reg *> reg_ptrs() override { return {&store_dst, &store_val, &dst}; }
+  unordered_set<Reg> use() const override { return {store_dst, store_val}; }
 };
 
 struct Return : Terminator {
