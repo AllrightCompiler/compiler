@@ -405,8 +405,9 @@ struct Binary : Output {
 
 struct Phi : Output {
   std::unordered_map<BasicBlock *, Reg> incoming;
+  bool array_ssa;
 
-  Phi(Reg dst) : Output{dst} {}
+  Phi(Reg dst, bool array_ssa = false) : Output{dst}, array_ssa(array_ssa) {}
 
   Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst} {
     for (size_t i = 0; i < bbs.size(); i++) {

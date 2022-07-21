@@ -91,7 +91,7 @@ void array_mem2reg(ir::Program *prog) {
         for (auto &Y : df[bb]) {
           if (F.find(Y) == F.end() && Y->live_in.count(v.first)) {
             Reg r = func->new_reg(alloc2type[v.first]);
-            auto phi = new ir::insns::Phi(r);
+            auto phi = new ir::insns::Phi(r, true);
             Y->insns.emplace_front(phi); // add phi
             phi->bb = Y;
             phi2mem[phi] = v.first;
@@ -225,6 +225,49 @@ void array_mem2reg(ir::Program *prog) {
       phi.first->add_use_def();
     }
     remove_unused_phi(func);
+  }
+}
+
+void array_ssa_destruction(ir::Program *prog){
+  for (auto &each : prog->functions) {
+    Function *func = &each.second;
+    for(auto &bb : func->bbs){
+      for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
+        auto inst = iter->get();
+        TypeCase(memdef, ir::insns::MemDef *, inst){
+          if(memdef->call_def){
+            memdef->remove_use_def();
+            iter = bb->insns.erase(iter);
+            continue;
+          } else {
+            memdef->remove_use_def();
+            auto new_inst = new ir::insns::Store(memdef->store_dst, memdef->store_val);
+            iter->reset(new_inst);
+            new_inst->bb = bb.get();
+            new_inst->add_use_def();
+          }
+        } else TypeCase(memuse, ir::insns::MemUse *, inst){
+          if(memuse->call_use){
+            copy_propagation(func->use_list, memuse->dst, memuse->load_src);
+            memuse->remove_use_def();
+            iter = bb->insns.erase(iter);
+            continue;
+          } else {
+            memuse->remove_use_def();
+            auto new_inst = new ir::insns::Load(memuse->dst, memuse->load_src);
+            iter->reset(new_inst);
+            new_inst->bb = bb.get();
+            new_inst->add_use_def();
+          }
+        } else TypeCase(phi, ir::insns::Phi *, inst){
+          if(phi->array_ssa){
+            phi->remove_use_def();
+            iter = bb->insns.erase(iter);
+          }
+        }
+        iter++;
+      }
+    }
   }
 }
 

@@ -15,6 +15,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"function_inline", function_inline},
   {"operator_strength_reduction", operator_strength_reduction},
   {"array_mem2reg", array_mem2reg},
+  {"array_ssa_destruction", array_ssa_destruction},
 };
 
 // define default passes here
