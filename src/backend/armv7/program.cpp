@@ -34,11 +34,33 @@ void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
   emit_load_imm(bb->insns, bb->insns.end(), dst, imm);
 }
 
+void Function::emit_imm(
+    std::list<std::unique_ptr<Instruction>> &insns,
+    const std::list<std::unique_ptr<Instruction>>::iterator &it, Reg dst,
+    int imm) {
+  emit_load_imm(insns, it, dst, imm);
+  if (dst.is_virt())
+    reg_val[dst] = imm;
+}
+
+void Function::emit_imm(BasicBlock *bb, Reg dst, int imm) {
+  emit_load_imm(bb, dst, imm);
+  if (dst.is_virt())
+    reg_val[dst] = imm;
+}
+
 void BasicBlock::insert_before_branch(Instruction *insn) {
   auto it = insns.begin();
-  for (; it != insns.end(); ++it)
-    if (it->get()->is<Branch>())
+  for (; it != insns.end(); ++it) {
+    if ((*it)->is<Branch>()) {
+      // 如果这是一个典型条件跳转 (e.g. cmp r0, #0; bne Lx)
+      // 将指令插入到cmp之前
+      if ((*it)->cond != ExCond::Always && it != insns.begin() &&
+          (*std::prev(it))->is<Compare>())
+        --it;
       break;
+    }
+  }
   insns.emplace(it, insn);
 }
 
@@ -140,26 +162,30 @@ class ProgramTranslator {
       fn.normal_objs.push_back(obj);
       fn.stack_objects.emplace_back(obj);
 
-      bb->push(new LoadStackAddr{Reg::from(alloca->dst), obj, 0});
+      Reg dst = Reg::from(alloca->dst);
+      fn.reg_val[dst] = obj;
+      bb->push(new LoadStackAddr{dst, obj, 0});
     }
     else TypeCase(load, ii::Load *, ins) {
       bb->push(new Load{Reg::from(load->dst), Reg::from(load->addr), 0});
     }
     else TypeCase(load, ii::LoadAddr *, ins) {
-      bb->push(new LoadAddr{Reg::from(load->dst), load->var_name});
+      Reg dst = Reg::from(load->dst);
+      fn.reg_val[dst] = load->var_name;
+      bb->push(new LoadAddr{dst, load->var_name});
     }
     else TypeCase(load, ii::LoadImm *, ins) {
       // TODO: 对于某些浮点立即数，可以生成vmov.f32
       Reg dst = Reg::from(load->dst);
       if (!dst.is_float()) {
-        emit_load_imm(bb, dst, load->imm.iv);
+        fn.emit_imm(bb, dst, load->imm.iv);
       } else {
         float imm = load->imm.fv;
         if (is_vmov_f32_imm(imm))
           ; // TODO
         else {
           Reg t = fn.new_reg(General);
-          emit_load_imm(bb, t, *reinterpret_cast<int *>(&imm));
+          fn.emit_imm(bb, t, *reinterpret_cast<int *>(&imm));
           // TODO: emit vmov
         }
       }
@@ -182,7 +208,7 @@ class ProgramTranslator {
               Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
         } else {
           Reg imm_reg = fn.new_reg(General);
-          emit_load_imm(bb, imm_reg, dim);
+          fn.emit_imm(bb, imm_reg, dim);
           bb->push(new FusedMul{t, index_reg, imm_reg, s});
         }
         index_reg = t;
@@ -196,7 +222,7 @@ class ProgramTranslator {
               new Move{t, Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
         } else {
           Reg imm_reg = fn.new_reg(General);
-          emit_load_imm(bb, imm_reg, dim);
+          fn.emit_imm(bb, imm_reg, dim);
           bb->push(new RType{RType::Op::Mul, t, index_reg, imm_reg});
         }
         index_reg = t;

@@ -294,6 +294,31 @@ void ColoringRegAllocator::freeze_moves(Reg u) {
   }
 }
 
+double ColoringRegAllocator::get_basic_spill_cost(Reg r) {
+  if (spilling_regs.count(r))
+    return 1e100;
+
+  if (f->reg_val.count(r)) {
+    auto &val = f->reg_val.at(r);
+    switch (val.index()) {
+    case RegValueType::Imm: {
+      // 存活到寄存器分配阶段的立即数寄存器不能作为imm8m嵌入指令中
+      // 需要至少1条指令重新加载
+      uint32_t x = static_cast<uint32_t>(std::get<Imm>(val));
+      return x >= 0x10000 ? 2.0 : 1.0;
+    }
+    case RegValueType::GlobalName:
+      return 2.0;
+    case RegValueType::StackAddr:
+      // 多数栈上地址可以嵌入至ldr/str中，因此认为rematerialize所需代价少于1条指令
+      return 0.9;
+    default:
+      assert(false);
+    }
+  }
+  return 5.0;
+}
+
 void ColoringRegAllocator::select_spill() {
   // printf(">>> select_spill candidates: ");
   // int i = 0;
@@ -312,9 +337,7 @@ void ColoringRegAllocator::select_spill() {
 
   std::vector<std::pair<double, Reg>> spill_costs;
   for (Reg r : spill_worklist) {
-    double basic_cost = 1.0;
-    if (spilling_regs.count(r))
-      basic_cost = 1e100;
+    auto basic_cost = get_basic_spill_cost(r);
     auto cost = basic_cost / degree.at(r);
     spill_costs.push_back({cost, r});
   }
@@ -384,10 +407,16 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
     // TODO: 立即数、全局地址和栈地址应当生成相应的spill代码
     // NOTE: 在*每个*def后添加store，每个use前插入load
     for (Reg r : nodes) {
-      auto obj = new StackObject;
-      obj->size = 4;
-      f->stack_objects.emplace_back(obj);
-      f->normal_objs.push_back(obj);
+      StackObject *obj = nullptr;
+      const RegValue *val = nullptr;
+      if (f->reg_val.count(r)) {
+        val = &(f->reg_val.at(r));
+      } else {
+        obj = new StackObject;
+        obj->size = 4;
+        f->stack_objects.emplace_back(obj);
+        f->normal_objs.push_back(obj);
+      }
 
       for (auto &bb : f->bbs) {
         auto &insns = bb->insns;
@@ -422,12 +451,32 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
             spilling_regs.insert(tmp);
           }
 
-          if (use.count(r))
-            insns.emplace(it, new LoadStack{tmp, obj, 0});
+          if (use.count(r)) {
+            if (obj)
+              insns.emplace(it, new LoadStack{tmp, obj, 0});
+            else {
+              switch (val->index()) {
+              case RegValueType::Imm:
+                if (!def.count(r)) // 跳过movt
+                  f->emit_imm(insns, it, tmp, std::get<Imm>(*val));
+                break;
+              case RegValueType::GlobalName:
+                insns.emplace(it, new LoadAddr{tmp, std::get<GlobalName>(*val)});
+                break;
+              case RegValueType::StackAddr:
+                insns.emplace(it, new LoadStackAddr{tmp, std::get<StackAddr>(*val), 0});
+                break;
+              }
+            }
+          }
 
           ++it;
-          if (def.count(r))
-            insns.emplace(it, new StoreStack{tmp, obj, 0});
+          if (def.count(r)) {
+            if (obj)
+              insns.emplace(it, new StoreStack{tmp, obj, 0});
+            else
+              insns.erase(std::prev(it));
+          }
         }
       }
     }

@@ -37,6 +37,7 @@ class ColoringRegAllocator {
   bool is_gp_pass;
 
   void init(Function &func, bool is_gp_pass);
+  double get_basic_spill_cost(Reg r);
 
   // functions
   std::set<Reg> adjacent(Reg n) const;

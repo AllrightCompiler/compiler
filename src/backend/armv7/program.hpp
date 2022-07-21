@@ -35,6 +35,14 @@ struct BasicBlock {
 
 using RegFilter = std::function<bool(const Reg &)>;
 
+// 单赋值虚拟寄存器的一些特殊取值
+enum RegValueType {
+  Imm = 0,
+  GlobalName = 1,
+  StackAddr = 2,
+};
+using RegValue = std::variant<int, std::string, StackObject *>;
+
 struct Function {
   std::string name;
   std::list<std::unique_ptr<BasicBlock>> bbs;
@@ -48,16 +56,23 @@ struct Function {
   // 3. 调用子函数压栈的参数，相对fp偏移为负
   std::vector<StackObject *> param_objs, normal_objs;
 
+  std::map<Reg, RegValue> reg_val; // 记录一些单赋值虚拟寄存器的取值
+
   int regs_used; // 分配的虚拟寄存器总数
 
   Reg new_reg(Reg::Type type) { return Reg{type, -(++regs_used)}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
 
+  void emit_imm(std::list<std::unique_ptr<Instruction>> &insns,
+                const std::list<std::unique_ptr<Instruction>>::iterator &it,
+                Reg dst, int imm);
+  void emit_imm(BasicBlock *, Reg dst, int imm);
+
   void do_liveness_analysis(RegFilter filter = [](const Reg &){ return true; });
   bool check_and_resolve_stack_store();
   void defer_stack_param_load(Reg r, StackObject *obj);
   void resolve_phi();
-  
+
   // post-register allocation passes
   void emit_prologue_epilogue();
   void resolve_stack_ops(int frame_size);
