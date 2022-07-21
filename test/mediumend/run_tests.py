@@ -18,7 +18,7 @@ def get_testcases(test_dir):
     return testcases
 
 def ret_err(test_name, timeStarted, msg):
-    tc = TestCase(test_name, "mediumend-test", time.time() - timeStarted, "", "")
+    tc = TestCase(test_name, "mediumend-test", time.time() - timeStarted)
     tc.add_failure_info(msg)
     return tc, False
 
@@ -183,9 +183,9 @@ def run_test(args):
         clang_O2_time = get_runtime(args, "clang", "-O2")
         minTime = min(gcc_O2_time, clang_O2_time)
         # minTime = min(min(gcc_time, gcc_O2_time), min(clang_time, clang_O2_time))
-        err_str = f"time: {runTime}\ntime-opt: {minTime}\n\ngcc-O2: {gcc_O2_time}\nclang-O2: {clang_O2_time}"
-        # err_str = f"time: {runTime}\ntime-opt: {minTime}\n\ngcc: {gcc_time}\ngcc-O2: {gcc_O2_time}\nclang: {clang_time}\nclang-O2: {clang_O2_time}"
-        return TestCase(test_name, "mediumend-test", runTime / minTime, "", err_str), True
+        log_str = f"s: {(minTime / runTime):.6f}\ngcc-O2: {gcc_O2_time:.6f}\nclang-O2: {clang_O2_time:.6f}"
+        # log_str = f"time: {runTime}\ntime-opt: {minTime}\n\ngcc: {gcc_time}\ngcc-O2: {gcc_O2_time}\nclang: {clang_time}\nclang-O2: {clang_O2_time}"
+        return TestCase(test_name, "mediumend-test", elapsed_sec=runTime, file=log_str), True
 
 if __name__ == '__main__':
     if len(sys.argv) != 5 and len(sys.argv) != 6:
