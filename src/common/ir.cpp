@@ -254,7 +254,7 @@ void Store::emit(std::ostream &os) const {
 
 void MemUse::emit(std::ostream &os) const {
   if(call_use){
-    os << "(" << reg_name(dst) << ") = (" << reg_name(dep) << ")";
+    os << "(" << reg_name(dst) << ") = (" << reg_name(dep) << ")(" << reg_name(load_src) << ")";
   } else {
     auto ts = type_string(dst.type);
     write_reg(os) << "(" << reg_name(dep) <<")[" << reg_name(load_src) << "]";

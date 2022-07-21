@@ -14,7 +14,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"gvn_gcm", gvn_gcm},
   {"function_inline", function_inline},
   {"operator_strength_reduction", operator_strength_reduction},
-  {"array_mem2reg", array_mem2reg},
+  {"array_mem2reg", array_mem2reg},  // 在array ssa之前必须进行一次gvn_gcm
   {"array_ssa_destruction", array_ssa_destruction},
 };
 

@@ -37,7 +37,11 @@ void array_mem2reg(ir::Program *prog) {
     cfg->remove_unreachable_bb();
     cfg->compute_dom();
     auto df = cfg->compute_df();
+    auto entry = func->bbs.front().get();
 
+    for(auto each : prog->global_vars){
+      entry->push_front(new ir::insns::LoadAddr(func->new_reg(ScalarType::String), each.first));
+    }
     unordered_map<Reg, BasicBlock *> alloc_set;
     unordered_map<Reg, ScalarType> alloc2type;
     unordered_map<Reg, unordered_set<BasicBlock *>> defs;
@@ -47,7 +51,6 @@ void array_mem2reg(ir::Program *prog) {
     unordered_map<Reg, Reg> reg2base;
     unordered_map<std::string, Reg> name2base;
     vector<BasicBlock *> stack;
-    auto entry = func->bbs.front().get();
     stack.push_back(entry);
     for(int i = 0; i < func->sig.param_types.size(); i++){
       auto &param = func->sig.param_types[i];
@@ -179,7 +182,7 @@ void array_mem2reg(ir::Program *prog) {
               } else {
                 src = alloc_map.at(pos).at(base);
               }
-              auto new_inst = new ir::insns::MemUse(dst, src, src, true);
+              auto new_inst = new ir::insns::MemUse(dst, src, reg, true);
               bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
               new_inst->bb = bb;
               new_inst->add_use_def();
@@ -280,6 +283,7 @@ void array_ssa_destruction(ir::Program *prog){
           if(phi->array_ssa){
             phi->remove_use_def();
             iter = bb->insns.erase(iter);
+            continue;
           }
         }
         iter++;
