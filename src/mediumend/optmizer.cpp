@@ -34,7 +34,9 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   constant_propagation,
   remove_uneffective_inst,
   remove_useless_loop,
+  clean_useless_cf,
   remove_uneffective_inst,
+  clean_useless_cf,
   // simplification_phi,
   // 移除无用指令后可能有的函数不会被调用，pure function / unreachable BB里的function
   remove_unused_function,

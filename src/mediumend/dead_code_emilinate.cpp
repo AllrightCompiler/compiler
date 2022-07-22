@@ -376,7 +376,7 @@ bool remove_useless_loop(ir::Function *func) {
       // 这里判断只有一个出口
       for (BasicBlock *suc : bb->succ) {
         if (!suc->loop || suc->loop != loop) {
-          if(out){
+          if(out && suc != out){
             check = false;
           } else {
             out_bb = bb;
@@ -405,9 +405,16 @@ bool remove_useless_loop(ir::Function *func) {
     
   }
   for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-    if(remove_bbs.count(iter->get())){
-      for(auto &inst : iter->get()->insns){
+    auto bb = iter->get();
+    if(remove_bbs.count(bb)){
+      for(auto &inst : bb->insns){
         inst->remove_use_def();
+      }
+      for(auto prev : bb->prev){
+        prev->succ.erase(bb);
+      }
+      for(auto succ : bb->succ){
+        succ->prev.erase(bb);
       }
       iter = func->bbs.erase(iter);
     } else {
