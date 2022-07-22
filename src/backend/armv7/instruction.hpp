@@ -591,4 +591,17 @@ struct Phi : Instruction {
   }
 };
 
+struct Vneg: Instruction {
+  Reg dst,src;
+  Vneg(Reg dst, Reg src):dst{dst}, src{src}{
+    assert(dst.is_float());
+    assert(src.is_float());
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
+};
+
 } // namespace armv7

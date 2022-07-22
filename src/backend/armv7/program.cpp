@@ -257,7 +257,7 @@ class ProgramTranslator {
         if (!dst.is_float()) {
           bb->push(new IType{IType::Op::RevSub, dst, src, 0});
         } else {
-          // TODO: emit vneg
+          bb->push(new Vneg(dst, src));
         }
         break;
       case UnaryOp::Not: {
@@ -361,7 +361,6 @@ class ProgramTranslator {
           bb->push(
               new Move{Reg{arg_reg.type, r0 + i}, Operand2::from(arg_reg)});
         } else {
-          // TODO: move or explicit vmov?
           bb->push(new Move{Reg{Fp, s0 + i}, Operand2::from(arg_reg)});
         }
       }

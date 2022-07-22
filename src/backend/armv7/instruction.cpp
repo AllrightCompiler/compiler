@@ -331,4 +331,8 @@ void Phi::emit(std::ostream &os) const {
     os << ", " << '[' << bb->label << ", " << src << ']';
 }
 
+void Vneg::emit(std::ostream &os) const {
+  write_op(os, "vneg.f32") << this->dst << ", " << this->src;
+}
+
 } // namespace armv7
