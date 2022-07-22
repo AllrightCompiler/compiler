@@ -31,6 +31,17 @@ unordered_map<Reg, Reg> find_base(Function *func) {
 }
 
 void array_mem2reg(ir::Program *prog) {
+  unordered_map<std::string, unordered_set<std::string>> used_gvar;
+  for (auto &each : prog->functions) {
+    Function *func = &each.second;
+    for(auto &bb : func->bbs){
+      for(auto &inst : bb->insns){
+        TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()){
+          used_gvar[each.first].insert(loadaddr->var_name);
+        }
+      }
+    }
+  }
   for (auto &each : prog->functions) {
     Function *func = &each.second;
     CFG *cfg = func->cfg;
@@ -112,7 +123,7 @@ void array_mem2reg(ir::Program *prog) {
         auto bb = *W.begin();
         W.erase(W.begin());
         for (auto &Y : df[bb]) {
-          if (F.find(Y) == F.end()) {
+          if (F.find(Y) == F.end() && Y->live_in.count(v.first)) {
             Reg r = func->new_reg(alloc2type[v.first]);
             auto phi = new ir::insns::Phi(r, true);
             Y->insns.emplace_front(phi); // add phi
@@ -180,6 +191,7 @@ void array_mem2reg(ir::Program *prog) {
         TypeCase(inst, ir::insns::Call *, iter->get()) {
           auto use = inst->use();
           unordered_map<Reg, Reg> use2def;
+          unordered_map<std::string, Reg>name2def;
           for(auto reg : use){
             if (reg2base.find(reg) != reg2base.end()) {
               auto base = reg2base[reg];
@@ -202,7 +214,51 @@ void array_mem2reg(ir::Program *prog) {
               use2def[reg] = dst;
             }
           }
+          for(auto &gvar : used_gvar[inst->func]){
+            if(!name2base.count(gvar)){
+              continue;
+            }
+            auto base = name2base.at(gvar);
+            BasicBlock *pos = bb;
+            while (pos && !alloc_map[pos].count(base)) {
+              pos = pos->idom;
+            }
+            Reg dst = func->new_reg(ScalarType::String);
+            Reg src;
+            if (!pos) {
+              assert(false);
+            } else {
+              src = alloc_map.at(pos).at(base);
+            }
+            auto new_inst = new ir::insns::MemUse(dst, src, src, true);
+            bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
+            new_inst->bb = bb;
+            new_inst->add_use_def();
+            name2def[gvar] = dst;
+          }
           iter++;
+          for(auto &gvar : used_gvar[inst->func]){
+            if(!name2base.count(gvar)){
+              continue;
+            }
+            auto base = name2base[gvar];
+            Reg dst = func->new_reg(ScalarType::String);
+            BasicBlock *pos = bb;
+            while (pos && !alloc_map[pos].count(base)) {
+              pos = pos->idom;
+            }
+            Reg dep;
+            if (!pos) {
+              assert(false);
+            } else {
+              dep = alloc_map[pos][base];
+            }
+            auto new_inst = new ir::insns::MemDef(dst, dep, name2def.at(gvar), inst->dst, true);
+            iter = bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
+            new_inst->bb = bb;
+            new_inst->add_use_def();
+            alloc_map[bb][base] = dst;
+          }
           for(auto reg : use){
             if (reg2base.find(reg) != reg2base.end()) {
               auto base = reg2base[reg];
