@@ -85,7 +85,8 @@ public:
   Loop *outer;
   BasicBlock *header;
   int level;
-  Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1) {}
+  bool no_inner;
+  Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1), no_inner(true) {}
 };
 
 struct BasicBlock {
@@ -127,6 +128,8 @@ struct BasicBlock {
   void rpo_dfs(vector<BasicBlock *> &rpo);
   void loop_dfs();
   void clear_visit() { visit = false; }
+  void change_succ(BasicBlock* old_bb, BasicBlock* new_bb);
+  void change_prev(BasicBlock* old_bb, BasicBlock* new_bb);
 };
 
 void calc_loop_level(Loop *loop);
@@ -147,6 +150,7 @@ struct Function {
   unordered_map<Reg, unordered_set<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
   unordered_set<Reg> global_addr;
+  vector<unique_ptr<Loop>> loops;
 
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(ScalarType t) { return ir::Reg{t, ++nr_regs}; }
@@ -157,6 +161,7 @@ struct Function {
   void clear_graph();
   void clear_dom();
   void do_liveness_analysis();
+  void loop_analysis();
 };
 
 struct LibFunction {

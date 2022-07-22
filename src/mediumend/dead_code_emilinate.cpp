@@ -7,6 +7,12 @@ namespace mediumend {
 using std::vector;
 using std::unordered_set;
 
+using ir::Reg;
+using ir::Loop;
+using ir::BasicBlock;
+
+static ir::Program* cur_prog = nullptr;
+
 void detect_pure_function(ir::Program *prog, ir::Function *func) {
   if(func->pure != -1){
     return;
@@ -308,8 +314,115 @@ void clean_useless_cf(ir::Program *prog){
   }
 }
 
-void eliminate_useless_store(ir::Program *prog){
 
+bool remove_useless_loop(ir::Function *func) {
+  func->loop_analysis();
+  func->do_liveness_analysis();
+  bool changed = false;
+  unordered_set<BasicBlock *> remove_bbs;
+  for (auto &loop_ptr : func->loops) {
+    Loop * loop = loop_ptr.get();
+    if(!loop->no_inner){
+      continue;
+    }
+    BasicBlock *idom_prev = loop->header->idom;
+    bool check = true;
+    unordered_set<BasicBlock*> loop_bbs;
+    vector<BasicBlock *> stack;
+    stack.push_back(loop->header);
+    while(stack.size()){
+      auto bb = stack.back();
+      stack.pop_back();
+      if(bb->loop != loop){
+        continue;
+      }
+      loop_bbs.insert(bb);
+      for(auto each : bb->dom){
+        stack.push_back(each);
+      }
+    }
+    // 这里判断只有一个入口
+    for(auto each : loop->header->prev){
+      if(each != idom_prev){
+        if(!each->loop || each->loop != loop){
+          check = false;
+          break;
+        }
+      }
+    }
+    unordered_set<Reg> defs;
+    BasicBlock * out = nullptr;
+    BasicBlock* out_bb = nullptr;
+
+    for (BasicBlock *bb : loop_bbs) {
+      if(!check){
+        break;
+      }
+      for(auto &inst : bb->insns){
+        TypeCase(output, ir::insns::Output *, inst.get()){
+          defs.insert(output->dst);
+        }
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          if(!cur_prog->functions.count(call->func) || !cur_prog->functions.at(call->func).is_pure()){
+            check = false;
+            break;
+          }
+        }
+        TypeCase(store, ir::insns::Store *, inst.get()){
+          check = false;
+          break;
+        }
+      }
+      // 这里判断只有一个出口
+      for (BasicBlock *suc : bb->succ) {
+        if (!suc->loop || suc->loop != loop) {
+          if(out){
+            check = false;
+          } else {
+            out_bb = bb;
+            out = suc;
+          }
+        }
+      }
+    }
+    int raw_size = out->live_in.size() + defs.size();
+    defs.merge(out->live_in);
+    if(raw_size != defs.size()){
+      check = false;
+    }
+    if (!out) {
+      check = false;  
+    }
+    if(check == false){
+      continue;
+    }
+    changed = true;
+    // 标记所有需要删除的block，然后统一删除
+    remove_bbs.merge(loop_bbs);
+    // 处理前驱后继关系
+    idom_prev->change_succ(loop->header, out);
+    out->change_prev(out_bb, idom_prev);
+    
+  }
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    if(remove_bbs.count(iter->get())){
+      for(auto &inst : iter->get()->insns){
+        inst->remove_use_def();
+      }
+      iter = func->bbs.erase(iter);
+    } else {
+      iter++;
+    }
+  }
+  return changed;
+}
+
+void remove_useless_loop(ir::Program * prog){
+  cur_prog = prog;
+  for(auto &func : prog->functions){
+    while(remove_useless_loop(&func.second)) {}
+  }
+  cur_prog = nullptr;
 }
 
 }

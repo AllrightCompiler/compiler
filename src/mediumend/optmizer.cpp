@@ -17,6 +17,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"operator_strength_promotion", operator_strength_promotion},
   {"array_mem2reg", array_mem2reg},  // 在array ssa之前必须进行一次gvn_gcm
   {"array_ssa_destruction", array_ssa_destruction},
+  {"remove_useless_loop", remove_useless_loop},
 };
 
 // define default passes here
@@ -31,8 +32,10 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   gvn_gcm,
   // 原 simplification_phi, constant_propagation都被合并进了constant_propagation
   constant_propagation,
+  remove_uneffective_inst,
+  remove_useless_loop,
+  remove_uneffective_inst,
   // simplification_phi,
-  // remove_uneffective_inst,
   // 移除无用指令后可能有的函数不会被调用，pure function / unreachable BB里的function
   remove_unused_function,
   clean_useless_cf,

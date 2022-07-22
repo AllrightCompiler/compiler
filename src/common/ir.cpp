@@ -200,6 +200,42 @@ BasicBlock::remove_if(std::function<bool(Instruction *)> f) {
   return ret;
 }
 
+void BasicBlock::change_succ(BasicBlock* old_bb, BasicBlock* new_bb){
+  if(this->succ.count(old_bb)){
+    auto inst = this->insns.back().get();
+    this->succ.erase(old_bb);
+    this->succ.insert(new_bb);
+    TypeCase(br, ir::insns::Branch *, inst){
+      if(br->true_target == old_bb){
+        br->true_target = new_bb;
+      }
+      if(br->false_target == old_bb){
+        br->false_target = new_bb;
+      }
+    }
+    TypeCase(jmp, ir::insns::Jump *, inst){
+      if(jmp->target == old_bb){
+        jmp->target = new_bb;
+      }
+    }
+  }  
+}
+
+void BasicBlock::change_prev(BasicBlock* old_bb, BasicBlock* new_bb){
+  if(this->prev.count(old_bb)){
+    this->prev.erase(old_bb);
+    this->prev.insert(new_bb);
+    for(auto &ins: insns){
+      TypeCase(phi, ir::insns::Phi*, ins.get()){
+        phi->incoming[new_bb] = phi->incoming.at(old_bb);
+        phi->incoming.erase(old_bb);
+      } else {
+        break;
+      }
+    }
+  }
+}
+
 void Function::clear_visit() {
   for (auto &bb : bbs) {
     bb->clear_visit();
@@ -501,6 +537,7 @@ void BasicBlock::loop_dfs() {
   }
   if (!bbs.empty()) { // form 1 loop ( TODO: nested loops with same header? )
     Loop *new_loop = new Loop(this);
+    func->loops.emplace_back(new_loop);
     while (bbs.size() > 0) {
       auto bb = bbs.back();
       bbs.pop_back();
@@ -510,6 +547,7 @@ void BasicBlock::loop_dfs() {
           bbs.insert(bbs.end(), bb->prev.begin(), bb->prev.end());
         }
       } else {
+        new_loop->no_inner = false;
         Loop *inner_loop = bb->loop;
         while (inner_loop->outer)
           inner_loop = inner_loop->outer;
@@ -520,6 +558,16 @@ void BasicBlock::loop_dfs() {
                    inner_loop->header->prev.end());
       }
     }
+  }
+}
+
+void Function::loop_analysis() {
+  this->clear_visit();
+  this->cfg->compute_dom();
+  this->loops.clear();
+  this->bbs.front()->loop_dfs();
+  for (auto &bb : this->bbs) {
+    calc_loop_level(bb->loop);
   }
 }
 
