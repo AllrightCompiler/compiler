@@ -661,12 +661,14 @@ void MemDef::add_use_def() {
   Output::add_use_def();
   bb->func->use_list[store_dst].insert(this);
   bb->func->use_list[store_val].insert(this);
+  bb->func->use_list[dep].insert(this);
 }
 
 void MemDef::remove_use_def() {
   Output::remove_use_def();
   bb->func->use_list[store_dst].erase(this);
   bb->func->use_list[store_val].erase(this);
+  bb->func->use_list[dep].erase(this);
 }
 
 void MemDef::change_use(Reg old_reg, Reg new_reg) {
@@ -677,6 +679,11 @@ void MemDef::change_use(Reg old_reg, Reg new_reg) {
   }
   if(store_val == old_reg){
     store_val = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(dep == old_reg){
+    dep = new_reg;
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
   }

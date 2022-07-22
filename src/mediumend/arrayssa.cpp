@@ -140,14 +140,14 @@ void array_mem2reg(ir::Program *prog) {
             while (pos && !alloc_map[pos].count(base)) {
               pos = pos->idom;
             }
-            Reg reg;
+            Reg dep;
             if (!pos) {
               assert(false);
             } else {
-              reg = alloc_map[pos][base];
+              dep = alloc_map[pos][base];
             }
             inst->remove_use_def();
-            auto new_inst = new ir::insns::MemUse(inst->dst, reg, inst->addr, false);
+            auto new_inst = new ir::insns::MemUse(inst->dst, dep, inst->addr, false);
             iter->reset(new_inst);
             new_inst->bb = bb;
             new_inst->add_use_def();
@@ -158,7 +158,17 @@ void array_mem2reg(ir::Program *prog) {
             auto base = reg2base[inst->addr];
             inst->remove_use_def();
             Reg dst = func->new_reg(ScalarType::String);
-            auto new_inst = new ir::insns::MemDef(dst, inst->addr, inst->val, false);
+            BasicBlock *pos = bb;
+            while (pos && !alloc_map[pos].count(base)) {
+              pos = pos->idom;
+            }
+            Reg dep;
+            if (!pos) {
+              assert(false);
+            } else {
+              dep = alloc_map[pos][base];
+            }
+            auto new_inst = new ir::insns::MemDef(dst, dep, inst->addr, inst->val, false);
             iter->reset(new_inst);
             new_inst->bb = bb;
             new_inst->add_use_def();
@@ -195,7 +205,17 @@ void array_mem2reg(ir::Program *prog) {
             if (reg2base.find(reg) != reg2base.end()) {
               auto base = reg2base[reg];
               Reg dst = func->new_reg(ScalarType::String);
-              auto new_inst = new ir::insns::MemDef(dst, use2def.at(reg), inst->dst, true);
+              BasicBlock *pos = bb;
+              while (pos && !alloc_map[pos].count(base)) {
+                pos = pos->idom;
+              }
+              Reg dep;
+              if (!pos) {
+                assert(false);
+              } else {
+                dep = alloc_map[pos][base];
+              }
+              auto new_inst = new ir::insns::MemDef(dst, dep, use2def.at(reg), inst->dst, true);
               iter = bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
               new_inst->bb = bb;
               new_inst->add_use_def();

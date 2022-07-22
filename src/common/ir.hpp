@@ -455,16 +455,17 @@ struct MemUse : Output {
 };
 
 struct MemDef : Output {
+  Reg dep;
   Reg store_dst;
   Reg store_val;
   bool call_def;
-  MemDef(Reg dst, Reg store_dst, Reg store_val, bool call_def) : store_dst{store_dst}, store_val{store_val}, call_def(call_def), Output{dst} {}
+  MemDef(Reg dst, Reg dep, Reg store_dst, Reg store_val, bool call_def) : dep(dep), store_dst{store_dst}, store_val{store_val}, call_def(call_def), Output{dst} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-  virtual std::vector<Reg *> reg_ptrs() override { return {&store_dst, &store_val, &dst}; }
-  unordered_set<Reg> use() const override { return {store_dst, store_val}; }
+  virtual std::vector<Reg *> reg_ptrs() override { return {&store_dst, &store_val, &dst, &dep}; }
+  unordered_set<Reg> use() const override { return {store_dst, store_val, dep}; }
 };
 
 struct Return : Terminator {

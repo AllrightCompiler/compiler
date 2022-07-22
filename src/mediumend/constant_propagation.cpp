@@ -82,6 +82,9 @@ void constant_propagation(ir::Program *prog) {
                 continue;
               }
             }
+            TypeCase(memdef, ir::insns::MemDef *, ins.get()){
+              continue;
+            }
             auto reg_use = output->use();
             for (auto &use : reg_use) {
               if(!func->has_param(use)){
