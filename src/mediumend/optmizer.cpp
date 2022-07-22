@@ -14,6 +14,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"gvn_gcm", gvn_gcm},
   {"function_inline", function_inline},
   {"operator_strength_reduction", operator_strength_reduction},
+  {"split_critical_edges", split_critical_edges},
 };
 
 // define default passes here

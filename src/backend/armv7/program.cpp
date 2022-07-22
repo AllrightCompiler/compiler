@@ -49,7 +49,7 @@ void Function::emit_imm(BasicBlock *bb, Reg dst, int imm) {
     reg_val[dst] = imm;
 }
 
-void BasicBlock::insert_before_branch(Instruction *insn) {
+std::list<std::unique_ptr<Instruction>>::iterator BasicBlock::seq_end() {
   auto it = insns.begin();
   for (; it != insns.end(); ++it) {
     if ((*it)->is<Branch>()) {
@@ -61,7 +61,11 @@ void BasicBlock::insert_before_branch(Instruction *insn) {
       break;
     }
   }
-  insns.emplace(it, insn);
+  return it;
+}
+
+void BasicBlock::insert_before_branch(Instruction *insn) {
+  insns.emplace(seq_end(), insn);
 }
 
 class ProgramTranslator {
@@ -889,6 +893,8 @@ void Function::replace_pseudo_insns() {
 
 void Function::resolve_phi() {
   // de-SSA (phi resolution)
+  // 假定当前是Conventional SSA，如为T-SSA需要额外转换
+  // 每个move被拆成两步，引入新的临时变量以消除顺序依赖，达到phi函数的并行求值效果 
   std::vector<std::tuple<BasicBlock *, Reg, Reg>> pending_moves; // bb, dst, src
   for (auto &bb : bbs) {
     auto &insns = bb->insns;
@@ -896,11 +902,11 @@ void Function::resolve_phi() {
       TypeCase(phi, Phi *, it->get()) {
         for (auto &[bb, src] : phi->srcs) {
           // 在跳转前插入mov
-          // Reg dst = phi->dst;
-          // Reg mid = new_reg(dst.type);
-          // bb->insert_before_branch(new Move{mid, Operand2::from(src)});
-          // pending_moves.push_back({bb, dst, mid});
-          bb->insert_before_branch(new Move{phi->dst, Operand2::from(src)});
+          Reg dst = phi->dst;
+          Reg mid = new_reg(dst.type);
+          bb->insert_before_branch(new Move{mid, Operand2::from(src)});
+          pending_moves.push_back({bb, dst, mid});
+          // bb->insert_before_branch(new Move{phi->dst, Operand2::from(src)});
         }
         it = insns.erase(it);
       }
@@ -909,8 +915,8 @@ void Function::resolve_phi() {
       }
     }
   }
-  // for (auto &[bb, dst, src] : pending_moves)
-  //   bb->insert_before_branch(new Move{dst, Operand2::from(src)});
+  for (auto &[bb, dst, src] : pending_moves)
+    bb->insert_before_branch(new Move{dst, Operand2::from(src)});
 }
 
 } // namespace armv7

@@ -127,6 +127,15 @@ struct BasicBlock {
   void rpo_dfs(vector<BasicBlock *> &rpo);
   void loop_dfs();
   void clear_visit() { visit = false; }
+
+  static void add_edge(BasicBlock *from, BasicBlock *to) {
+    from->succ.insert(to);
+    to->prev.insert(from);
+  }
+  static void remove_edge(BasicBlock *from, BasicBlock *to) {
+    from->succ.erase(to);
+    to->prev.erase(from);
+  }
 };
 
 void calc_loop_level(Loop *loop);

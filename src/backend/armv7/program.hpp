@@ -17,7 +17,7 @@ struct BasicBlock {
   std::string label;
   std::list<std::unique_ptr<Instruction>> insns;
 
-  std::list<BasicBlock *> pred, succ;             // CFG
+  std::set<BasicBlock *> pred, succ;              // CFG
   std::set<Reg> def, live_use, live_in, live_out; // for liveness analysis
 
   void push(Instruction *insn) { insns.emplace_back(insn); }
@@ -25,11 +25,17 @@ struct BasicBlock {
     insn->cond = cond;
     insns.emplace_back(insn);
   }
+
+  std::list<std::unique_ptr<Instruction>>::iterator seq_end();
   void insert_before_branch(Instruction *insn);
 
   static void add_edge(BasicBlock *from, BasicBlock *to) {
-    from->succ.push_back(to);
-    to->pred.push_back(from);
+    from->succ.insert(to);
+    to->pred.insert(from);
+  }
+  static void remove_edge(BasicBlock *from, BasicBlock *to) {
+    from->succ.erase(to);
+    to->pred.erase(from);
   }
 };
 

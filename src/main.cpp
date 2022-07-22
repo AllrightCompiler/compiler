@@ -105,6 +105,9 @@ int main(int argc, char *argv[]) {
       llvm::emit_global(os, *ir_program);
       program->emit(os);
     } else {
+      // TODO: 检查是否可用于LLVM后端
+      // split_critical_edges后phi函数的incoming <bb, reg> pair中reg可能并不在bb中定义
+      // mediumend::split_critical_edges(ir_program.get());
       auto program = armv7::translate(*ir_program);
       armv7::backend_passes(*program);
       armv7::emit_global(os, *ir_program);
