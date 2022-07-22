@@ -57,6 +57,7 @@ void array_mem2reg(ir::Program *prog) {
       if(param.is_array()){
         auto reg = Reg(param.base_type, i + 1);
         reg2base[reg] = reg;
+        alloc_set[reg] = entry;
         alloc_map[entry][reg] = reg;
       }
     }

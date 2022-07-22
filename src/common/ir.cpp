@@ -302,7 +302,7 @@ void MemDef::emit(std::ostream &os) const {
     os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"] = (" << reg_name(store_val) << ")";
   } else {
     auto ts = type_string(store_val.type);
-    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"] = " << ts << " " << reg_name(store_val);
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"](dep:" << reg_name(dep) << ") = " << ts << " " << reg_name(store_val);
   }
 }
 
