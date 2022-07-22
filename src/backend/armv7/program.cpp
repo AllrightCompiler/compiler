@@ -6,6 +6,7 @@
 #include "common/ir.hpp"
 
 #include <cassert>
+#include <iostream>
 #include <map>
 #include <unordered_map>
 
@@ -31,6 +32,40 @@ void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
 
 void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
   emit_load_imm(bb->insns, bb->insns.end(), dst, imm);
+}
+
+void Function::emit_imm(
+    std::list<std::unique_ptr<Instruction>> &insns,
+    const std::list<std::unique_ptr<Instruction>>::iterator &it, Reg dst,
+    int imm) {
+  emit_load_imm(insns, it, dst, imm);
+  if (dst.is_virt())
+    reg_val[dst] = imm;
+}
+
+void Function::emit_imm(BasicBlock *bb, Reg dst, int imm) {
+  emit_load_imm(bb, dst, imm);
+  if (dst.is_virt())
+    reg_val[dst] = imm;
+}
+
+std::list<std::unique_ptr<Instruction>>::iterator BasicBlock::seq_end() {
+  auto it = insns.begin();
+  for (; it != insns.end(); ++it) {
+    if ((*it)->is<Branch>()) {
+      // 如果这是一个典型条件跳转 (e.g. cmp r0, #0; bne Lx)
+      // 将指令插入到cmp之前
+      if ((*it)->cond != ExCond::Always && it != insns.begin() &&
+          (*std::prev(it))->is<Compare>())
+        --it;
+      break;
+    }
+  }
+  return it;
+}
+
+void BasicBlock::insert_before_branch(Instruction *insn) {
+  insns.emplace(seq_end(), insn);
 }
 
 class ProgramTranslator {
@@ -131,25 +166,29 @@ class ProgramTranslator {
       fn.normal_objs.push_back(obj);
       fn.stack_objects.emplace_back(obj);
 
-      bb->push(new LoadStackAddr{Reg::from(alloca->dst), obj, 0});
+      Reg dst = Reg::from(alloca->dst);
+      fn.reg_val[dst] = obj;
+      bb->push(new LoadStackAddr{dst, obj, 0});
     }
     else TypeCase(load, ii::Load *, ins) {
       bb->push(new Load{Reg::from(load->dst), Reg::from(load->addr), 0});
     }
     else TypeCase(load, ii::LoadAddr *, ins) {
-      bb->push(new LoadAddr{Reg::from(load->dst), load->var_name});
+      Reg dst = Reg::from(load->dst);
+      fn.reg_val[dst] = load->var_name;
+      bb->push(new LoadAddr{dst, load->var_name});
     }
     else TypeCase(load, ii::LoadImm *, ins) {
       Reg dst = Reg::from(load->dst);
       if (!dst.is_float()) {
-        emit_load_imm(bb, dst, load->imm.iv);
+        fn.emit_imm(bb, dst, load->imm.iv);
       } else {
         float imm = load->imm.fv;
         if (false && is_vmov_f32_imm(imm)) { // TODO
           bb->push(new Move(dst, Operand2::from(imm)));
         } else {
           Reg t = fn.new_reg(General);
-          emit_load_imm(bb, t, *reinterpret_cast<int *>(&imm));
+          fn.emit_imm(bb, t, *reinterpret_cast<int *>(&imm));
           bb->push(new Move(dst, Operand2::from(t)));
         }
       }
@@ -172,7 +211,7 @@ class ProgramTranslator {
               Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
         } else {
           Reg imm_reg = fn.new_reg(General);
-          emit_load_imm(bb, imm_reg, dim);
+          fn.emit_imm(bb, imm_reg, dim);
           bb->push(new FusedMul{t, index_reg, imm_reg, s});
         }
         index_reg = t;
@@ -186,7 +225,7 @@ class ProgramTranslator {
               new Move{t, Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
         } else {
           Reg imm_reg = fn.new_reg(General);
-          emit_load_imm(bb, imm_reg, dim);
+          fn.emit_imm(bb, imm_reg, dim);
           bb->push(new RType{RType::Op::Mul, t, index_reg, imm_reg});
         }
         index_reg = t;
@@ -408,6 +447,12 @@ class ProgramTranslator {
         }
       }
     }
+    else TypeCase(phi, ii::Phi *, ins) {
+      std::vector<std::pair<BasicBlock *, Reg>> srcs;
+      for (auto &[ir_bb, reg] : phi->incoming)
+        srcs.emplace_back(bb_map.at(ir_bb), Reg::from(reg));
+      bb->push(new Phi{Reg::from(phi->dst), std::move(srcs)});
+    }
   }
 
 public:
@@ -449,11 +494,29 @@ void Function::emit(std::ostream &os) {
   }
 }
 
+Program::Program() : labels_used{0} {
+  auto p = [this](const char *s) { builtin_code.emplace_back(s); };
+  p("__builtin_array_init:");
+  p("    add r1, r0, r1, lsl #2");
+  p("    mov r2, #0");
+  p("1:");
+  p("    str r2, [r0]");
+  p("    add r0, r0, #4");
+  p("    cmp r0, r1");
+  p("    blt 1b");
+  p("    bx  lr");
+}
+
 void Program::emit(std::ostream &os) {
   os << ".cpu cortex-a72\n";
   os << ".arm\n";
+  os << ".fpu vfp\n";
   os << ".global main\n";
   os << ".section .text\n\n";
+
+  for (auto &line : builtin_code)
+    os << line << '\n';
+  os << '\n';
 
   for (auto &[_, f] : functions)
     f.emit(os);
@@ -837,6 +900,34 @@ void Function::replace_pseudo_insns() {
       }
     }
   }
+}
+
+void Function::resolve_phi() {
+  // de-SSA (phi resolution)
+  // 假定当前是Conventional SSA，如为T-SSA需要额外转换
+  // 每个move被拆成两步，引入新的临时变量以消除顺序依赖，达到phi函数的并行求值效果
+  std::vector<std::tuple<BasicBlock *, Reg, Reg>> pending_moves; // bb, dst, src
+  for (auto &bb : bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end();) {
+      TypeCase(phi, Phi *, it->get()) {
+        for (auto &[bb, src] : phi->srcs) {
+          // 在跳转前插入mov
+          Reg dst = phi->dst;
+          Reg mid = new_reg(dst.type);
+          bb->insert_before_branch(new Move{mid, Operand2::from(src)});
+          pending_moves.push_back({bb, dst, mid});
+          // bb->insert_before_branch(new Move{phi->dst, Operand2::from(src)});
+        }
+        it = insns.erase(it);
+      }
+      else {
+        ++it;
+      }
+    }
+  }
+  for (auto &[bb, dst, src] : pending_moves)
+    bb->insert_before_branch(new Move{dst, Operand2::from(src)});
 }
 
 } // namespace armv7

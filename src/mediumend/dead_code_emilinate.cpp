@@ -7,53 +7,6 @@ namespace mediumend {
 using std::vector;
 using std::unordered_set;
 
-
-vector<ir::Reg> get_inst_use_reg(ir::Instruction *inst){
-  vector<ir::Reg> regs;
-  TypeCase(unary, ir::insns::Unary *, inst){
-    regs.push_back(unary->src);
-  }
-  TypeCase(binary, ir::insns::Binary *, inst){
-    regs.push_back(binary->src1);
-    regs.push_back(binary->src2);
-  }
-  TypeCase(load, ir::insns::Load *, inst){
-    regs.push_back(load->addr);
-  }
-  TypeCase(store, ir::insns::Store *, inst){
-    regs.push_back(store->addr);
-    regs.push_back(store->val);
-  }
-  TypeCase(call, ir::insns::Call *, inst){
-    for(auto &r : call->args){
-      regs.push_back(r);
-    }
-  }
-  TypeCase(phi, ir::insns::Phi *, inst){
-    for(auto &r : phi->incoming){
-      regs.push_back(r.second);
-    }
-  }
-  TypeCase(convey, ir::insns::Convert *, inst){
-    regs.push_back(convey->src);
-  }
-  TypeCase(ret, ir::insns::Return *, inst){
-    if(ret->val.has_value()){
-      regs.push_back(ret->val.value());
-    }
-  }
-  TypeCase(branch, ir::insns::Branch *, inst){
-    regs.push_back(branch->val);
-  }
-  TypeCase(ptr, ir::insns::GetElementPtr *, inst){
-    regs.push_back(ptr->base);
-    for(auto &r : ptr->indices){
-      regs.push_back(r);
-    }
-  }
-  return regs;
-}
-
 void detect_pure_function(ir::Program *prog, ir::Function *func) {
   if(func->pure != -1){
     return;
@@ -95,7 +48,7 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
 }
 
 void mark_pure_func(ir::Program *prog){
-  prog->functions["main"].pure = 0;
+  prog->functions.at("main").pure = 0;
   for(auto &func : prog->functions){
     detect_pure_function(prog, &func.second);
   }
@@ -112,7 +65,7 @@ void remove_unused_function(ir::Program *prog){
       continue;
     }
     used.insert(func_name);
-    auto &func = prog->functions[func_name];
+    auto &func = prog->functions.at(func_name);
     for(auto &bb : func.bbs){
       for(auto &ins : bb->insns){
         if(auto call = dynamic_cast<ir::insns::Call *>(ins.get())){
@@ -146,7 +99,7 @@ void remove_uneffective_inst(ir::Program *prog){
             if(!prog->functions.count(call->func)){
               continue;
             }
-            if(prog->functions[call->func].pure == 0){
+            if(prog->functions.at(call->func).pure == 0){
               continue;
             }
           }
@@ -160,16 +113,18 @@ void remove_uneffective_inst(ir::Program *prog){
     while(!stack.empty()){
       auto inst = stack.back();
       stack.pop_back();
-      auto regs = get_inst_use_reg(inst);
+      auto regs = inst->use();
       inst->remove_use_def();
       for(auto reg : regs){
         if(func->use_list[reg].size() == 0){
-          auto output = func->def_list[reg];
-          if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
-            continue;
+          auto def = func->def_list.find(reg);
+          if(def != func->def_list.end()){
+            auto output = def->second;
+            if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
+              continue;
+            }
+            stack.push_back(output);
           }
-          assert(output);
-          stack.push_back(output);
         }
       }
       remove_inst_set.insert(inst);
@@ -192,6 +147,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
   stack.push_back(func->bbs.front().get());
   vector<BasicBlock *> order;
   func->bbs.front().get()->visit = true;
+  BasicBlock *entry = func->bbs.front().get();
   while(stack.size()){
     auto bb = stack.back();
     stack.pop_back();
@@ -205,6 +161,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
     }
   }
   bool ret = false;
+  func->clear_visit();
   for(int i = order.size() - 1; i >= 0; i--){
     auto bb = order[i];
     auto &inst = bb->insns.back();
@@ -219,6 +176,9 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
       auto target = jmp->target;
       if(bb->insns.size() == 1) {
         if(auto phi = dynamic_cast<ir::insns::Phi *>(target->insns.front().get())){
+          continue;
+        }
+        if(entry == bb){
           continue;
         }
         for(auto &pre : bb->prev){
@@ -238,7 +198,6 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           }
           pre->succ.erase(bb);
           pre->succ.insert(target);
-          target->prev.erase(bb);
           target->prev.insert(pre);
           for(auto &ins : target->insns){
             TypeCase(phi, ir::insns::Phi *, ins.get()){
@@ -250,6 +209,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
             }
           }
         }
+        target->prev.erase(bb);
         for(auto &ins : target->insns){
           TypeCase(phi, ir::insns::Phi *, ins.get()){
             phi->incoming.erase(bb);
@@ -257,12 +217,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
             break;
           }
         }
-        for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
-          if(iter->get() == bb){
-            func->bbs.erase(iter);
-            break;
-          }
-        }
+        bb->visit = true;
         ret = true;
         continue;
       }
@@ -270,6 +225,20 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
         bb->succ.erase(target);
         bb->succ.insert(target->succ.begin(), target->succ.end());
         bb->insns.pop_back();
+        for(auto suc: target->succ){
+          suc->prev.erase(target);
+          suc->prev.insert(bb);
+          for(auto &inst : suc->insns){
+            TypeCase(phi, ir::insns::Phi *, inst.get()){
+              if(phi->incoming.count(target)){
+                phi->incoming[bb] = phi->incoming[target];
+                phi->incoming.erase(target);
+              }
+            } else {
+              break;
+            }
+          }
+        }
         for(auto iter = target->insns.begin(); iter != target->insns.end();){
           TypeCase(phi, ir::insns::Phi *, iter->get()){
             assert(phi->incoming.size() == 1);
@@ -282,24 +251,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           }
         }
         bb->insns.splice(bb->insns.end(), target->insns);
-        for(auto iter = func->bbs.begin(); iter != func->bbs.end(); ++iter){
-          if(iter->get() == target){
-            for(auto suc : target->succ){
-              for(auto &inst : suc->insns){
-                TypeCase(phi, ir::insns::Phi *, inst.get()){
-                  if(phi->incoming.count(target)){
-                    phi->incoming[bb] = phi->incoming[target];
-                    phi->incoming.erase(target);
-                  }
-                } else {
-                  break;
-                }
-              }
-            }
-            func->bbs.erase(iter);
-            break;
-          }
-        }
+        target->visit = true;
         target->succ.clear();
         ret = true;
         continue;
@@ -312,6 +264,24 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           bb->succ.insert(br->false_target);
           br->true_target->prev.insert(bb);
           br->false_target->prev.insert(bb);
+          for(auto &ins : br->true_target->insns){
+            TypeCase(phi, ir::insns::Phi *, ins.get()){
+              if(phi->incoming.count(target)){
+                phi->incoming[bb] = phi->incoming[target];
+              }
+            } else {
+              break;
+            }
+          }
+          for(auto &ins : br->false_target->insns){
+            TypeCase(phi, ir::insns::Phi *, ins.get()){
+              if(phi->incoming.count(target)){
+                phi->incoming[bb] = phi->incoming[target];
+              }
+            } else {
+              break;
+            }
+          }
           br->remove_use_def();
           auto new_inst = new ir::insns::Branch(br->val, br->true_target, br->false_target);
           bb->insns.back().reset(new_inst);
@@ -321,6 +291,13 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
           continue;
         }
       }
+    }
+  }
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    if(iter->get()->visit){
+      iter = func->bbs.erase(iter);
+    } else {
+      iter++;
     }
   }
   return ret;

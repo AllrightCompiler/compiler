@@ -77,45 +77,46 @@ void CFG::build(){
 
 void CFG::remove_unreachable_bb() {
   auto entry = func->bbs.front().get();
-  unordered_set<BasicBlock *> remove_set;
-  vector<BasicBlock *> to_remove;
-
-  for (auto &bb : func->bbs) {
-    if (bb->prev.size() == 0 && bb.get() != entry) {
-      to_remove.push_back(bb.get());
+  func->clear_visit();
+  vector<ir::BasicBlock *> stack;
+  stack.push_back(entry);
+  while(stack.size()){
+    ir::BasicBlock *bb = stack.back();
+    stack.pop_back();
+    if(bb->visit){
+      continue;
     }
-  }
-  while (to_remove.size()) {
-    auto bb = to_remove.back();
-    to_remove.pop_back();
-    for (auto &succ : bb->succ) {
-      succ->prev.erase(bb);
-      if (succ->prev.size() == 0) {
-        to_remove.push_back(succ);
+    bb->visit = true;
+    for(auto suc : bb->succ){
+      if(!suc->visit){
+        stack.push_back(suc);
       }
     }
-    remove_set.insert(bb);
   }
-  for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
-    if (remove_set.find(iter->get()) != remove_set.end()) {
-      for(auto suc : iter->get()->succ){
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    if(iter->get()->visit){
+      iter++;
+    } else {
+      auto bb = iter->get();
+      for(auto &inst : bb->insns){
+        inst->remove_use_def();
+      }
+      for(auto suc : bb->succ){
+        suc->prev.erase(bb);
         for(auto &inst : suc->insns){
           TypeCase(phi, ir::insns::Phi *, inst.get()){
-            phi->incoming.erase(iter->get());
+            if(phi->incoming.count(bb)){
+              phi->remove_prev(bb);
+            }
           } else {
             break;
           }
         }
       }
-      for(auto pre: iter->get()->prev){
-        pre->succ.erase(iter->get());
-      }
-      for(auto suc: iter->get()->succ){
-        suc->prev.erase(iter->get());
+      for(auto pre : bb->prev){
+        pre->succ.erase(bb);
       }
       iter = func->bbs.erase(iter);
-    } else {
-      iter++;
     }
   }
 }
@@ -138,11 +139,11 @@ void CFG::compute_dom() {
   for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
     iter->get()->domby = all_bb;
   }
+  this->compute_rpo();
   bool modify = true;
   while (modify) {
     modify = false;
-    for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
-      auto bb = iter->get();
+    for (auto bb : rpo) {
       auto &domby_bb = bb->domby;
       auto &dom_bb = bb->dom;
       for (auto iter = domby_bb.begin(); iter != domby_bb.end();) {
@@ -194,17 +195,16 @@ void CFG::compute_dom() {
   compute_dom_level(entry, 0);
 }
 
-
+// 计算支配边界
 unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {
   unordered_map<BasicBlock *, unordered_set<BasicBlock *>> df;
   for (auto &bb : func->bbs) {
-    auto &succ_bb = bb->succ;
-    for (BasicBlock *to : succ_bb) {
-      auto &domby = to->domby;
-      BasicBlock *x = bb.get();
-      while (x == to || domby.find(x) == domby.end()) {
-        df[x].insert(to);
-        x = x->idom;
+    for (BasicBlock *suc : bb->succ) {
+      auto &domby = suc->domby;
+      BasicBlock *pos = bb.get();
+      while (pos == suc || domby.find(pos) == domby.end()) {
+        df[pos].insert(suc);
+        pos = pos->idom;
       }
     }
   }
@@ -213,13 +213,17 @@ unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {
 void CFG::compute_rpo() {
   func->clear_visit();
   rpo.clear();
-  func->bbs.front().get()->rpo_dfs(rpo);
+  func->bbs.front()->rpo_dfs(rpo);
+  for (auto bb: rpo) {
+    bb->rpo_num = rpo.size() - bb->rpo_num; // reverse
+  }
   std::reverse(rpo.begin(), rpo.end());
 }
 
 void CFG::loop_analysis() {
   func->clear_visit();
-  func->bbs.front().get()->loop_dfs();
+  func->cfg->compute_dom();
+  func->bbs.front()->loop_dfs();
   for (auto &bb : func->bbs) {
     calc_loop_level(bb->loop);
   }

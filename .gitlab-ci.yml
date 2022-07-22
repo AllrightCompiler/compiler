@@ -1,0 +1,83 @@
+stages:
+    - build
+    - mediumend-test-2022
+    - mediumend-test-prev
+
+build:
+  stage: build
+  needs: []
+  script:
+    - rm -r build/ || true
+    - mkdir build
+    - cd build
+    - cmake ..
+    - make -j
+  artifacts:
+    paths:
+      - build/compiler
+
+functional2022:
+  stage: mediumend-test-2022
+  needs: [build]
+  script:
+    - cd build
+    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2022/functional/ test_result_functional2022.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_functional2022.xml
+
+performance2022:
+  stage: mediumend-test-2022
+  needs: [build]
+  script:
+    - cd build
+    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2022/performance/ test_result_performance2022.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_performance2022.xml
+
+functional_pre2021:
+  stage: mediumend-test-prev
+  needs: [build]
+  script:
+    - cd build
+    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2021/2021_pre/functional/ test_result_functional_pre2021.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_functional_pre2021.xml
+
+functional_h_pre2021:
+  stage: mediumend-test-prev
+  needs: [build]
+  script:
+    - cd build
+    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2021/2021_pre/h_functional/ test_result_functional_h_pre2021.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_functional_h_pre2021.xml
+
+functional2021:
+  stage: mediumend-test-prev
+  needs: [build]
+  script:
+    - cd build
+    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2021/function_test2021/ test_result_functional2021.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_functional2021.xml
+
+functional2020:
+  stage: mediumend-test-prev
+  needs: [build]
+  script:
+    - cd build
+    - python3 ../test/mediumend/run_tests.py ./compiler ../test/mediumend/ir_to_llvm.py ../runtime/libsysy_x86.a /home/compile-ci-runner/compiler2021/function_test2020/ test_result_functional2020.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_functional2020.xml

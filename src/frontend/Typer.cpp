@@ -38,6 +38,10 @@ Typer::Typer() {
   funcs["putf"] = {.ret_type = std::nullopt,
                    .param_types = {Type{String}, Type{Int}},
                    .variadic = true};
+  funcs["starttime"] = {
+      .ret_type = std::nullopt, .param_types = {}, .variadic = false};
+  funcs["stoptime"] = {
+      .ret_type = std::nullopt, .param_types = {}, .variadic = false};
 }
 
 void Typer::visit_compile_unit(const ast::CompileUnit &node) {

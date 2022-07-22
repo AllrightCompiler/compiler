@@ -56,7 +56,11 @@ def offline_judge(asm_dir, testcases_dir, temp_dir):
     failed_cases = []
     for src in sorted(srcs):
         name = src.replace('.S', '')
-        ok = judge_single(name, asm_dir, testcases_dir, temp_dir)
+        try:
+            ok = judge_single(name, asm_dir, testcases_dir, temp_dir)
+        except KeyboardInterrupt:
+            print(f'\033[0;33m{name} interrupted\033[0m')
+            ok = False
         if not ok:
             failed_cases.append(name)
     

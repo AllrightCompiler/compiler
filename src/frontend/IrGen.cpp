@@ -37,6 +37,15 @@ IrGen::IrGen() : program{new Program} {
       .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}}};
   lib["putf"].sig = {.ret_type = std::nullopt,
                      .param_types = {Type{String}, Type{Int}}};
+  lib["starttime"].sig = {.ret_type = std::nullopt, .param_types = {}};
+  lib["stoptime"].sig = {.ret_type = std::nullopt, .param_types = {}};
+  lib["_sysy_starttime"].sig = {.ret_type = std::nullopt,
+                                .param_types = {Type{Int}}};
+  lib["_sysy_stoptime"].sig = {.ret_type = std::nullopt,
+                               .param_types = {Type{Int}}};
+  lib["__builtin_array_init"].sig = {
+      .ret_type = std::nullopt,
+      .param_types = {Type{Int, std::vector<int>{0}}, Type{Int}}};
 }
 
 BasicBlock *IrGen::new_bb() {
@@ -88,7 +97,7 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
   Reg reg;
   mem_vars[var.get()].global = is_global;
   if (!is_global) {
-    reg = new_reg(String); // 注: String无实际意义，表示一个地址
+    reg = new_reg(String);
     mem_vars[var.get()].reg = reg;
     emit(new insns::Alloca{reg, var_type});
   } else { // global
@@ -105,13 +114,26 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
     }
 
     if (var_type.is_array()) {
+      bool zeroed = false;
+      int nr_elems = var_type.nr_elems();
+
+      // 对较大的局部数组直接调用内置清零初始化函数
+      if (nr_elems > 16 && !is_global) {
+        Reg n = new_reg(Int);
+        emit(new insns::LoadImm{n, nr_elems});
+        emit(
+            new insns::Call{new_reg(String), "__builtin_array_init", {reg, n}});
+        zeroed = true;
+      }
+
       int index = 0;
       std::set<int> assigned_indices;
       visit_initializer(
           std::get<std::vector<std::unique_ptr<ast::Initializer>>>(value), var,
           reg, 0, index, assigned_indices);
+
       // 如果非全局变量，在其他索引处填充0
-      if (!is_global) {
+      if (!is_global && !zeroed) {
         Reg zero_reg = new_reg(var_type.base_type);
         ConstValue zero_imm = (var_type.base_type == Float)
                                   ? ConstValue{float(0)}
@@ -119,7 +141,6 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
         emit(new insns::LoadImm{zero_reg, zero_imm});
 
         int cur_idx = 0;
-        int nr_elems = var_type.size() / 4;
         for (int idx : assigned_indices) {
           while (cur_idx < idx) {
             emit_array_init(reg, zero_reg, cur_idx);
@@ -146,6 +167,14 @@ void IrGen::visit_declaration(const ast::Declaration &node) {
         Reg val = scalar_cast(visit_arith_expr(expr), var_type.base_type);
         emit(new insns::Store{reg, val});
       }
+    }
+  } else {
+    if (!is_global && !var_type.is_array()) {
+      Reg zero_reg = new_reg(var_type.base_type);
+      ConstValue zero_imm =
+          (var_type.base_type == Float) ? ConstValue{float(0)} : ConstValue{0};
+      emit(new insns::LoadImm{zero_reg, zero_imm});
+      emit(new insns::Store{reg, zero_reg});
     }
   }
 }
@@ -236,9 +265,18 @@ void IrGen::visit_function(const ast::Function &node) {
     emit(new insns::Call{new_reg(String), ".init", {}});
 
   visit_statement(*node.body());
-  
+
   // 总是添加return作为兜底
-  emit(new insns::Return{std::nullopt});
+  std::optional<Reg> ret_val = std::nullopt;
+  if (ret_type) {
+    ret_val = new_reg(ret_type->type());
+    if (ret_type->type() == ScalarType::Int) {
+      emit(new insns::LoadImm(ret_val.value(), ConstValue(0)));
+    } else {
+      emit(new insns::LoadImm(ret_val.value(), ConstValue(0.0f)));
+    }
+  }
+  emit(new insns::Return{ret_val});
 
   cur_func->nr_regs = local_regs;
   cur_func = nullptr;
@@ -354,7 +392,7 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
     return visit_lvalue(*lvalue, false);
   }
   TypeCase(call, const ast::Call *, expr) {
-    auto &callee_name = call->func().name();
+    auto callee_name = call->func().name();
     ir::FunctionSignature *sig = nullptr;
     if (program->functions.count(callee_name))
       sig = &(program->functions[callee_name].sig);
@@ -364,23 +402,32 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
     int nr_params = sig->param_types.size();
     int nr_args = call->args().size();
     std::vector<Reg> arg_regs;
-    for (int i = 0; i < nr_args; ++i) {
-      auto &arg = call->args()[i];
-      if (arg.index() == 0) { // expression
-        auto &arg_expr = std::get<std::unique_ptr<ast::Expression>>(arg);
-        Reg reg = visit_arith_expr(arg_expr);
-        if (i < nr_params && !sig->param_types[i].is_array())
-          reg = scalar_cast(reg, sig->param_types[i].base_type);
-        arg_regs.push_back(reg);
-      } else { // string literal
-        auto &str_literal = std::get<ast::StringLiteral>(arg);
-        int str_id = program->string_table.size();
-        program->string_table.push_back(str_literal.value());
-        auto str_name = ".str." + std::to_string(str_id);
-        Reg reg = new_reg(String);
-        emit(new insns::LoadAddr{reg, str_name});
-        arg_regs.push_back(reg);
+    if (callee_name != "starttime" && callee_name != "stoptime") {
+      for (int i = 0; i < nr_args; ++i) {
+        auto &arg = call->args()[i];
+        if (arg.index() == 0) { // expression
+          auto &arg_expr = std::get<std::unique_ptr<ast::Expression>>(arg);
+          Reg reg = visit_arith_expr(arg_expr);
+          if (i < nr_params && !sig->param_types[i].is_array())
+            reg = scalar_cast(reg, sig->param_types[i].base_type);
+          arg_regs.push_back(reg);
+        } else { // string literal
+          auto &str_literal = std::get<ast::StringLiteral>(arg);
+          int str_id = program->string_table.size();
+          program->string_table.push_back(str_literal.value());
+          auto str_name = ".str." + std::to_string(str_id);
+          Reg reg = new_reg(String);
+          emit(new insns::LoadAddr{reg, str_name});
+          arg_regs.push_back(reg);
+        }
       }
+    } else {
+      // 转写内置宏starttime和stoptime
+      int lineno = call->line();
+      Reg reg = new_reg(Int);
+      emit(new insns::LoadImm{reg, lineno});
+      arg_regs.push_back(reg);
+      callee_name = "_sysy_" + callee_name;
     }
 
     // int和float即相应类型，剩下的随便写个string
@@ -505,7 +552,8 @@ void IrGen::visit_while(const ast::While &node) {
   break_targets.push_back(next_bb);
   continue_targets.push_back(cond_bb);
   visit_statement(*node.body());
-  emit(new insns::Jump{cond_bb});
+  auto body_br_targets = visit_logical_expr(node.cond());
+  body_br_targets.resolve(body_bb, next_bb);
   continue_targets.pop_back();
   break_targets.pop_back();
   cur_bb = next_bb;

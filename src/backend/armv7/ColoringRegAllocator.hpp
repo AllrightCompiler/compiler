@@ -30,12 +30,15 @@ class ColoringRegAllocator {
   std::set<Move *> worklist_moves;
   std::set<Move *> active_moves;
 
+  std::set<Reg> spilling_regs;
+
   int K; // 可用于分配的物理寄存器数量
   Function *f;
   bool is_gp_pass;
   RegFilter reg_filter;
 
   void init(Function &func, bool is_gp_pass);
+  double get_basic_spill_cost(Reg r);
 
   // functions
   std::set<Reg> adjacent(Reg n) const;

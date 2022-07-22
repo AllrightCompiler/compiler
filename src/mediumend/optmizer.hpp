@@ -14,25 +14,27 @@ void constant_propagation(ir::Program *prog);
 void mark_pure_func(ir::Program *);
 void remove_uneffective_inst(ir::Program *prog);
 void clean_useless_cf(ir::Program *prog);
-void simplification_phi(ir::Program *prog);
 void main_global_var_to_local(ir::Program *prog);
 void gvn_gcm(ir::Program *prog);
 void function_inline(ir::Program *prog);
-
-vector<ir::Reg> get_inst_use_reg(ir::Instruction *inst);
+void remove_unused_phi(ir::Function *func);
+void operator_strength_reduction(ir::Program *prog);
+void split_critical_edges(ir::Program *prog);
 
 // IMPORTANT: if add new pass, modify PASS_MAP in optmizer.cpp
 extern const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP;
 // define default passes in optmizer.cpp
 extern std::vector<std::function<void(ir::Program *)> > passes;
 
-ConstValue const_compute(ir::Instruction *inst, ConstValue &oprand);
-ConstValue const_compute(ir::Instruction *inst, ConstValue &op1, ConstValue &op2);
-void copy_propagation(unordered_map<ir::Reg, std::list<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
+ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
+ConstValue const_compute(ir::Instruction *inst, const ConstValue &op1, const ConstValue &op2);
+void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){
     func.second.cfg = new CFG(&func.second);
+    func.second.cfg->build();
+    func.second.cfg->remove_unreachable_bb();
   }
   compute_use_def_list(prog);
 

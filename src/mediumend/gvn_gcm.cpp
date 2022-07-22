@@ -5,6 +5,7 @@
 #include <iostream>
 #include <variant>
 
+
 namespace mediumend {
 
 using ir::Function;
@@ -13,7 +14,11 @@ using ir::Reg;
 using ir::Instruction;
 using std::list;
 using std::unique_ptr;
+using std::tuple;
+using std::vector;
 using mediumend::CFG;
+
+static ir::Program *program = nullptr;
 
 // try to swap imm to src2 (only for ops with commutativity)
 void swapBinaryOprands(ir::insns::Binary *binary) {
@@ -48,10 +53,10 @@ void swapBinaryOprands(ir::insns::Binary *binary) {
 // try to simplify binary
 // return const if simplified to const
 // return Reg if simplified to reg
-std::optional< std::variant<ConstValue, Reg> > simplifyBinary(unordered_map<Reg, ConstValue> &constMap, ir::insns::Binary *binary) {
+std::optional< std::variant<ConstValue, Reg> > simplifyBinary(const unordered_map<Reg, ConstValue> &constMap, ir::insns::Binary *binary) {
   Reg src1 = binary->src1, src2 = binary->src2;
   if (constMap.count(src1) && constMap.count(src2)) {
-    return const_compute(binary, constMap[src1], constMap[src2]);
+    return const_compute(binary, constMap.at(src1), constMap.at(src2));
   }
   if (!constMap.count(src1) && !constMap.count(src2)) {
     if (src1 == src2) {
@@ -77,24 +82,24 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(unordered_map<Reg,
   switch (binary->op) {
     case BinaryOp::Add:
       assert(!constMap.count(src1) && constMap.count(src2));
-      if (constMap[src2].isValue(0)) return src1;
+      if (constMap.at(src2).isValue(0)) return src1;
       break;
     case BinaryOp::Sub:
-      if (constMap.count(src2) && constMap[src2].isValue(0)) return src1;
+      if (constMap.count(src2) && constMap.at(src2).isValue(0)) return src1;
       break;
     case BinaryOp::Mul:
       assert(!constMap.count(src1) && constMap.count(src2));
-      if (constMap[src2].isValue(0)) return ConstValue(0);
-      if (constMap[src2].isValue(1)) return src1;
+      if (constMap.at(src2).isValue(0)) return ConstValue(0);
+      if (constMap.at(src2).isValue(1)) return src1;
       break;
     case BinaryOp::Div:
       if (constMap.count(src2)) {
-        if (constMap[src2].isValue(1)) return src1;
+        if (constMap.at(src2).isValue(1)) return src1;
       }
       break;
     case BinaryOp::Mod:
       if (constMap.count(src2)) {
-        if (constMap[src2].isValue(1)) return ConstValue(0);
+        if (constMap.at(src2).isValue(1)) return ConstValue(0);
       }
       break;
     default:
@@ -103,123 +108,110 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(unordered_map<Reg,
   return std::nullopt;
 }
 
+// use reg as value number
+static unordered_map<ConstValue, Reg> hashTable_loadimm;
+static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
+static unordered_map<std::string, Reg> hashTable_loadaddr;
+static unordered_map<tuple<Type, Reg, vector<Reg> >, Reg> hashTable_gep;
+static unordered_map<tuple<std::string, vector<Reg> >, Reg> hashTable_call;
+static unordered_map<Reg, ConstValue> constMap;
+static unordered_map<ConstValue, Reg> rConstMap;
+static unordered_map<Instruction *, Reg> hashTable;
+
 // lookup Value Number of inst, insert when not found
-Reg vn_get(unordered_map<Instruction *, Reg> &hashTable,
-          unordered_set<Instruction *> &vnSet,
-          unordered_map<Reg, ConstValue> &constMap,
-          Instruction *inst) {
+Reg vn_get(Instruction *inst) {
   if (hashTable.find(inst) != hashTable.end()) return hashTable[inst];
-  TypeCase(phi, ir::insns::Phi *, inst) {
-    bool find = false;
-    for (auto i : vnSet) {
-      TypeCase(phi_i, ir::insns::Phi *, i) {
-        bool same = true;
-        Reg first = (*phi_i->incoming.begin()).second;
-        for (auto income : phi_i->incoming) {
-          same &= (first == income.second);
-        }
-        if (same) {
-          hashTable[inst] = phi_i->dst;
-          find = true;
-        }
-      }
-    }
-    if (!find) {
-      hashTable[inst] = phi->dst;
-      vnSet.insert(inst);
-    }
-  } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
-    bool find = false;
-    for (auto i : vnSet) {
-      TypeCase(loadimm_i, ir::insns::LoadImm *, i) {
-        if (loadimm_i->imm == loadimm->imm) {
-          hashTable[inst] = loadimm_i->dst;
-          find = true;
-        }
-      }
-    }
-    if (!find) {
+  TypeCase(loadimm, ir::insns::LoadImm *, inst) {
+    if (hashTable_loadimm.count(loadimm->imm)) {
+      hashTable[inst] = hashTable_loadimm[loadimm->imm];
+    } else {
       hashTable[inst] = loadimm->dst;
-      vnSet.insert(inst);
-      constMap[hashTable[inst]] = loadimm->imm;
+      hashTable_loadimm[loadimm->imm] = loadimm->dst;
+      constMap[loadimm->dst] = loadimm->imm;
+      rConstMap[loadimm->imm] = loadimm->dst;
     }
   } else TypeCase(binary, ir::insns::Binary *, inst) {
     bool find = false;
-    for (auto i : vnSet) {
-      TypeCase(binary_i, ir::insns::Binary *, i) {
-        if (binary->op == binary_i->op && binary->src1 == binary_i->src1 && binary->src2 == binary_i->src2) {
-          hashTable[inst] = binary_i->dst;
-          find = true;
-        }
-        // check commutativity
-        if (binary->op == BinaryOp::Add || 
-            binary->op == BinaryOp::Mul || 
-            binary->op == BinaryOp::Eq || 
-            binary->op == BinaryOp::Neq) {
-          if (binary->src1 == binary_i->src2 && binary->src2 == binary_i->src1) {
-            hashTable[inst] = binary_i->dst;
-            find = true;
-          }
-        }
-        // check +imm and -imm
-        if (binary->src1 == binary_i->src1 && constMap.count(binary->src2) && constMap.count(binary_i->src2)) {
-          if ((binary->op == BinaryOp::Add && binary_i->op == BinaryOp::Sub) || (binary->op == BinaryOp::Sub && binary_i->op == BinaryOp::Add)) {
-            ConstValue c1 = constMap[binary->src2], c2 = constMap[binary_i->src2];
-            if (c1.isOpposite(c2)) {
-              hashTable[inst] = binary_i->dst;
-              find = true;
-            }
-          }
-        }
-        // check Lt & Gt, Leq & Geq
-        if (binary->src1 == binary_i->src2 && binary->src2 == binary_i->src1) {
-          switch (binary->op) {
-            case BinaryOp::Lt:
-              if (binary_i->op == BinaryOp::Gt) {
-                hashTable[inst] = binary_i->dst;
-                find = true;
-              }
-              break;
-            case BinaryOp::Gt:
-               if (binary_i->op == BinaryOp::Lt) {
-                hashTable[inst] = binary_i->dst;
-                find = true;
-              }
-              break;
-            case BinaryOp::Leq:
-               if (binary_i->op == BinaryOp::Geq) {
-                hashTable[inst] = binary_i->dst;
-                find = true;
-              }
-              break;
-            case BinaryOp::Geq:
-               if (binary_i->op == BinaryOp::Leq) {
-                hashTable[inst] = binary_i->dst;
-                find = true;
-              }
-              break;
-            default:
-              break;
-          }
-        }
+    auto check_binary = [&](BinaryOp op, Reg r1, Reg r2) {
+      if (hashTable_binary.count(std::make_tuple(op, r1, r2))) {
+        hashTable[inst] = hashTable_binary[std::make_tuple(op, r1, r2)];
+        find = true;
       }
+    };
+    check_binary(binary->op, binary->src1, binary->src2);
+    // check commutativity
+    if (binary->op == BinaryOp::Add || 
+        binary->op == BinaryOp::Mul || 
+        binary->op == BinaryOp::Eq || 
+        binary->op == BinaryOp::Neq) {
+      check_binary(binary->op, binary->src2, binary->src1);
+    }
+    // check +imm and -imm
+    if (constMap.count(binary->src2) && rConstMap.count(constMap.at(binary->src2).getOpposite())) {
+      if (binary->op == BinaryOp::Add) {
+        check_binary(BinaryOp::Sub, binary->src1, rConstMap.at(constMap.at(binary->src2).getOpposite()));
+      }
+      if (binary->op == BinaryOp::Sub) {
+        check_binary(BinaryOp::Add, binary->src1, rConstMap.at(constMap.at(binary->src2).getOpposite()));
+      }
+    }
+    // check Lt & Gt, Leq & Geq
+    switch (binary->op) {
+      case BinaryOp::Lt:
+        check_binary(BinaryOp::Gt, binary->src2, binary->src1);
+        break;
+      case BinaryOp::Gt:
+        check_binary(BinaryOp::Lt, binary->src2, binary->src1);
+        break;
+      case BinaryOp::Leq:
+        check_binary(BinaryOp::Geq, binary->src2, binary->src1);
+        break;
+      case BinaryOp::Geq:
+        check_binary(BinaryOp::Leq, binary->src2, binary->src1);
+        break;
+      default:
+        break;
     }
     if (!find) {
       hashTable[inst] = binary->dst;
-      vnSet.insert(inst);
+      hashTable_binary[std::make_tuple(binary->op, binary->src1, binary->src2)] = binary->dst;
+    }
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    if (hashTable_loadaddr.count(loadaddr->var_name)) {
+      hashTable[inst] = hashTable_loadaddr[loadaddr->var_name];
+    } else {
+      hashTable[inst] = loadaddr->dst;
+      hashTable_loadaddr[loadaddr->var_name] = loadaddr->dst;
+    }
+  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+    if (hashTable_gep.count(std::make_tuple(gep->type, gep->base, gep->indices))) {
+      hashTable[inst] = hashTable_gep[make_tuple(gep->type, gep->base, gep->indices)];
+    } else {
+      hashTable[inst] = gep->dst;
+      hashTable_gep[make_tuple(gep->type, gep->base, gep->indices)] = gep->dst;
+    }
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
+      if (hashTable_call.count(std::make_tuple(call->func, call->args))) {
+        hashTable[inst] = hashTable_call[make_tuple(call->func, call->args)];
+      } else {
+        hashTable[inst] = call->dst;
+        hashTable_call[make_tuple(call->func, call->args)] = call->dst;
+      }
+    } else {
+      hashTable[inst] = call->dst;
     }
   } else TypeCase(other, ir::insns::Output *, inst) {
     hashTable[inst] = other->dst;
-    vnSet.insert(inst);
   } else assert(false);
   return hashTable[inst];
 }
 
 // reg_dst = reg_src
 // change all reg_dst -> reg_src
-void copy_propagation(unordered_map<Reg, list<Instruction *> > &use_list, Reg dst, Reg src) {
+void copy_propagation(unordered_map<Reg, unordered_set<Instruction *> > &use_list, Reg dst, Reg src) {
   while (use_list[dst].size() > 0) {
-    auto inst = use_list[dst].front();
+    auto inst = *use_list[dst].begin();
     inst->change_use(dst, src);
   }
 }
@@ -232,21 +224,20 @@ void gvn(Function *f) {
   f->cfg->compute_rpo();
   // rpo set
 
-  // use reg as value number
-  // reg -> inst : f->def_list[reg]
-  unordered_map<Instruction *, Reg> hashTable;
-  unordered_set<Instruction *> vnSet; // set of all value in hashTable
-  unordered_map<Reg, ConstValue> constMap;
   for (auto bb : f->cfg->rpo) {
+    unordered_map<Reg, Reg> loadMap; // only in same bb
     for (auto &insn : bb->insns) {
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         unordered_map <Reg, Reg> regsToChange;
         for (auto income : phi->incoming) {
           Reg new_reg = income.second;
-          if (!f->has_param(new_reg)) {
-            new_reg = vn_get(hashTable, vnSet, constMap, f->def_list[income.second]);
-          }
-          if (!(income.second == new_reg)) {
+          // TO AVOID WRONG ORDER OF INSTS BE VISITED
+          // if (!f->has_param(new_reg)) {
+          //   if (income.first != bb) {
+          //     new_reg = vn_get(f->def_list.at(income.second));
+          //   }
+          // }
+          if (income.second != new_reg) {
             regsToChange[income.second] = new_reg;
           }
         }
@@ -263,17 +254,47 @@ void gvn(Function *f) {
           copy_propagation(f->use_list, phi->dst, first);
         }
       }
+      TypeCase(loadimm, ir::insns::LoadImm *, insn.get()) {
+        Reg new_reg = vn_get(loadimm);
+        if (new_reg != loadimm->dst) {
+          copy_propagation(f->use_list, loadimm->dst, new_reg);
+        }
+      }
+      TypeCase(loadaddr, ir::insns::LoadAddr *, insn.get()) {
+        Reg new_reg = vn_get(loadaddr);
+        if (new_reg != loadaddr->dst) {
+          copy_propagation(f->use_list, loadaddr->dst, new_reg);
+        }
+      }
+      TypeCase(gep, ir::insns::GetElementPtr *, insn.get()) {
+        Reg new_base = gep->base;
+        if (!f->has_param(gep->base)) {
+          new_base = vn_get(f->def_list.at(gep->base));
+        }
+        if (new_base != gep->base) gep->change_use(gep->base, new_base);
+        for (auto idx : gep->indices) {
+          Reg new_idx = idx;
+          if (!f->has_param(idx)) {
+            new_idx = vn_get(f->def_list.at(idx));
+          }
+          if (new_idx != idx) gep->change_use(idx, new_idx);
+        }
+        Reg new_reg = vn_get(gep);
+        if (new_reg != gep->dst) {
+          copy_propagation(f->use_list, gep->dst, new_reg);
+        }
+      }
       TypeCase(binary, ir::insns::Binary *, insn.get()) {
         Reg new_reg1 = binary->src1;
         if (!f->has_param(binary->src1)) {
-          new_reg1 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src1]);
+          new_reg1 = vn_get(f->def_list.at(binary->src1));
         }
         Reg new_reg2 = binary->src2;
         if (!f->has_param(binary->src2)) {
-          new_reg2 = vn_get(hashTable, vnSet, constMap, f->def_list[binary->src2]);
+          new_reg2 = vn_get(f->def_list.at(binary->src2));
         }
-        if (!(binary->src1 == new_reg1)) binary->change_use(binary->src1, new_reg1);
-        if (!(binary->src2 == new_reg2)) binary->change_use(binary->src2, new_reg2);
+        if (binary->src1 != new_reg1) binary->change_use(binary->src1, new_reg1);
+        if (binary->src2 != new_reg2) binary->change_use(binary->src2, new_reg2);
         // try to simplify binary Instruction
         Reg src1 = binary->src1, src2 = binary->src2;
         if (constMap.count(src1) && !constMap.count(src2)) {
@@ -284,28 +305,57 @@ void gvn(Function *f) {
         if (ret.has_value()) {
           if (ret.value().index() == 0) {
             auto constval = std::get<ConstValue>(ret.value());
-            bool find = false;
-            for (auto pair : constMap) {
-              if (pair.second == constval) {
-                copy_propagation(f->use_list, binary->dst, pair.first);
-                find = true;
-                break;
-              }
-            }
-            if (!find) { // replace binary with loadimm
+            if (rConstMap.count(constval)) {
+              copy_propagation(f->use_list, binary->dst, rConstMap.at(constval));
+            } else { // replace binary with loadimm
               auto new_ins = new ir::insns::LoadImm(binary->dst, constval);
+              new_ins->bb = binary->bb;
               binary->remove_use_def();
               insn.reset(new_ins);
               new_ins->add_use_def();
               hashTable[insn.get()] = binary->dst;
-              vnSet.insert(insn.get());
+              hashTable_loadimm[constval] = binary->dst;
               constMap[binary->dst] = constval;
+              rConstMap[constval] = binary->dst;
             }
           } else {
             auto reg = std::get<Reg>(ret.value());
             copy_propagation(f->use_list, binary->dst, reg);
           }
+        } else {
+          Reg new_reg = vn_get(binary); // guarantee right order of insts be visited
+          if (new_reg != binary->dst) {
+            copy_propagation(f->use_list, binary->dst, new_reg);
+          }
         }
+      }
+      TypeCase(call, ir::insns::Call *, insn.get()) {
+        for (auto arg : call->args) {
+          Reg new_arg = arg;
+          if (!f->has_param(arg)) {
+            new_arg = vn_get(f->def_list.at(arg));
+          }
+          if (new_arg != arg) call->change_use(arg, new_arg);
+        }
+        Reg new_reg = vn_get(call);
+        if (new_reg != call->dst) {
+          copy_propagation(f->use_list, call->dst, new_reg);
+        }
+      }
+      TypeCase(load, ir::insns::Load *, insn.get()) {
+        Reg new_addr = load->addr;
+        if (!f->has_param(load->addr)) {
+          new_addr = vn_get(f->def_list.at(load->addr));
+        }
+        if (load->addr != new_addr) load->change_use(load->addr, new_addr);
+        if (loadMap.count(load->addr)) {
+          copy_propagation(f->use_list, load->dst, loadMap.at(load->addr));
+        } else {
+          loadMap[load->addr] = load->dst;
+        }
+      }
+      TypeCase(store, ir::insns::Store *, insn.get()) {
+        loadMap.clear();
       }
       // TODO: more inst types
     }
@@ -324,6 +374,21 @@ BasicBlock *find_lca(BasicBlock *a, BasicBlock *b) {
   return a;
 }
 
+// pinned inst (phi, load, impure call) can not be moved
+bool is_pinned(Instruction *inst) {
+  TypeCase(load, ir::insns::Load *, inst) return true;
+  TypeCase(phi, ir::insns::Phi *, inst) return true;
+  // TypeCase(alloca, ir::insns::Alloca *, inst) return true; // TODO: Alloca should be able to move
+  TypeCase(call, ir::insns::Call *, inst) {
+    if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+  return false;
+}
+
 // 3. Schedule (select basic blocks for) all instructions
 // early, based on existing control and data depend-
 // ences. We place instructions in the first block
@@ -339,16 +404,15 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
   visited.insert(inst);
   TypeCase(binary, ir::insns::Binary *, inst) {
     placement[binary] = root_bb;
-    int n_params = inst->bb->func->sig.param_types.size();
     BasicBlock *place1, *place2;
-    if (binary->src1.id <= n_params) { // is function param
+    if (inst->bb->func->has_param(binary->src1)) { // is function param
       place1 = inst->bb->func->bbs.front().get();
     } else {
       ir::Instruction *i1 = def_list.at(binary->src1);
       schedule_early(visited, placement, bbs, def_list, root_bb, i1);
       place1 = placement[i1];
     }
-    if (binary->src2.id <= n_params) { // is function param
+    if (inst->bb->func->has_param(binary->src2)) { // is function param
       place2 = inst->bb->func->bbs.front().get();
     } else {
       ir::Instruction *i2 = def_list.at(binary->src2);
@@ -363,8 +427,55 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     }
   } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
     placement[loadimm] = root_bb;
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    placement[loadaddr] = root_bb;
+  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+    placement[gep] = root_bb;
+    BasicBlock *place;
+    if (inst->bb->func->has_param(gep->base)) {
+      place = inst->bb->func->bbs.front().get();
+    } else {
+      schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(gep->base));
+      place = placement[def_list.at(gep->base)];
+    }
+    if (place->domlevel > placement[gep]->domlevel) {
+      placement[gep] = place;
+    }
+    for (auto reg : gep->indices) {
+      if (inst->bb->func->has_param(reg)) {
+        place = inst->bb->func->bbs.front().get();
+      } else {
+        schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(reg));
+        place = placement[def_list.at(reg)];
+      }
+      if (place->domlevel > placement[gep]->domlevel) {
+        placement[gep] = place;
+      }
+    }
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    if (program->functions.count(call->func) && program->functions[call->func].is_pure()) {
+      placement[call] = root_bb;
+      BasicBlock *place;
+      for (auto arg : call->args) {
+        if (inst->bb->func->has_param(arg)) {
+          place = inst->bb->func->bbs.front().get();
+        } else {
+          schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(arg));
+          place = placement[def_list.at(arg)];
+        }
+        if (place->domlevel > placement[call]->domlevel) {
+          placement[call] = place;
+        }
+      }
+    } else {
+      placement[call] = inst->bb;
+    }
   } else {
     placement[inst] = inst->bb;
+  }
+  if (inst->bb != placement[inst]) {
+    inst->bb->remove(inst);
+    placement[inst]->insert_before_ter(inst);
   }
   // TODO: more inst types
 }
@@ -380,22 +491,22 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
                   unordered_map<ir::Instruction *, BasicBlock *> &placement,
                   const CFG *cfg,
                   list<unique_ptr<BasicBlock>> &bbs,
-                  const unordered_map<Reg, list<Instruction *>> &use_list,
+                  const unordered_map<Reg, unordered_set<Instruction *>> &use_list,
                   ir::Instruction *inst) {
   if (visited.count(inst)) return;
   visited.insert(inst);
-  TypeCase(phi, ir::insns::Phi *, inst) {
-    return;
-  } else TypeCase(output, ir::insns::Output *, inst) {
+  TypeCase(output, ir::insns::Output *, inst) {
+    if (is_pinned(inst)) return;
     // Find latest legal block for instruction
     BasicBlock *lca = nullptr, *use;
     if(use_list.count(output->dst)) {
       for (auto i : use_list.at(output->dst)) {
+        use = nullptr;
         schedule_late(visited, placement, cfg, bbs, use_list, i);
         TypeCase(phi, ir::insns::Phi *, i) {
           for (auto pair : phi->incoming) {
             if (pair.second == output->dst) {
-              use = pair.first;
+              use = (use == nullptr) ? pair.first : find_lca(use, pair.first);
             }
           }
         } else {
@@ -416,8 +527,10 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
         }
       } while (lca != placement[inst]);
     }
-    inst->bb->remove(inst);
-    best->insert_after_phi(inst);
+    if (inst->bb != best) {
+      inst->bb->remove(inst);
+      best->insert_after_phi(inst);
+    }
     placement[inst] = best;
   }
 }
@@ -444,8 +557,17 @@ void gcm(Function *f) {
 }
 
 void gvn_gcm(ir::Program *prog) {
+  program = prog;
   for(auto &func : prog->functions){
-    // std::cout << "func: " << func.first << std::endl;
+    hashTable_loadimm.clear();
+    hashTable_binary.clear();
+    hashTable_loadaddr.clear();
+    hashTable_gep.clear();
+    hashTable_call.clear();
+    constMap.clear();
+    rConstMap.clear();
+    hashTable.clear();
+    func.second.cfg->remove_unreachable_bb();
     gvn(&func.second);
     gcm(&func.second);
   }

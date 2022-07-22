@@ -49,6 +49,7 @@ class IrGen {
   }
   BranchTargets emit_branch(ir::Reg val);
   void emit_array_init(ir::Reg base_reg, ir::Reg val_reg, int index);
+  void emit_builtin_functions();
 
   void visit_declaration(const ast::Declaration &);
   void visit_function(const ast::Function &);

@@ -17,13 +17,15 @@ void backend_passes(Program &p) {
     // TODO: fold_constants(f);
     remove_unused(f);
 
-    // f.emit(std::cerr);
+    f.resolve_phi();
 
     reg_allocator.do_reg_alloc(f, false); // fp reg
 
     // f.emit(std::cerr);
 
     reg_allocator.do_reg_alloc(f);
+
+    remove_useless(f);
 
     // 以下步骤必须进行
     f.emit_prologue_epilogue();
@@ -220,6 +222,24 @@ void remove_unused(Function &f) {
           live.insert(u);
         ++it;
       }
+    }
+  }
+}
+
+void remove_useless(Function &f) {
+  for (auto &bb : f.bbs) {
+    auto &insns = bb->insns;
+    for (auto it = insns.begin(); it != insns.end();) {
+      bool remove = false;
+      TypeCase(mov, Move *, it->get()) {
+        if (mov->is_reg_mov() && mov->use().count(mov->dst))
+          remove = true;
+      }
+      
+      if (remove)
+        it = insns.erase(it);
+      else
+        ++it;
     }
   }
 }

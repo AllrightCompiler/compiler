@@ -325,4 +325,10 @@ void Convert::emit(std::ostream &os) const {
   write_op(os, op.c_str()) << this->dst << ", " << this->src;
 }
 
+void Phi::emit(std::ostream &os) const {
+  os << "*phi " << dst;
+  for (auto &[bb, src] : srcs)
+    os << ", " << '[' << bb->label << ", " << src << ']';
+}
+
 } // namespace armv7

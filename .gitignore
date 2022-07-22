@@ -248,3 +248,4 @@ temp/
 .idea/
 !antlr-4.8-complete.jar
 !libsysy.a
+!libsysy_x86.a
