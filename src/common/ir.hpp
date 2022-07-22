@@ -354,6 +354,7 @@ struct Convert : Output {
 struct Call : Output {
   string func;
   vector<Reg> args;
+  vector<Reg> global_use;
 
   Call(Reg dst, string callee, vector<Reg> arg_regs)
       : func{std::move(callee)}, args{std::move(arg_regs)}, Output{dst} {}
@@ -373,6 +374,9 @@ struct Call : Output {
     for (auto each : args) {
       ret.insert(each);
     }
+    for (auto each : global_use) {
+      ret.insert(each);
+    }    
     return ret;
   }
 };

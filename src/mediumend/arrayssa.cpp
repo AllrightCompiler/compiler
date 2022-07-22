@@ -236,6 +236,10 @@ void array_mem2reg(ir::Program *prog) {
             new_inst->add_use_def();
             name2def[gvar] = dst;
           }
+          for(auto &each : name2def){
+            inst->global_use.push_back(each.second);
+          }
+          inst->add_use_def();
           iter++;
           for(auto &gvar : used_gvar[inst->func]){
             if(!name2base.count(gvar)){
@@ -363,6 +367,10 @@ void array_ssa_destruction(ir::Program *prog){
             iter = bb->insns.erase(iter);
             continue;
           }
+        } else TypeCase(call, ir::insns::Call *, inst){
+          call->remove_use_def();
+          call->global_use.clear();
+          call->add_use_def();
         }
         iter++;
       }

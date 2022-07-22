@@ -712,6 +712,9 @@ void Call::add_use_def() {
   for (auto &reg : args) {
     bb->func->use_list[reg].insert(this);
   }
+  for(auto &reg : global_use){
+    bb->func->use_list[reg].insert(this);
+  }
 }
 
 void Call::remove_use_def() {
@@ -719,10 +722,20 @@ void Call::remove_use_def() {
   for (auto &reg : args) {
     bb->func->use_list[reg].erase(this);
   }
+  for(auto &reg : global_use){
+    bb->func->use_list[reg].erase(this);
+  }
 }
 
 void Call::change_use(Reg old_reg, Reg new_reg) {
   for (auto &reg : args) {
+    if (reg == old_reg) {
+      reg = new_reg;
+      bb->func->use_list[new_reg].insert(this);
+      bb->func->use_list[old_reg].erase(this);
+    }
+  }
+  for(auto &reg : global_use){
     if (reg == old_reg) {
       reg = new_reg;
       bb->func->use_list[new_reg].insert(this);
