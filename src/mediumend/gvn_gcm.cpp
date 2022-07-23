@@ -556,6 +556,10 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
               use = (use == nullptr) ? pair.first : find_lca(use, pair.first);
             }
           }
+          if (use == nullptr) {
+            assert(phi->array_ssa);
+            use = placement[i];
+          }
         } else {
           use = placement[i];
         }
