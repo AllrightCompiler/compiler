@@ -91,6 +91,11 @@ void remove_unused_function(ir::Program *prog){
   }
 }
 
+void check_inst(ir::Instruction *inst){
+  assert(inst);
+  assert(inst->bb);
+}
+
 void remove_uneffective_inst(ir::Program *prog){
   for(auto &each : prog->functions){
     ir::Function *func = &each.second;
@@ -128,6 +133,7 @@ void remove_uneffective_inst(ir::Program *prog){
           if(useful_inst.count(def)){
             continue;
           }
+          check_inst(def);
           stack.insert(def);
         }
       }

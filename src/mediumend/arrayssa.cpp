@@ -176,7 +176,7 @@ void array_mem2reg(ir::Program *prog) {
             iter->reset(new_inst);
             new_inst->bb = bb;
             new_inst->add_use_def();
-            use_before_def[bb][base].insert(inst->dst);
+            use_before_def[bb][base].insert(new_inst->dst);
           }
         }
         TypeCase(inst, ir::insns::Store *, iter->get()) {
