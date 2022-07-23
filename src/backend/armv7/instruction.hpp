@@ -248,6 +248,14 @@ struct Move : Instruction {
     return !flip && reg_shift.s == 0 &&
            (dst.is_float() == reg_shift.r.is_float());
   }
+
+  bool is_transfer_vmov() const {
+    if (!src.is_imm_shift()) {
+      return false;
+    }
+    auto &reg_shift = std::get<RegImmShift>(src.opd);
+    return dst.is_float() != reg_shift.r.is_float();
+  }
 };
 
 // Thumb-2 movw: 加载低16位，清零高16位
@@ -573,7 +581,8 @@ struct Phi : Instruction {
   std::vector<std::pair<BasicBlock *, Reg>> srcs;
   Reg dst;
 
-  Phi(Reg dst, std::vector<std::pair<BasicBlock *, Reg>> srcs) : dst{dst}, srcs{std::move(srcs)} {}
+  Phi(Reg dst, std::vector<std::pair<BasicBlock *, Reg>> srcs)
+      : dst{dst}, srcs{std::move(srcs)} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
@@ -591,9 +600,9 @@ struct Phi : Instruction {
   }
 };
 
-struct Vneg: Instruction {
-  Reg dst,src;
-  Vneg(Reg dst, Reg src):dst{dst}, src{src}{
+struct Vneg : Instruction {
+  Reg dst, src;
+  Vneg(Reg dst, Reg src) : dst{dst}, src{src} {
     assert(dst.is_float());
     assert(src.is_float());
   }

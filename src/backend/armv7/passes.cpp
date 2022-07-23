@@ -14,7 +14,7 @@ void backend_passes(Program &p) {
   ColoringRegAllocator reg_allocator;
 
   for (auto &[_, f] : p.functions) {
-    // TODO: fold_constants(f);
+    fold_constants(f);
     remove_unused(f);
 
     f.resolve_phi();
@@ -170,7 +170,7 @@ void fold_constants(Function &f) {
       }
       else TypeCase(mov, Move *, ins) {
         auto opt_imm = eval_operand2(mov->src);
-        if (opt_imm) {
+        if (opt_imm && !mov->is_transfer_vmov()) {
           int imm = opt_imm.value();
           Reg dst = mov->dst;
           if (dst.is_virt())
@@ -235,7 +235,7 @@ void remove_useless(Function &f) {
         if (mov->is_reg_mov() && mov->use().count(mov->dst))
           remove = true;
       }
-      
+
       if (remove)
         it = insns.erase(it);
       else
