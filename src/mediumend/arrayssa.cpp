@@ -314,6 +314,8 @@ void array_mem2reg(ir::Program *prog) {
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
           if (phi2mem.count(inst)) {
             alloc_map[bb][phi2mem.at(inst)] = inst->dst;
+            inst->use_before_def = use_before_def[bb][phi2mem.at(inst)];
+            use_before_def[bb][phi2mem.at(inst)].clear();
           }
         }
         TypeCase(inst, ir::insns::Alloca *, iter->get()) {

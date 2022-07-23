@@ -804,11 +804,17 @@ void Phi::add_use_def() {
   for (auto &[bb, reg] : incoming) {
     bb->func->use_list[reg].insert(this);
   }
+  for (auto &reg : use_before_def) {
+    bb->func->use_list[reg].insert(this);
+  }
 }
 
 void Phi::remove_use_def() {
   Output::remove_use_def();
   for (auto &[bb, reg] : incoming) {
+    bb->func->use_list[reg].erase(this);
+  }
+  for (auto &reg : use_before_def) {
     bb->func->use_list[reg].erase(this);
   }
 }
@@ -820,6 +826,12 @@ void Phi::change_use(Reg old_reg, Reg new_reg) {
       bb->func->use_list[new_reg].insert(this);
       bb->func->use_list[old_reg].erase(this);
     }
+  }
+  if(use_before_def.count(old_reg)){
+    use_before_def.erase(old_reg);
+    use_before_def.insert(new_reg);
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 

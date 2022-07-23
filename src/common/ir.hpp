@@ -414,6 +414,7 @@ struct Binary : Output {
 
 struct Phi : Output {
   std::unordered_map<BasicBlock *, Reg> incoming;
+  std::unordered_set<Reg> use_before_def;
   bool array_ssa;
 
   Phi(Reg dst, bool array_ssa = false) : Output{dst}, array_ssa(array_ssa) {}
@@ -440,6 +441,9 @@ struct Phi : Output {
     unordered_set<Reg> ret;
     for (auto each : incoming) {
       ret.insert(each.second);
+    }
+    for(auto each : use_before_def){
+      ret.insert(each);
     }
     return ret;
   }
