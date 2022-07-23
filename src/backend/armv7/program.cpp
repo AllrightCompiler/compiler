@@ -101,7 +101,9 @@ class ProgramTranslator {
     nr_gp_params = nr_fp_params = 0;
     std::vector<int> stack_params;
     for (int i = 0; i < nr_params; ++i) {
-      auto type = ir_to_machine_reg_type(params[i].base_type);
+      auto type = params[i].is_array()
+                      ? RegType::General
+                      : ir_to_machine_reg_type(params[i].base_type);
       Reg dst = Reg{type, -(i + 1)};
       if (type != Fp) {
         if (nr_gp_params++ < NR_ARG_GPRS) {
@@ -151,7 +153,9 @@ class ProgramTranslator {
       dst_fn.param_objs.push_back(obj);
       dst_fn.stack_objects.emplace_back(obj);
 
-      Reg dst = Reg::from(params[i].base_type, -(i + 1));
+      Reg dst = Reg::from(params[i].is_array() ? ScalarType::Int
+                                               : params[i].base_type,
+                          -(i + 1));
       // entry_bb->push(new LoadStack{dst, obj, 0});
       dst_fn.defer_stack_param_load(dst, obj);
     }
