@@ -114,6 +114,7 @@ static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
 static unordered_map<std::string, Reg> hashTable_loadaddr;
 static unordered_map<tuple<Type, Reg, vector<Reg> >, Reg> hashTable_gep;
 static unordered_map<tuple<std::string, vector<Reg> >, Reg> hashTable_call;
+static unordered_map<tuple<Reg, Reg>, Reg> hashTable_memuse;
 static unordered_map<Reg, ConstValue> constMap;
 static unordered_map<ConstValue, Reg> rConstMap;
 static unordered_map<Instruction *, Reg> hashTable;
@@ -200,6 +201,13 @@ Reg vn_get(Instruction *inst) {
       }
     } else {
       hashTable[inst] = call->dst;
+    }
+  } else TypeCase(memuse, ir::insns::MemUse *, inst) {
+    if (hashTable_memuse.count(std::make_tuple(memuse->dep, memuse->load_src))) {
+      hashTable[inst] = hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src)];
+    } else {
+      hashTable[inst] = memuse->dst;
+      hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src)] = memuse->dst;
     }
   } else TypeCase(other, ir::insns::Output *, inst) {
     hashTable[inst] = other->dst;
@@ -342,6 +350,22 @@ void gvn(Function *f) {
           copy_propagation(f->use_list, call->dst, new_reg);
         }
       }
+      TypeCase(memuse, ir::insns::MemUse *, insn.get()) {
+        Reg new_src = memuse->load_src;
+        if (!f->has_param(memuse->load_src)) {
+          new_src = vn_get(f->def_list.at(memuse->load_src));
+        }
+        if (new_src != memuse->load_src) memuse->change_use(memuse->load_src, new_src);
+        Reg new_dep = memuse->dep;
+        if (!f->has_param(memuse->dep)) {
+          new_dep = vn_get(f->def_list.at(memuse->dep));
+        }
+        if (new_dep != memuse->dep) memuse->change_use(memuse->dep, new_dep);
+        Reg new_reg = vn_get(memuse);
+        if (new_reg != memuse->dst) {
+          copy_propagation(f->use_list, memuse->dst, new_reg);
+        }
+      }
       TypeCase(load, ir::insns::Load *, insn.get()) {
         Reg new_addr = load->addr;
         if (!f->has_param(load->addr)) {
@@ -470,6 +494,29 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     } else {
       placement[call] = inst->bb;
     }
+  } else TypeCase(memuse, ir::insns::MemUse *, inst) {
+    placement[memuse] = root_bb;
+    BasicBlock *place1, *place2;
+    if (inst->bb->func->has_param(memuse->dep)) {
+      place1 = inst->bb->func->bbs.front().get();
+    } else {
+      ir::Instruction *i1 = def_list.at(memuse->dep);
+      schedule_early(visited, placement, bbs, def_list, root_bb, i1);
+      place1 = placement[i1];
+    }
+    if (inst->bb->func->has_param(memuse->load_src)) {
+      place2 = inst->bb->func->bbs.front().get();
+    } else {
+      ir::Instruction *i2 = def_list.at(memuse->load_src);
+      schedule_early(visited, placement, bbs, def_list, root_bb, i2);
+      place2 = placement[i2];
+    }
+    if (place1->domlevel > placement[memuse]->domlevel) {
+      placement[memuse] = place1;
+    }
+    if (place2->domlevel > placement[memuse]->domlevel) {
+      placement[memuse] = place2;
+    }
   } else {
     placement[inst] = inst->bb;
   }
@@ -564,6 +611,7 @@ void gvn_gcm(ir::Program *prog) {
     hashTable_loadaddr.clear();
     hashTable_gep.clear();
     hashTable_call.clear();
+    hashTable_memuse.clear();
     constMap.clear();
     rConstMap.clear();
     hashTable.clear();

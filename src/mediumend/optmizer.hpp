@@ -23,6 +23,7 @@ void operator_strength_promotion(ir::Program *prog);
 void array_mem2reg(ir::Program *prog);
 void array_ssa_destruction(ir::Program *prog);
 void remove_useless_loop(ir::Program * prog);
+void clean_hodgepodge(ir::Program *prog);
 
 // IMPORTANT: if add new pass, modify PASS_MAP in optmizer.cpp
 extern const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP;
