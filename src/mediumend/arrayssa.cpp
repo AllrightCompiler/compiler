@@ -130,7 +130,7 @@ void array_mem2reg(ir::Program *prog) {
         auto bb = *W.begin();
         W.erase(W.begin());
         for (auto &Y : df[bb]) {
-          if (F.find(Y) == F.end() && Y->live_in.count(v.first)) {
+          if (F.find(Y) == F.end()) {
             Reg r = func->new_reg(alloc2type[v.first]);
             auto phi = new ir::insns::Phi(r, true);
             Y->insns.emplace_front(phi); // add phi
