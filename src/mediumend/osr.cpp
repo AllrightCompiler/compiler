@@ -1,5 +1,5 @@
 #include "common/ir.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 #include <stack>
 #include <queue>

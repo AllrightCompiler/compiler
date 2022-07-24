@@ -25,9 +25,9 @@ void array_ssa_destruction(ir::Program *prog);
 void remove_useless_loop(ir::Program * prog);
 void clean_hodgepodge(ir::Program *prog);
 
-// IMPORTANT: if add new pass, modify PASS_MAP in optmizer.cpp
+// IMPORTANT: if add new pass, modify PASS_MAP in optimizer.cpp
 extern const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP;
-// define default passes in optmizer.cpp
+// define default passes in optimizer.cpp
 extern std::vector<std::function<void(ir::Program *)> > passes;
 
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);

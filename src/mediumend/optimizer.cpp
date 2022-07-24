@@ -1,4 +1,4 @@
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 namespace mediumend {
 

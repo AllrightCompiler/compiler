@@ -1,6 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 #include <iostream>
 #include <variant>
