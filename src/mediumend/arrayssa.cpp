@@ -50,7 +50,6 @@ void array_mem2reg(ir::Program *prog) {
     cfg->remove_unreachable_bb();
     cfg->compute_dom();
     auto df = cfg->compute_df();
-    func->do_liveness_analysis();
     auto entry = func->bbs.front().get();
 
     for (auto each : prog->global_vars) {
