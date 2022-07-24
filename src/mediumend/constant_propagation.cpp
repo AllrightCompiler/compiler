@@ -1,6 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 #include <cassert>
 
@@ -78,9 +78,11 @@ void constant_propagation(ir::Program *prog) {
             TypeCase(call, ir::insns::Call *, output) {
               auto func_iter = prog->functions.find(call->func);
               if (func_iter == prog->functions.end() ||
-                  !func_iter->second.pure) {
+                  !func_iter->second.is_pure()) {
                 continue;
               }
+            } else TypeCase(memdef, ir::insns::MemDef *, ins.get()){
+              continue;
             }
             auto reg_use = output->use();
             for (auto &use : reg_use) {
@@ -234,6 +236,7 @@ void constant_propagation(ir::Program *prog) {
                 iter++;
               }
             }
+            phi->add_use_def();
             if (phi_const) {
               Reg reg = phi->dst;
               for (auto &in : phi->incoming) {
@@ -275,10 +278,12 @@ void constant_propagation(ir::Program *prog) {
             ir::BasicBlock *target;
             if (const_map.at(br->val).iv) {
               target = br->true_target;
-              bb->succ.erase(br->false_target);
-              br->false_target->prev.erase(bb);
-              stack.insert(br->false_target);
-              checkbb(br->false_target);
+              if(br->true_target != br->false_target){
+                bb->succ.erase(br->false_target);
+                br->false_target->prev.erase(bb);
+                stack.insert(br->false_target);
+                checkbb(br->false_target);
+              }
             } else {
               target = br->false_target;
               bb->succ.erase(br->true_target);

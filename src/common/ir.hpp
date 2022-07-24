@@ -39,16 +39,15 @@ template <> class hash<ir::Reg> {
 public:
   size_t operator()(const ir::Reg &r) const { return r.id; }
 };
-template <class T1, class T2>
-struct hash<tuple<T1, T2>> {
+template <class T1, class T2> struct hash<tuple<T1, T2>> {
   size_t operator()(const tuple<T1, T2> &r) const {
     return hash<T1>()(get<0>(r)) * 1221821 + hash<T2>()(get<1>(r)) * 31;
   }
 };
-template <class T1, class T2, class T3>
-struct hash<tuple<T1, T2, T3>> {
+template <class T1, class T2, class T3> struct hash<tuple<T1, T2, T3>> {
   size_t operator()(const tuple<T1, T2, T3> &r) const {
-    return hash<T1>()(get<0>(r)) * 264893 + hash<T2>()(get<1>(r)) * 1221821 + hash<T3>()(get<2>(r)) * 31;
+    return hash<T1>()(get<0>(r)) * 264893 + hash<T2>()(get<1>(r)) * 1221821 +
+           hash<T3>()(get<2>(r)) * 31;
   }
 };
 } // namespace std
@@ -85,7 +84,9 @@ public:
   Loop *outer;
   BasicBlock *header;
   int level;
-  Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1) {}
+  bool no_inner;
+  Loop(BasicBlock *head)
+      : header(head), outer(nullptr), level(-1), no_inner(true) {}
 };
 
 struct BasicBlock {
@@ -114,6 +115,8 @@ struct BasicBlock {
   // modify use-def
   void pop_front();
   // not modify use-def
+  void insert_at_pos(int pos, Instruction *insn);
+  // not modify use-def
   void insert_after_phi(Instruction *insn);
   // modify use-def
   void insert_after_inst(Instruction *prev, Instruction *insn);
@@ -127,6 +130,8 @@ struct BasicBlock {
   void rpo_dfs(vector<BasicBlock *> &rpo);
   void loop_dfs();
   void clear_visit() { visit = false; }
+  void change_succ(BasicBlock *old_bb, BasicBlock *new_bb);
+  void change_prev(BasicBlock *old_bb, BasicBlock *new_bb);
 };
 
 void calc_loop_level(Loop *loop);
@@ -147,6 +152,7 @@ struct Function {
   unordered_map<Reg, unordered_set<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
   unordered_set<Reg> global_addr;
+  vector<unique_ptr<Loop>> loops;
 
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(ScalarType t) { return ir::Reg{t, ++nr_regs}; }
@@ -157,6 +163,7 @@ struct Function {
   void clear_graph();
   void clear_dom();
   void do_liveness_analysis();
+  void loop_analysis();
 };
 
 struct LibFunction {
@@ -349,6 +356,7 @@ struct Convert : Output {
 struct Call : Output {
   string func;
   vector<Reg> args;
+  vector<Reg> global_use;
 
   Call(Reg dst, string callee, vector<Reg> arg_regs)
       : func{std::move(callee)}, args{std::move(arg_regs)}, Output{dst} {}
@@ -366,6 +374,9 @@ struct Call : Output {
   unordered_set<Reg> use() const override {
     unordered_set<Reg> ret;
     for (auto each : args) {
+      ret.insert(each);
+    }
+    for (auto each : global_use) {
       ret.insert(each);
     }
     return ret;
@@ -405,8 +416,10 @@ struct Binary : Output {
 
 struct Phi : Output {
   std::unordered_map<BasicBlock *, Reg> incoming;
+  std::unordered_set<Reg> use_before_def;
+  bool array_ssa;
 
-  Phi(Reg dst) : Output{dst} {}
+  Phi(Reg dst, bool array_ssa = false) : Output{dst}, array_ssa(array_ssa) {}
 
   Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst} {
     for (size_t i = 0; i < bbs.size(); i++) {
@@ -430,6 +443,51 @@ struct Phi : Output {
     unordered_set<Reg> ret;
     for (auto each : incoming) {
       ret.insert(each.second);
+    }
+    for(auto each : use_before_def){
+      ret.insert(each);
+    }
+    return ret;
+  }
+};
+
+struct MemUse : Output {
+  Reg dep;
+  Reg load_src;
+  bool call_use;
+  MemUse(Reg dst, Reg dep, Reg load_src, bool call_use)
+      : dep{dep}, load_src{load_src}, call_use(call_use), Output{dst} {}
+  virtual void emit(std::ostream &os) const override;
+  virtual void add_use_def() override;
+  virtual void remove_use_def() override;
+  virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override {
+    return {&dst, &dep, &load_src};
+  }
+  unordered_set<Reg> use() const override { return {dep, load_src}; }
+};
+
+struct MemDef : Output {
+  Reg dep;
+  Reg store_dst;
+  Reg store_val;
+  bool call_def;
+  unordered_set<Reg> uses_before_def;
+  MemDef(Reg dst, Reg dep, Reg store_dst, Reg store_val, bool call_def,
+         unordered_set<Reg> uses_before_def)
+      : dep(dep), store_dst{store_dst}, store_val{store_val},
+        call_def(call_def), uses_before_def(uses_before_def), Output{dst} {}
+  virtual void emit(std::ostream &os) const override;
+  virtual void add_use_def() override;
+  virtual void remove_use_def() override;
+  virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override {
+    return {&store_dst, &store_val, &dst, &dep};
+  }
+  unordered_set<Reg> use() const override {
+    unordered_set<Reg> ret = {store_dst, store_val, dep};
+    for (auto each : uses_before_def) {
+      ret.insert(each);
     }
     return ret;
   }

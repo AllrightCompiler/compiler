@@ -141,6 +141,17 @@ void BasicBlock::pop_front() {
   insns.pop_front(); // auto release
 }
 
+void BasicBlock::insert_at_pos(int pos, Instruction *insn) {
+  auto it = insns.begin();
+  while (pos--) {
+    assert(it != insns.end());
+    it++;
+  }
+  insns.emplace(it, insn);
+  insn->bb = this;
+  // insn->add_use_def();
+}
+
 void BasicBlock::insert_after_phi(Instruction *insn) {
   auto it = insns.begin();
   for (; it != insns.end(); it++) {
@@ -200,6 +211,42 @@ BasicBlock::remove_if(std::function<bool(Instruction *)> f) {
   return ret;
 }
 
+void BasicBlock::change_succ(BasicBlock* old_bb, BasicBlock* new_bb){
+  if(this->succ.count(old_bb)){
+    auto inst = this->insns.back().get();
+    this->succ.erase(old_bb);
+    this->succ.insert(new_bb);
+    TypeCase(br, ir::insns::Branch *, inst){
+      if(br->true_target == old_bb){
+        br->true_target = new_bb;
+      }
+      if(br->false_target == old_bb){
+        br->false_target = new_bb;
+      }
+    }
+    TypeCase(jmp, ir::insns::Jump *, inst){
+      if(jmp->target == old_bb){
+        jmp->target = new_bb;
+      }
+    }
+  }  
+}
+
+void BasicBlock::change_prev(BasicBlock* old_bb, BasicBlock* new_bb){
+  if(this->prev.count(old_bb)){
+    this->prev.erase(old_bb);
+    this->prev.insert(new_bb);
+    for(auto &ins: insns){
+      TypeCase(phi, ir::insns::Phi*, ins.get()){
+        phi->incoming[new_bb] = phi->incoming.at(old_bb);
+        phi->incoming.erase(old_bb);
+      } else {
+        break;
+      }
+    }
+  }
+}
+
 void Function::clear_visit() {
   for (auto &bb : bbs) {
     bb->clear_visit();
@@ -250,6 +297,24 @@ void Store::emit(std::ostream &os) const {
   auto ts = type_string(val.type);
   os << "store " << ts << " " << reg_name(val) << ", " << ts << "* "
      << reg_name(addr);
+}
+
+void MemUse::emit(std::ostream &os) const {
+  if(call_use){
+    os << "(" << reg_name(dst) << ") = (" << reg_name(dep) << ")(" << reg_name(load_src) << ")";
+  } else {
+    auto ts = type_string(dst.type);
+    write_reg(os) << "(" << reg_name(dep) <<")[" << reg_name(load_src) << "]";
+  }
+}
+
+void MemDef::emit(std::ostream &os) const {
+  if(call_def){
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"] = (" << reg_name(store_val) << ")";
+  } else {
+    auto ts = type_string(store_val.type);
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"](dep:" << reg_name(dep) << ") = " << ts << " " << reg_name(store_val);
+  }
 }
 
 void GetElementPtr::emit(std::ostream &os) const {
@@ -471,6 +536,7 @@ void BasicBlock::rpo_dfs(vector<BasicBlock *> &rpo) {
 
 void BasicBlock::loop_dfs() {
   // dfs on dom tree
+  this->loop = nullptr;
   for (auto next : dom) {
     next->loop_dfs();
   }
@@ -482,6 +548,7 @@ void BasicBlock::loop_dfs() {
   }
   if (!bbs.empty()) { // form 1 loop ( TODO: nested loops with same header? )
     Loop *new_loop = new Loop(this);
+    func->loops.emplace_back(new_loop);
     while (bbs.size() > 0) {
       auto bb = bbs.back();
       bbs.pop_back();
@@ -491,6 +558,7 @@ void BasicBlock::loop_dfs() {
           bbs.insert(bbs.end(), bb->prev.begin(), bb->prev.end());
         }
       } else {
+        new_loop->no_inner = false;
         Loop *inner_loop = bb->loop;
         while (inner_loop->outer)
           inner_loop = inner_loop->outer;
@@ -501,6 +569,16 @@ void BasicBlock::loop_dfs() {
                    inner_loop->header->prev.end());
       }
     }
+  }
+}
+
+void Function::loop_analysis() {
+  this->clear_visit();
+  this->cfg->compute_dom();
+  this->loops.clear();
+  this->bbs.front()->loop_dfs();
+  for (auto &bb : this->bbs) {
+    calc_loop_level(bb->loop);
   }
 }
 
@@ -565,6 +643,75 @@ void Store::change_use(Reg old_reg, Reg new_reg) {
   }
 }
 
+void MemUse::add_use_def() {
+  Output::add_use_def();
+  bb->func->use_list[dep].insert(this);
+  bb->func->use_list[load_src].insert(this);
+}
+
+void MemUse::remove_use_def() {
+  Output::remove_use_def();
+  bb->func->use_list[dep].erase(this);
+  bb->func->use_list[load_src].erase(this);
+}
+
+void MemUse::change_use(Reg old_reg, Reg new_reg) {
+  if(dep == old_reg){
+    dep = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(load_src == old_reg){
+    load_src = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+}
+
+void MemDef::add_use_def() {
+  Output::add_use_def();
+  bb->func->use_list[store_dst].insert(this);
+  bb->func->use_list[store_val].insert(this);
+  bb->func->use_list[dep].insert(this);
+  for(auto each : uses_before_def){
+    bb->func->use_list[each].insert(this);
+  }
+}
+
+void MemDef::remove_use_def() {
+  Output::remove_use_def();
+  bb->func->use_list[store_dst].erase(this);
+  bb->func->use_list[store_val].erase(this);
+  bb->func->use_list[dep].erase(this);
+  for(auto each : uses_before_def){
+    bb->func->use_list[each].erase(this);
+  }
+}
+
+void MemDef::change_use(Reg old_reg, Reg new_reg) {
+  if(store_dst == old_reg){
+    store_dst = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(store_val == old_reg){
+    store_val = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(dep == old_reg){
+    dep = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(uses_before_def.count(old_reg)){
+    uses_before_def.erase(old_reg);
+    uses_before_def.insert(new_reg);
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+}
+
 void Convert::add_use_def() {
   Output::add_use_def();
   bb->func->use_list[src].insert(this);
@@ -588,6 +735,9 @@ void Call::add_use_def() {
   for (auto &reg : args) {
     bb->func->use_list[reg].insert(this);
   }
+  for(auto &reg : global_use){
+    bb->func->use_list[reg].insert(this);
+  }
 }
 
 void Call::remove_use_def() {
@@ -595,10 +745,20 @@ void Call::remove_use_def() {
   for (auto &reg : args) {
     bb->func->use_list[reg].erase(this);
   }
+  for(auto &reg : global_use){
+    bb->func->use_list[reg].erase(this);
+  }
 }
 
 void Call::change_use(Reg old_reg, Reg new_reg) {
   for (auto &reg : args) {
+    if (reg == old_reg) {
+      reg = new_reg;
+      bb->func->use_list[new_reg].insert(this);
+      bb->func->use_list[old_reg].erase(this);
+    }
+  }
+  for(auto &reg : global_use){
     if (reg == old_reg) {
       reg = new_reg;
       bb->func->use_list[new_reg].insert(this);
@@ -655,11 +815,17 @@ void Phi::add_use_def() {
   for (auto &[bb, reg] : incoming) {
     bb->func->use_list[reg].insert(this);
   }
+  for (auto &reg : use_before_def) {
+    bb->func->use_list[reg].insert(this);
+  }
 }
 
 void Phi::remove_use_def() {
   Output::remove_use_def();
   for (auto &[bb, reg] : incoming) {
+    bb->func->use_list[reg].erase(this);
+  }
+  for (auto &reg : use_before_def) {
     bb->func->use_list[reg].erase(this);
   }
 }
@@ -671,6 +837,12 @@ void Phi::change_use(Reg old_reg, Reg new_reg) {
       bb->func->use_list[new_reg].insert(this);
       bb->func->use_list[old_reg].erase(this);
     }
+  }
+  if(use_before_def.count(old_reg)){
+    use_before_def.erase(old_reg);
+    use_before_def.insert(new_reg);
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 

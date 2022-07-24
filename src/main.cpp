@@ -6,7 +6,7 @@
 #include "frontend/SysYParser.h"
 #include "frontend/Typer.hpp"
 
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 #include "backend/armv7/passes.hpp"
 #include "backend/armv7/program.hpp"

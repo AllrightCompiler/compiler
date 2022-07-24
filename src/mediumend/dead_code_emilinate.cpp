@@ -1,11 +1,17 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 namespace mediumend {
 
 using std::vector;
 using std::unordered_set;
+
+using ir::Reg;
+using ir::Loop;
+using ir::BasicBlock;
+
+static ir::Program* cur_prog = nullptr;
 
 void detect_pure_function(ir::Program *prog, ir::Function *func) {
   if(func->pure != -1){
@@ -85,53 +91,56 @@ void remove_unused_function(ir::Program *prog){
   }
 }
 
+void check_inst(ir::Instruction *inst){
+  assert(inst);
+  assert(inst->bb);
+}
+
 void remove_uneffective_inst(ir::Program *prog){
   for(auto &each : prog->functions){
     ir::Function *func = &each.second;
     auto &bbs = func->bbs;
-    vector<ir::Instruction *> stack;
-    unordered_set<ir::Instruction *> remove_inst_set; 
+    unordered_set<ir::Instruction *> stack;
+    unordered_set<ir::Instruction *> useful_inst; 
     for (auto &bb : bbs) {
       auto &insns = bb->insns;
       for (auto &inst : insns) {
-        TypeCase(output, ir::insns::Output *, inst.get()){
-          if(auto call = dynamic_cast<ir::insns::Call *>(output)){
-            if(!prog->functions.count(call->func)){
-              continue;
-            }
-            if(prog->functions.at(call->func).pure == 0){
-              continue;
-            }
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          if(prog->functions.find(call->func) == prog->functions.end() || prog->functions.at(call->func).pure == 0){
+            stack.insert(call);
           }
-          auto &reg = output->dst;
-          if (reg.id && func->use_list[reg].size() == 0) {
-            stack.push_back(output);
-          }
+        } else TypeCase(term, ir::insns::Terminator *, inst.get()){
+          stack.insert(term);
+        } else TypeCase(store, ir::insns::Store *, inst.get()){
+          stack.insert(store);
+        } else TypeCase(memdef, ir::insns::MemDef *, inst.get()){
+          stack.insert(memdef);
         }
       }
     }
     while(!stack.empty()){
-      auto inst = stack.back();
-      stack.pop_back();
+      auto ins = stack.begin();
+      auto inst = *ins;
+      stack.erase(ins);
+      if(useful_inst.count(inst)){
+        continue;
+      }
+      useful_inst.insert(inst);
       auto regs = inst->use();
-      inst->remove_use_def();
       for(auto reg : regs){
-        if(func->use_list[reg].size() == 0){
-          auto def = func->def_list.find(reg);
-          if(def != func->def_list.end()){
-            auto output = def->second;
-            if(auto call = dynamic_cast<ir::insns::Call *>(inst)){
-              continue;
-            }
-            stack.push_back(output);
+        if(func->def_list.find(reg) != func->def_list.end()){
+          auto def = func->def_list.at(reg);
+          if(useful_inst.count(def)){
+            continue;
           }
+          check_inst(def);
+          stack.insert(def);
         }
       }
-      remove_inst_set.insert(inst);
     }
     for(auto &bb : bbs){
-      bb->remove_if([=](ir::Instruction *ir) {
-        return remove_inst_set.count(ir);
+      bb->remove_if([&](ir::Instruction *ir) {
+        return !useful_inst.count(ir);
       });
     }
   }
@@ -282,7 +291,6 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
               break;
             }
           }
-          br->remove_use_def();
           auto new_inst = new ir::insns::Branch(br->val, br->true_target, br->false_target);
           bb->insns.back().reset(new_inst);
           new_inst->bb = bb;
@@ -312,8 +320,126 @@ void clean_useless_cf(ir::Program *prog){
   }
 }
 
-void eliminate_useless_store(ir::Program *prog){
 
+bool remove_useless_loop(ir::Function *func) {
+  func->loop_analysis();
+  func->do_liveness_analysis();
+  bool changed = false;
+  unordered_set<BasicBlock *> remove_bbs;
+  for (auto &loop_ptr : func->loops) {
+    Loop * loop = loop_ptr.get();
+    if(!loop->no_inner){
+      continue;
+    }
+    BasicBlock *idom_prev = loop->header->idom;
+    bool check = true;
+    unordered_set<BasicBlock*> loop_bbs;
+    vector<BasicBlock *> stack;
+    stack.push_back(loop->header);
+    while(stack.size()){
+      auto bb = stack.back();
+      stack.pop_back();
+      if(bb->loop != loop){
+        continue;
+      }
+      loop_bbs.insert(bb);
+      for(auto each : bb->dom){
+        stack.push_back(each);
+      }
+    }
+    // 这里判断只有一个入口
+    for(auto each : loop->header->prev){
+      if(each != idom_prev){
+        if(!each->loop || each->loop != loop){
+          check = false;
+          break;
+        }
+      }
+    }
+    unordered_set<Reg> defs;
+    BasicBlock * out = nullptr;
+    BasicBlock* out_bb = nullptr;
+
+    for (BasicBlock *bb : loop_bbs) {
+      if(!check){
+        break;
+      }
+      for(auto &inst : bb->insns){
+        TypeCase(output, ir::insns::Output *, inst.get()){
+          defs.insert(output->dst);
+        }
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          if(!cur_prog->functions.count(call->func) || !cur_prog->functions.at(call->func).is_pure()){
+            check = false;
+            break;
+          }
+        }
+        TypeCase(store, ir::insns::Store *, inst.get()){
+          check = false;
+          break;
+        }
+      }
+      // 这里判断只有一个出口
+      for (BasicBlock *suc : bb->succ) {
+        if (!suc->loop || suc->loop != loop) {
+          if(out && suc != out){
+            check = false;
+            break;
+          } else {
+            out_bb = bb;
+            out = suc;
+          }
+        }
+      }
+    }
+    if(!out || !check){
+      continue;
+    }
+    int raw_size = out->live_in.size() + defs.size();
+    defs.merge(out->live_in);
+    if(raw_size != defs.size()){
+      check = false;
+    }
+    if (!out) {
+      check = false;  
+    }
+    if(!check){
+      continue;
+    }
+    changed = true;
+    // 标记所有需要删除的block，然后统一删除
+    remove_bbs.merge(loop_bbs);
+    // 处理前驱后继关系
+    idom_prev->change_succ(loop->header, out);
+    out->change_prev(out_bb, idom_prev);
+    
+  }
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    auto bb = iter->get();
+    if(remove_bbs.count(bb)){
+      for(auto &inst : bb->insns){
+        inst->remove_use_def();
+      }
+      for(auto prev : bb->prev){
+        prev->succ.erase(bb);
+      }
+      for(auto succ : bb->succ){
+        succ->prev.erase(bb);
+      }
+      iter = func->bbs.erase(iter);
+    } else {
+      iter++;
+    }
+  }
+  return changed;
+}
+
+void remove_useless_loop(ir::Program * prog){
+  cur_prog = prog;
+  for(auto &func : prog->functions){
+    while(remove_useless_loop(&func.second)) {}
+  }
+  cur_prog = nullptr;
 }
 
 }

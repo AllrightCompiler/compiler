@@ -210,19 +210,15 @@ unordered_map<BasicBlock *, unordered_set<BasicBlock *>> CFG::compute_df() {
   }
   return df;
 }
+
 void CFG::compute_rpo() {
   func->clear_visit();
   rpo.clear();
   func->bbs.front()->rpo_dfs(rpo);
-  std::reverse(rpo.begin(), rpo.end());
-}
-
-void CFG::loop_analysis() {
-  func->clear_visit();
-  func->bbs.front()->loop_dfs();
-  for (auto &bb : func->bbs) {
-    calc_loop_level(bb->loop);
+  for (auto bb: rpo) {
+    bb->rpo_num = rpo.size() - bb->rpo_num; // reverse
   }
+  std::reverse(rpo.begin(), rpo.end());
 }
 
 } // namespace mediumend
