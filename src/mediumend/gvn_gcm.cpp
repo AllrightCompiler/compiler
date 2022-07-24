@@ -547,9 +547,6 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
     // Find latest legal block for instruction
     BasicBlock *lca = nullptr, *use;
     if(use_list.count(output->dst)) {
-      if(output->dst.id == 160){
-        int a = 1;
-      }
       for (auto i : use_list.at(output->dst)) {
         use = nullptr;
         schedule_late(visited, placement, cfg, bbs, use_list, i);
@@ -574,7 +571,6 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
     if (lca == nullptr) return; // no use
     BasicBlock *best = lca;
     if (lca != placement[inst]) {
-
       do {
         lca = lca->idom;
         if (lca->get_loop_level() < best->get_loop_level()) {

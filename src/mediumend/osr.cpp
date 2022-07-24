@@ -49,7 +49,6 @@ Output *copyDef(Instruction *iv, Reg result) {
 Reg reduce(BinaryOp opcode, ScalarType stype, Output *iv, Output *rc);
 
 Reg apply(BinaryOp opcode, ScalarType stype, Output *op1, Output *op2) {
-  debug(std::cerr) << "apply: " << op1->dst.id << " " << op2->dst.id << std::endl;
   if (hashMap.count(std::make_tuple(opcode, op1, op2))) return hashMap.at(std::make_tuple(opcode, op1, op2));
   if (header.at(op1) != nullptr && isRC(op2, header.at(op1))) {
     return reduce(opcode, stype, op1, op2);
@@ -59,6 +58,19 @@ Reg apply(BinaryOp opcode, ScalarType stype, Output *op1, Output *op2) {
   }
   Reg result = op1->bb->func->new_reg(stype);
   hashMap[std::make_tuple(opcode, op1, op2)] = result;
+  TypeCase(loadimm1, ir::insns::LoadImm *, op1) {
+    TypeCase(loadimm2, ir::insns::LoadImm *, op2) {
+      auto b = new ir::insns::Binary(result, opcode, loadimm1->dst, loadimm2->dst); // only for const_compute
+      auto newOper = new ir::insns::LoadImm(result, const_compute(b, loadimm1->imm, loadimm2->imm));
+      delete b;
+      header[newOper] = nullptr;
+      // after params inserted in osr
+      op1->bb->func->bbs.front()->insert_at_pos(op1->bb->func->sig.param_types.size(), newOper);
+      newOper->add_use_def();
+      all_insts.push(newOper);
+      return result;
+    }
+  }
   auto newOper = new ir::insns::Binary(result, opcode, op1->dst, op2->dst);
   header[newOper] = nullptr;
   if (op1->bb->domby.count(op2->bb)) {
@@ -72,7 +84,6 @@ Reg apply(BinaryOp opcode, ScalarType stype, Output *op1, Output *op2) {
 }
 
 Reg reduce(BinaryOp opcode, ScalarType stype, Output *iv, Output *rc) {
-  debug(std::cerr) << "reduce: " << iv->dst.id << " " << rc->dst.id << std::endl;
   if (hashMap.count(std::make_tuple(opcode, iv, rc))) return hashMap.at(std::make_tuple(opcode, iv, rc));
   Reg result = iv->bb->func->new_reg(stype);
   hashMap[std::make_tuple(opcode, iv, rc)] = result;
@@ -96,7 +107,6 @@ Reg reduce(BinaryOp opcode, ScalarType stype, Output *iv, Output *rc) {
 }
 
 void replace(ir::insns::Binary *node, Instruction *iv, Instruction *rc) {
-  debug(std::cerr) << "replace: " << node->dst.id << std::endl;
   Output *_iv = static_cast<Output *> (iv);
   Output *_rc = static_cast<Output *> (rc);
   Reg result = reduce(node->op, node->dst.type, _iv, _rc);
@@ -170,7 +180,6 @@ void classifyIV(const unordered_set<Instruction *> &SCC) {
   }
   if (flag) {
     for (auto inst : SCC) {
-      debug(std::cerr) << "find inductive variable: " << ((ir::insns::Output *) inst)->dst.id << std::endl;
       header[inst] = head;
     }
   } else {

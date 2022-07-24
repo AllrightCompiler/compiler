@@ -115,6 +115,8 @@ struct BasicBlock {
   // modify use-def
   void pop_front();
   // not modify use-def
+  void insert_at_pos(int pos, Instruction *insn);
+  // not modify use-def
   void insert_after_phi(Instruction *insn);
   // modify use-def
   void insert_after_inst(Instruction *prev, Instruction *insn);
