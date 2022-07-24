@@ -391,6 +391,9 @@ bool remove_useless_loop(ir::Function *func) {
         }
       }
     }
+    if(!out || !check){
+      continue;
+    }
     int raw_size = out->live_in.size() + defs.size();
     defs.merge(out->live_in);
     if(raw_size != defs.size()){
@@ -399,7 +402,7 @@ bool remove_useless_loop(ir::Function *func) {
     if (!out) {
       check = false;  
     }
-    if(check == false){
+    if(!check){
       continue;
     }
     changed = true;
