@@ -384,6 +384,7 @@ bool remove_useless_loop(ir::Function *func) {
         if (!suc->loop || suc->loop != loop) {
           if(out && suc != out){
             check = false;
+            break;
           } else {
             out_bb = bb;
             out = suc;
