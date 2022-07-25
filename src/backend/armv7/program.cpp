@@ -104,14 +104,16 @@ class ProgramTranslator {
       auto type = machine_reg_type(params[i]);
       Reg dst = Reg{type, -(i + 1)};
       if (type != Fp) {
-        if (nr_gp_params++ < NR_ARG_GPRS) {
-          entry_bb->push(new Move{dst, Operand2::from(Reg{type, r0 + i})});
+        if (nr_gp_params < NR_ARG_GPRS) {
+          entry_bb->push(
+              new Move{dst, Operand2::from(Reg{type, r0 + nr_gp_params++})});
         } else {
           stack_params.push_back(i);
         }
       } else {
-        if (nr_fp_params++ < NR_ARG_FPRS) {
-          entry_bb->push(new Move{dst, Operand2::from(Reg{type, s0 + i})});
+        if (nr_fp_params < NR_ARG_FPRS) {
+          entry_bb->push(
+              new Move{dst, Operand2::from(Reg{type, s0 + nr_fp_params++})});
         } else {
           stack_params.push_back(i);
         }
@@ -355,16 +357,18 @@ class ProgramTranslator {
         Reg arg_reg = Reg::from(call->args[*it]);
         bb->push(new Push{{arg_reg}});
       }
+      nr_gp_args = nr_fp_args = 0;
       for (auto i : reg_args) {
         Reg arg_reg = Reg::from(call->args[i]);
         if (!arg_reg.is_float()) {
-          bb->push(
-              new Move{Reg{arg_reg.type, r0 + i}, Operand2::from(arg_reg)});
+          bb->push(new Move{Reg{arg_reg.type, r0 + nr_gp_args++},
+                            Operand2::from(arg_reg)});
         } else {
-          bb->push(new Move{Reg{Fp, s0 + i}, Operand2::from(arg_reg)});
+          bb->push(
+              new Move{Reg{Fp, s0 + nr_fp_args++}, Operand2::from(arg_reg)});
         }
       }
-      bb->push(new Call{call->func, nr_gp_args, nr_fp_args});
+      bb->push(new Call{call->func, nr_gp_args, nr_fp_args, call->variadic_at});
       // 这里钻了个空子，这个语法中函数的返回值只能是int或float
       // 如果接收返回值的寄存器类型是String表明实际上无返回值
       if (call->dst.type != String)
@@ -898,7 +902,8 @@ void Function::replace_pseudo_insns() {
 void Function::resolve_phi() {
   // de-SSA (phi resolution)
   // 假定当前是Conventional SSA，如为T-SSA需要额外转换
-  // 稳妥的实现: 每个move被拆成两步，引入新的临时变量以消除顺序依赖，达到phi函数的并行求值效果
+  // 稳妥的实现:
+  // 每个move被拆成两步，引入新的临时变量以消除顺序依赖，达到phi函数的并行求值效果
   // TODO: 实现ParallelCopy减少插入的mov数量
   std::vector<std::tuple<BasicBlock *, Reg, Reg>> pending_moves; // bb, dst, src
   for (auto &bb : bbs) {

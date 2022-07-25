@@ -39,16 +39,15 @@ template <> class hash<ir::Reg> {
 public:
   size_t operator()(const ir::Reg &r) const { return r.id; }
 };
-template <class T1, class T2>
-struct hash<tuple<T1, T2>> {
+template <class T1, class T2> struct hash<tuple<T1, T2>> {
   size_t operator()(const tuple<T1, T2> &r) const {
     return hash<T1>()(get<0>(r)) * 1221821 + hash<T2>()(get<1>(r)) * 31;
   }
 };
-template <class T1, class T2, class T3>
-struct hash<tuple<T1, T2, T3>> {
+template <class T1, class T2, class T3> struct hash<tuple<T1, T2, T3>> {
   size_t operator()(const tuple<T1, T2, T3> &r) const {
-    return hash<T1>()(get<0>(r)) * 264893 + hash<T2>()(get<1>(r)) * 1221821 + hash<T3>()(get<2>(r)) * 31;
+    return hash<T1>()(get<0>(r)) * 264893 + hash<T2>()(get<1>(r)) * 1221821 +
+           hash<T3>()(get<2>(r)) * 31;
   }
 };
 } // namespace std
@@ -86,7 +85,8 @@ public:
   BasicBlock *header;
   int level;
   bool no_inner;
-  Loop(BasicBlock *head) : header(head), outer(nullptr), level(-1), no_inner(true) {}
+  Loop(BasicBlock *head)
+      : header(head), outer(nullptr), level(-1), no_inner(true) {}
 };
 
 struct BasicBlock {
@@ -138,8 +138,8 @@ struct BasicBlock {
     to->prev.erase(from);
   }
 
-  void change_succ(BasicBlock* old_bb, BasicBlock* new_bb);
-  void change_prev(BasicBlock* old_bb, BasicBlock* new_bb);
+  void change_succ(BasicBlock *old_bb, BasicBlock *new_bb);
+  void change_prev(BasicBlock *old_bb, BasicBlock *new_bb);
 };
 
 void calc_loop_level(Loop *loop);
@@ -365,9 +365,11 @@ struct Call : Output {
   string func;
   vector<Reg> args;
   vector<Reg> global_use;
+  int variadic_at; // 第几个参数是 `...`
 
-  Call(Reg dst, string callee, vector<Reg> arg_regs)
-      : func{std::move(callee)}, args{std::move(arg_regs)}, Output{dst} {}
+  Call(Reg dst, string callee, vector<Reg> arg_regs, int variadic_at = -1)
+      : func{std::move(callee)}, args{std::move(arg_regs)},
+        variadic_at{variadic_at}, Output{dst} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -459,12 +461,15 @@ struct MemUse : Output {
   Reg dep;
   Reg load_src;
   bool call_use;
-  MemUse(Reg dst, Reg dep, Reg load_src, bool call_use) : dep{dep}, load_src{load_src}, call_use(call_use), Output{dst} {}
+  MemUse(Reg dst, Reg dep, Reg load_src, bool call_use)
+      : dep{dep}, load_src{load_src}, call_use(call_use), Output{dst} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-  virtual std::vector<Reg *> reg_ptrs() override { return {&dst, &dep, &load_src}; }
+  virtual std::vector<Reg *> reg_ptrs() override {
+    return {&dst, &dep, &load_src};
+  }
   unordered_set<Reg> use() const override { return {dep, load_src}; }
 };
 
@@ -473,13 +478,19 @@ struct MemDef : Output {
   Reg store_dst;
   Reg store_val;
   bool call_def;
-  MemDef(Reg dst, Reg dep, Reg store_dst, Reg store_val, bool call_def) : dep(dep), store_dst{store_dst}, store_val{store_val}, call_def(call_def), Output{dst} {}
+  MemDef(Reg dst, Reg dep, Reg store_dst, Reg store_val, bool call_def)
+      : dep(dep), store_dst{store_dst}, store_val{store_val},
+        call_def(call_def), Output{dst} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
   virtual void change_use(Reg old_reg, Reg new_reg) override;
-  virtual std::vector<Reg *> reg_ptrs() override { return {&store_dst, &store_val, &dst, &dep}; }
-  unordered_set<Reg> use() const override { return {store_dst, store_val, dep}; }
+  virtual std::vector<Reg *> reg_ptrs() override {
+    return {&store_dst, &store_val, &dst, &dep};
+  }
+  unordered_set<Reg> use() const override {
+    return {store_dst, store_val, dep};
+  }
 };
 
 struct Return : Terminator {

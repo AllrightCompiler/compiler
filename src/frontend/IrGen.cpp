@@ -35,8 +35,7 @@ IrGen::IrGen() : program{new Program} {
   lib["putfarray"].sig = {
       .ret_type = std::nullopt,
       .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}}};
-  lib["putf"].sig = {.ret_type = std::nullopt,
-                     .param_types = {Type{String}, Type{Int}}};
+  lib["putf"].sig = {.ret_type = std::nullopt, .param_types = {Type{String}}};
   lib["starttime"].sig = {.ret_type = std::nullopt, .param_types = {}};
   lib["stoptime"].sig = {.ret_type = std::nullopt, .param_types = {}};
   lib["_sysy_starttime"].sig = {.ret_type = std::nullopt,
@@ -433,7 +432,8 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
     // int和float即相应类型，剩下的随便写个string
     ScalarType ret_reg_type = sig->ret_type.value_or(String);
     Reg ret_reg = new_reg(ret_reg_type);
-    emit(new insns::Call{ret_reg, callee_name, std::move(arg_regs)});
+    emit(new insns::Call{ret_reg, callee_name, std::move(arg_regs),
+                         callee_name == "putf" ? 1 : -1});
     return ret_reg;
   }
   TypeCase(unary, const ast::UnaryExpr *, expr) {

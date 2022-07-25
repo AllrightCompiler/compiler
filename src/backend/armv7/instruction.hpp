@@ -497,9 +497,11 @@ struct Pop : SpRelative {
 struct Call : Instruction {
   std::string func;
   int nr_gp_args, nr_fp_args;
+  int variadic_at; // 第几个参数是 `...`
 
-  Call(std::string func, int nr_gp_args, int nr_fp_args)
-      : func{std::move(func)}, nr_gp_args{nr_gp_args}, nr_fp_args{nr_fp_args} {}
+  Call(std::string func, int nr_gp_args, int nr_fp_args, int variadic_at = -1)
+      : func{std::move(func)}, nr_gp_args{nr_gp_args}, nr_fp_args{nr_fp_args},
+        variadic_at{variadic_at} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override {

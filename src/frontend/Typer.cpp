@@ -36,7 +36,7 @@ Typer::Typer() {
       .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}},
       .variadic = false};
   funcs["putf"] = {.ret_type = std::nullopt,
-                   .param_types = {Type{String}, Type{Int}},
+                   .param_types = {Type{String}},
                    .variadic = true};
   funcs["starttime"] = {
       .ret_type = std::nullopt, .param_types = {}, .variadic = false};
