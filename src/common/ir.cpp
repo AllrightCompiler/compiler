@@ -12,7 +12,7 @@ inline std::string var_name(std::string name) { return "@" + name; }
 
 inline std::string label_name(std::string name) { return "%" + name; }
 
-inline std::string type_string(ScalarType t) {
+inline std::string type_string(int t) {
   if (t == Int)
     return "i32";
   if (t == Float)
@@ -20,7 +20,7 @@ inline std::string type_string(ScalarType t) {
   return "?";
 }
 
-inline std::string type_string(const std::optional<ScalarType> &t) {
+inline std::string type_string(const std::optional<int> &t) {
   if (!t)
     return "void";
   return type_string(t.value());

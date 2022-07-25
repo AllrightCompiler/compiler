@@ -18,7 +18,7 @@ public:
 
 class ScalarType : public SysYType {
 public:
-  using Type = ::ScalarType;
+  using Type = int;
 
   explicit ScalarType(Type type) : m_type{type} {}
   virtual ~ScalarType() = default;

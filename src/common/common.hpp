@@ -37,7 +37,7 @@ enum ScalarType {
 };
 
 struct Type {
-  ScalarType base_type;
+  int base_type;
   bool is_const;
   std::vector<int> dims; // 数组第一维可以是0
 
@@ -45,10 +45,10 @@ struct Type {
   bool is_array() const { return dims.size() > 0; }
 
   Type() {}
-  Type(ScalarType btype) : base_type{btype}, is_const{false} {}
-  Type(ScalarType btype, bool const_qualified)
+  Type(int btype) : base_type{btype}, is_const{false} {}
+  Type(int btype, bool const_qualified)
       : base_type{btype}, is_const{const_qualified} {}
-  Type(ScalarType btype, std::vector<int> &&dimensions)
+  Type(int btype, std::vector<int> &&dimensions)
       : base_type{btype}, is_const{false}, dims{std::move(dimensions)} {}
 };
 

@@ -16,11 +16,11 @@ using std::vector;
 using std::list;
 
 struct Reg {
-  ScalarType type;
+  int type;
   int id;
 
   Reg() {}
-  Reg(ScalarType type_, int id_) : type{type_}, id{id_} {}
+  Reg(int type_, int id_) : type{type_}, id{id_} {}
 };
 
 struct Storage {
@@ -41,7 +41,7 @@ struct BasicBlock {
 };
 
 struct FunctionSignature {
-  optional<ScalarType> ret_type;
+  optional<int> ret_type;
   vector<Type> param_types;
 };
 
