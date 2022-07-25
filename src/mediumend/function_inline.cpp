@@ -159,7 +159,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     }
     // 找一个合适的位置插入，或者就等后面指令调度
     caller->cfg->build();
-    caller->cfg->loop_analysis();
+    caller->loop_analysis();
     while(inst_bb->loop){
       inst_bb = inst_bb->loop->header->idom;
     }

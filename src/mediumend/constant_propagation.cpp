@@ -78,9 +78,11 @@ void constant_propagation(ir::Program *prog) {
             TypeCase(call, ir::insns::Call *, output) {
               auto func_iter = prog->functions.find(call->func);
               if (func_iter == prog->functions.end() ||
-                  !func_iter->second.pure) {
+                  !func_iter->second.is_pure()) {
                 continue;
               }
+            } else TypeCase(memdef, ir::insns::MemDef *, ins.get()){
+              continue;
             }
             auto reg_use = output->use();
             for (auto &use : reg_use) {

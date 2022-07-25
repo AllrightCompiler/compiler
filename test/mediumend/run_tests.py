@@ -5,6 +5,7 @@ import subprocess
 import multiprocessing
 from junit_xml import TestSuite, TestCase
 from multiprocessing import Pool
+from parse import parse
 
 TIMEOUT = 120
 
@@ -17,15 +18,69 @@ def get_testcases(test_dir):
     return testcases
 
 def ret_err(test_name, timeStarted, msg):
-    tc = TestCase(test_name, "mediumend-test", time.time() - timeStarted, "", "")
+    tc = TestCase(test_name, "mediumend-test", time.time() - timeStarted)
     tc.add_failure_info(msg)
     return tc, False
+
+def get_time(err_file):
+    content = open(err_file).read().splitlines()
+    if not content:
+        return -1
+    content = content[-1]
+    h, m, s, us = map(int, parse('TOTAL: {}H-{}M-{}S-{}us', content))
+    return ((h * 60 + m) * 60 + s) + us / 1_000_000
+
+def get_runtime(args, compiler, opt_flag):
+    lib_path, test_dir, test_name = args[2], args[3], args[4]
+
+    lib_h_path = lib_path[0 : lib_path.rfind("/") + 1] + "sylib.h"
+    lib_c_path = lib_path[0 : lib_path.rfind("/") + 1] + "sylib.c"
+    code_path = os.path.join(test_dir, test_name + ".sy")
+    new_code_path = os.path.join(test_dir, test_name + ".cpp")
+    with open(new_code_path, "w") as f:
+        f.write(open(lib_h_path, "r").read())
+        f.write("\n")
+    with open(new_code_path, "a") as f:
+        lines = open(lib_c_path, "r").readlines()
+        for line in lines:
+            if line.strip() != '#include"sylib.h"':
+                f.write(line + "\n")
+    with open(new_code_path, "a") as f:
+        f.write(open(code_path, "r").read())
+        f.write("\n")
+    new_name = test_name + f"_{compiler}{opt_flag}"
+
+    input_path = os.path.join(test_dir, test_name + ".in")
+    output_path = os.path.join(test_dir, new_name + ".tmp")
+    outerr_path = os.path.join(test_dir, new_name + ".err")
+    exe_path = os.path.join(test_dir, new_name)
+
+    command = f'{compiler} {opt_flag} {new_code_path} -o {exe_path}'
+    proc = subprocess.Popen(command, stdout=open("/dev/null", "w"), stderr=open("/dev/null", "w"), shell=True)
+    proc.wait()
+    if proc.returncode != 0:
+        return TIMEOUT
+
+    command = f'{exe_path}'
+    timeStarted = time.time()
+    if (os.path.exists(input_path)):
+        proc = subprocess.Popen(command, stdin=open(input_path, "r"), stdout=open(output_path, "w",), stderr=open(outerr_path, "w"), shell=True)
+    else:
+        proc = subprocess.Popen(command, stdout=open(output_path, "w"), stderr=open(outerr_path, "w"), shell=True)
+    proc.wait()
+    
+    runTime = time.time() - timeStarted
+    t_err = get_time(outerr_path)
+    if t_err > 0:
+        return t_err
+    return runTime
 
 def run_test(args):
     compiler_path, converter_path, lib_path, test_dir, test_name = args[0], args[1], args[2], args[3], args[4]
     code_path = os.path.join(test_dir, test_name + ".sy")
     input_path = os.path.join(test_dir, test_name + ".in")
     output_path = os.path.join(test_dir, test_name + ".tmp")
+    outerr_path = os.path.join(test_dir, test_name + ".err")
     ir_path = os.path.join(test_dir, test_name + ".ir")
     ll_path = os.path.join(test_dir, test_name + ".ll")
     obj_path = os.path.join(test_dir, test_name + ".o")
@@ -90,11 +145,12 @@ def run_test(args):
     command = f'{exe_path}'
     timeStarted = time.time()
     if (os.path.exists(input_path)):
-        proc = subprocess.Popen(command, stdin=open(input_path, "r"), stdout=open(output_path, "w",), stderr=open("/dev/null", "w"), shell=True)
+        proc = subprocess.Popen(command, stdin=open(input_path, "r"), stdout=open(output_path, "w",), stderr=open(outerr_path, "w"), shell=True)
     else:
-        proc = subprocess.Popen(command, stdout=open(output_path, "w"), stderr=open("/dev/null", "w"), shell=True)
+        proc = subprocess.Popen(command, stdout=open(output_path, "w"), stderr=open(outerr_path, "w"), shell=True)
     try:
         proc.wait(TIMEOUT)
+        runTime = time.time() - timeStarted
         with open(output_path, "a") as f:
             f.write("\n"+str(proc.returncode))
     except subprocess.TimeoutExpired:
@@ -118,7 +174,18 @@ def run_test(args):
         return ret_err(test_name, timeStarted, "Wrong Answer")
     else:
         print('\033[0;32mPass\033[0m')
-        return TestCase(test_name, "mediumend-test", time.time() - timeStarted, "", ""), True
+        t_err = get_time(outerr_path)
+        if t_err > 0: # Performance
+            runTime = t_err
+        # gcc_time = get_runtime(args, "gcc", "")
+        gcc_O2_time = get_runtime(args, "gcc", "-O2")
+        # clang_time = get_runtime(args, "clang", "")
+        clang_O2_time = get_runtime(args, "clang", "-O2")
+        minTime = min(gcc_O2_time, clang_O2_time)
+        # minTime = min(min(gcc_time, gcc_O2_time), min(clang_time, clang_O2_time))
+        log_str = f"s: {(minTime / runTime):.6f}\ngcc-O2: {gcc_O2_time:.6f}\nclang-O2: {clang_O2_time:.6f}"
+        # log_str = f"time: {runTime}\ntime-opt: {minTime}\n\ngcc: {gcc_time}\ngcc-O2: {gcc_O2_time}\nclang: {clang_time}\nclang-O2: {clang_O2_time}"
+        return TestCase(test_name, "mediumend-test", elapsed_sec=runTime, file=log_str), True
 
 if __name__ == '__main__':
     if len(sys.argv) != 5 and len(sys.argv) != 6:

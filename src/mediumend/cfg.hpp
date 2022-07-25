@@ -34,8 +34,6 @@ public:
 
   void compute_rpo();
 
-  void loop_analysis();
-
   unordered_map<BasicBlock *, unordered_set<BasicBlock *>> compute_df();
 
   unordered_map<BasicBlock *, unordered_set<BasicBlock *>> compute_rdf();
