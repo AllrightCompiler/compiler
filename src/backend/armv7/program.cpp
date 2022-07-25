@@ -537,10 +537,7 @@ void emit_global_array(std::ostream &os, const std::shared_ptr<Var> &var) {
   for (auto &[index, val] : *var->arr_val) {
     if (index > cur_index)
       os << "    .space " << (index - cur_index) * 4 << ", 0\n";
-    if (val.type != Float)
-      os << "    .word " << val.iv << '\n';
-    else
-      os << "    .float " << val.fv << '\n';
+    os << "    .word " << val.iv << '\n';
     cur_index = index + 1;
   }
   if (nr_elems > cur_index)
@@ -558,10 +555,7 @@ void emit_global_var(std::ostream &os, const std::string &name,
 
   if (var->val) {
     auto init = var->val.value();
-    if (init.type != Float)
-      os << "    .word " << init.iv << '\n';
-    else
-      os << "    .float " << init.fv << '\n';
+    os << "    .word " << init.iv << '\n';
   } else {
     os << "    .space 4, 0\n";
   }
