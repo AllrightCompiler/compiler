@@ -2,6 +2,7 @@ stages:
     - build
     - mediumend-test-2022
     - mediumend-test-prev
+    - end2end-test-2022
 
 build:
   stage: build
@@ -81,3 +82,14 @@ functional2020:
   artifacts:
     reports:
       junit: build/test_result_functional2020.xml
+
+performance:
+  stage: end2end-test-2022
+  needs: [build]
+  script:
+    - cd build
+    - python3 ../test/end2end/run_tests.py ./compiler ../runtime/libsysy.a /home/allright/compiler2022/performance/ test_result_performance.xml
+  allow_failure: true
+  artifacts:
+    reports:
+      junit: build/test_result_performance.xml
