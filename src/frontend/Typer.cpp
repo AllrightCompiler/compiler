@@ -217,7 +217,9 @@ void Typer::visit_statement(const ast::Statement &node) {
     if (!t || t->is_array())
       throw CompileError{"invalid type for condition expression"};
     visit_statement(*if_->then());
-    visit_statement(*if_->otherwise());
+    if (auto otherwise = if_->otherwise().get()) {
+      visit_statement(*otherwise);
+    }
     return;
   }
   TypeCase(while_, const ast::While *, stmt) {
