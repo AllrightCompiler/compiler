@@ -101,9 +101,7 @@ class ProgramTranslator {
     nr_gp_params = nr_fp_params = 0;
     std::vector<int> stack_params;
     for (int i = 0; i < nr_params; ++i) {
-      auto type = params[i].is_array()
-                      ? RegType::General
-                      : ir_to_machine_reg_type(params[i].base_type);
+      auto type = machine_reg_type(params[i]);
       Reg dst = Reg{type, -(i + 1)};
       if (type != Fp) {
         if (nr_gp_params++ < NR_ARG_GPRS) {
@@ -153,9 +151,7 @@ class ProgramTranslator {
       dst_fn.param_objs.push_back(obj);
       dst_fn.stack_objects.emplace_back(obj);
 
-      Reg dst = Reg::from(params[i].is_array() ? ScalarType::Int
-                                               : params[i].base_type,
-                          -(i + 1));
+      Reg dst{machine_reg_type(params[i]), -(i + 1)};
       // entry_bb->push(new LoadStack{dst, obj, 0});
       dst_fn.defer_stack_param_load(dst, obj);
     }
@@ -614,7 +610,7 @@ int round_up_to_imm8m(int x) {
   int bits = 8 * sizeof(x);
   int hi = bits - 1 - __builtin_clz(x);
   int lo = __builtin_ctz(x);
-  if (hi & 1) {
+  if (!(hi & 1)) {
     if (hi - lo + 1 <= 7)
       return x;
   } else {
@@ -623,7 +619,7 @@ int round_up_to_imm8m(int x) {
   }
 
   int a;
-  if (hi & 1)
+  if (!(hi & 1))
     a = 1 << (hi - 6);
   else
     a = 1 << (hi - 7);
@@ -902,7 +898,8 @@ void Function::replace_pseudo_insns() {
 void Function::resolve_phi() {
   // de-SSA (phi resolution)
   // 假定当前是Conventional SSA，如为T-SSA需要额外转换
-  // 每个move被拆成两步，引入新的临时变量以消除顺序依赖，达到phi函数的并行求值效果
+  // 稳妥的实现: 每个move被拆成两步，引入新的临时变量以消除顺序依赖，达到phi函数的并行求值效果
+  // TODO: 实现ParallelCopy减少插入的mov数量
   std::vector<std::tuple<BasicBlock *, Reg, Reg>> pending_moves; // bb, dst, src
   for (auto &bb : bbs) {
     auto &insns = bb->insns;
@@ -912,9 +909,15 @@ void Function::resolve_phi() {
           // 在跳转前插入mov
           Reg dst = phi->dst;
           Reg mid = new_reg(dst.type);
-          bb->insert_before_branch(new Move{mid, Operand2::from(src)});
+          auto mov = new Move{mid, Operand2::from(src)};
+          bb->insert_before_branch(mov);
+
           pending_moves.push_back({bb, dst, mid});
-          // bb->insert_before_branch(new Move{phi->dst, Operand2::from(src)});
+          phi_moves.insert(mov);
+
+          // auto mov = new Move{phi->dst, Operand2::from(src)};
+          // bb->insert_before_branch(mov);
+          // phi_moves.insert(mov);
         }
         it = insns.erase(it);
       }
@@ -923,8 +926,11 @@ void Function::resolve_phi() {
       }
     }
   }
-  for (auto &[bb, dst, src] : pending_moves)
-    bb->insert_before_branch(new Move{dst, Operand2::from(src)});
+  for (auto &[bb, dst, src] : pending_moves) {
+    auto mov = new Move{dst, Operand2::from(src)};
+    bb->insert_before_branch(mov);
+    phi_moves.insert(mov);
+  }
 }
 
 } // namespace armv7

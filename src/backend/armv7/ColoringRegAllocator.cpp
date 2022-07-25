@@ -99,7 +99,8 @@ void ColoringRegAllocator::build() {
       auto def = ins->def();
       auto use = ins->use();
       TypeCase(mov, Move *, ins) {
-        if (mov->is_reg_mov()) {
+        // NOTE: phi函数解构产生的mov的源寄存器和目的寄存器不应被合并
+        if (mov->is_reg_mov() && !f->phi_moves.count(mov)) {
           auto consider = false;
           for (Reg u : use) {
             if (this->reg_filter(u)) {
@@ -431,7 +432,6 @@ std::map<Reg, int> ColoringRegAllocator::assign_colors() {
 
 void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
   if (is_gp_pass) {
-    // TODO: 立即数、全局地址和栈地址应当生成相应的spill代码
     // NOTE: 在*每个*def后添加store，每个use前插入load
     for (Reg r : nodes) {
       StackObject *obj = nullptr;

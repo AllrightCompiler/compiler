@@ -18,6 +18,10 @@ inline constexpr RegType ir_to_machine_reg_type(ScalarType t) {
   return t == Float ? Fp : General;
 }
 
+inline RegType machine_reg_type(const Type &t) {
+  return t.is_array() ? General : ir_to_machine_reg_type(t.base_type);
+}
+
 // 此结构几乎与ir::Reg一致
 // 负id表示虚拟（伪）寄存器
 struct Reg {
