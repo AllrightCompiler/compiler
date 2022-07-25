@@ -537,7 +537,7 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
 
 // Global Code Motion
 void gcm(Function *f) {
-  f->cfg->loop_analysis();
+  f->loop_analysis();
 
   vector<ir::Instruction *> all_insts;
 

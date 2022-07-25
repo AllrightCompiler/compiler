@@ -112,12 +112,12 @@ void main_global_var_to_local(ir::Program *prog){
       }
     }
     entry->push_front(new ir::insns::Alloca(reg, var->type));
+    prog->global_vars.erase(var_name);
   }
   for (auto &bb : func.bbs) {
     for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
       TypeCase(loadaddr, ir::insns::LoadAddr *, iter->get()) {
-        auto &var = prog->global_vars[loadaddr->var_name];
-        if (!var->type.is_array() && !used_vars.count(loadaddr->var_name)) {
+        if (!prog->global_vars.count(loadaddr->var_name)) {
           copy_propagation(func.use_list, loadaddr->dst,
                            global_name_to_local_reg[loadaddr->var_name]);
           iter = bb->insns.erase(iter);
