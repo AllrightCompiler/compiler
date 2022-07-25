@@ -63,6 +63,7 @@ struct Function {
   std::vector<StackObject *> param_objs, normal_objs;
 
   std::map<Reg, RegValue> reg_val; // 记录一些单赋值虚拟寄存器的取值
+  std::set<Move *> phi_moves; // 由phi指令产生的mov，这些mov相关的寄存器不应被合并
 
   int regs_used; // 分配的虚拟寄存器总数
 
