@@ -139,7 +139,7 @@ void mem2reg(ir::Program *prog) {
     auto df = cfg->compute_df();
     func->do_liveness_analysis();
     unordered_map<Reg, BasicBlock *> alloc_set;
-    unordered_map<Reg, ScalarType> alloc2type;
+    unordered_map<Reg, int> alloc2type;
     unordered_map<Reg, unordered_set<BasicBlock *>> defs;
     unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
     unordered_map<ir::insns::Phi *, Reg> phi2mem;

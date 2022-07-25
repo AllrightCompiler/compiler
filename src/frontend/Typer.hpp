@@ -34,7 +34,7 @@ class Typer {
   }
 
   // implicit cast for scalar const value
-  ConstValue implicit_cast(ScalarType dst_type, ConstValue val) const;
+  ConstValue implicit_cast(int dst_type, ConstValue val) const;
   // return std::nullopt if the scalar expression cannot be evaluated at compile
   // time
   std::optional<ConstValue>
