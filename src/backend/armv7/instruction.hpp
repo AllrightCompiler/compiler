@@ -14,7 +14,7 @@ enum RegType {
   Fp,
 };
 
-inline constexpr RegType ir_to_machine_reg_type(ScalarType t) {
+inline constexpr RegType ir_to_machine_reg_type(int t) {
   return t == Float ? Fp : General;
 }
 
@@ -50,7 +50,7 @@ struct Reg {
   static Reg from(ir::Reg ir_reg) {
     return Reg{ir_to_machine_reg_type(ir_reg.type), -ir_reg.id};
   }
-  static Reg from(ScalarType t, int id) {
+  static Reg from(int t, int id) {
     return Reg{ir_to_machine_reg_type(t), id};
   }
 };

@@ -57,7 +57,7 @@ BasicBlock *IrGen::new_bb() {
   return bb;
 }
 
-Reg IrGen::scalar_cast(Reg src, ScalarType dst_type) {
+Reg IrGen::scalar_cast(Reg src, int dst_type) {
   assert(dst_type == Int || dst_type == Float);
   if (src.type != dst_type) {
     Reg converted = new_reg(dst_type);
@@ -430,7 +430,7 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
     }
 
     // int和float即相应类型，剩下的随便写个string
-    ScalarType ret_reg_type = sig->ret_type.value_or(String);
+    int ret_reg_type = sig->ret_type.value_or(String);
     Reg ret_reg = new_reg(ret_reg_type);
     emit(new insns::Call{ret_reg, callee_name, std::move(arg_regs),
                          callee_name == "putf" ? 1 : -1});

@@ -31,7 +31,7 @@ std::string_view op_string(BinaryOp op) {
   return op_strs[i];
 }
 
-std::string_view type_string(::ScalarType type) {
+std::string_view type_string(int type) {
   switch (type) {
   case Int:
     return "int";

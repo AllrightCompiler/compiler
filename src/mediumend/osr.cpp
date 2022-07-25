@@ -46,9 +46,9 @@ Output *copyDef(Instruction *iv, Reg result) {
   assert(false);
 }
 
-Reg reduce(BinaryOp opcode, ScalarType stype, Output *iv, Output *rc);
+Reg reduce(BinaryOp opcode, int stype, Output *iv, Output *rc);
 
-Reg apply(BinaryOp opcode, ScalarType stype, Output *op1, Output *op2) {
+Reg apply(BinaryOp opcode, int stype, Output *op1, Output *op2) {
   debug(std::cerr) << "apply: " << op1->dst.id << " " << op2->dst.id << std::endl;
   if (hashMap.count(std::make_tuple(opcode, op1, op2))) return hashMap.at(std::make_tuple(opcode, op1, op2));
   if (header.at(op1) != nullptr && isRC(op2, header.at(op1))) {
@@ -71,7 +71,7 @@ Reg apply(BinaryOp opcode, ScalarType stype, Output *op1, Output *op2) {
   return result;
 }
 
-Reg reduce(BinaryOp opcode, ScalarType stype, Output *iv, Output *rc) {
+Reg reduce(BinaryOp opcode, int stype, Output *iv, Output *rc) {
   debug(std::cerr) << "reduce: " << iv->dst.id << " " << rc->dst.id << std::endl;
   if (hashMap.count(std::make_tuple(opcode, iv, rc))) return hashMap.at(std::make_tuple(opcode, iv, rc));
   Reg result = iv->bb->func->new_reg(stype);

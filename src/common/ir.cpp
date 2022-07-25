@@ -30,7 +30,7 @@ inline std::string op_string(UnaryOp op) {
   }
 }
 
-inline std::string op_string(BinaryOp op, ScalarType t) {
+inline std::string op_string(BinaryOp op, int t) {
   bool f = t == Float;
   switch (op) {
   case BinaryOp::Add:

@@ -448,7 +448,7 @@ ConstValue eval(BinaryOp op, const ConstValue &lhs, const ConstValue &rhs) {
   __builtin_unreachable();
 }
 
-ConstValue Typer::implicit_cast(ScalarType dst_type, ConstValue val) const {
+ConstValue Typer::implicit_cast(int dst_type, ConstValue val) const {
   if (dst_type == val.type)
     return val;
   if (dst_type == Int && val.type == Float)
