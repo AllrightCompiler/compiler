@@ -92,4 +92,4 @@ performance:
   allow_failure: true
   artifacts:
     reports:
-      junit: build/test_result_performance.xml
+      junit: test_result_performance.xml

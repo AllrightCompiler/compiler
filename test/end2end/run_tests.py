@@ -92,7 +92,7 @@ def run_test(args):
     try:
         proc.wait(TIMEOUT)
     except subprocess.TimeoutExpired:
-        proc.kill()
+        proc.terminate()
         print('\033[0;31mCompiler TLE\033[0m')
         return ret_err(test_name, timeStarted, "Compiler TLE")
     if proc.returncode:
