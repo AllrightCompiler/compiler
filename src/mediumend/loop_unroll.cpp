@@ -2,142 +2,270 @@
 #include "mediumend/cfg.hpp"
 #include "mediumend/optimizer.hpp"
 
-#include <cassert>
 namespace mediumend {
 
-using ir::Function;
 using ir::BasicBlock;
 using ir::Instruction;
 using ir::Reg;
 using ir::Loop;
-using std::unordered_map;
 
-static ir::Program* cur_prog = nullptr;
-static Function *cur_func = nullptr;
-static unordered_map<Reg, Reg> reg_map;
+static const int UNROLL_CNT = 2;
+static int map_curid;
+static unordered_map<Reg, Reg> reg_map[2]; // contains only regs inside loop, two maps representing now and prev
+static unordered_map<BasicBlock*, BasicBlock*> bb_map[2]; // contains only bbs inside loop, two maps representing now and prev
 
-unordered_map<Reg, int> find_const_int(Function *func){
-  unordered_map<Reg, int> ret;
-  for(auto &bb : func->bbs){
-    for(auto &inst : bb->insns){
-      TypeCase(loadimm, ir::insns::LoadImm *, inst.get()){
-        if(loadimm->imm.type == ScalarType::Int){
-          ret[loadimm->dst] = loadimm->imm.iv;
+Instruction *copy_inst(Instruction *inst, BasicBlock *entry, BasicBlock *exit) {
+  auto reg_map_if = [=](Reg reg) {
+    if (reg_map[map_curid].count(reg)) return reg_map[map_curid].at(reg);
+    else return reg;
+  };
+  auto bb_map_to = [=](BasicBlock *bb) {
+    if (bb == entry) return entry;
+    if (bb == exit) return exit;
+    return bb_map[map_curid].at(bb);
+  };
+  TypeCase(binary, ir::insns::Binary *, inst) {
+    auto new_inst = new ir::insns::Binary(reg_map_if(binary->dst), binary->op, reg_map_if(binary->src1), reg_map_if(binary->src2));
+    return new_inst;
+  } else TypeCase(unary, ir::insns::Unary *, inst) {
+    auto new_inst = new ir::insns::Unary(reg_map_if(unary->dst), unary->op, reg_map_if(unary->src));
+    return new_inst;
+  } else TypeCase(load, ir::insns::Load *, inst) {
+    auto new_inst = new ir::insns::Load(reg_map_if(load->dst), reg_map_if(load->addr));
+    return new_inst;
+  } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+    auto new_inst = new ir::insns::LoadAddr(reg_map_if(loadaddr->dst), loadaddr->var_name);
+    return new_inst;
+  } else TypeCase(loadimm, ir::insns::LoadImm *, inst) {
+    auto new_inst = new ir::insns::LoadImm(reg_map_if(loadimm->dst), loadimm->imm);
+    return new_inst;
+  } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+    auto indices = gep->indices;
+    for(auto &index : indices){
+      index = reg_map_if(index);
+    }
+    auto new_inst = new ir::insns::GetElementPtr(reg_map_if(gep->dst), gep->type, reg_map_if(gep->base), indices);
+    return new_inst;
+  } else TypeCase(call, ir::insns::Call *, inst) {
+    auto args = call->args;
+    for(auto &arg : args){
+      arg = reg_map_if(arg);
+    }
+    auto new_inst = new ir::insns::Call(reg_map_if(call->dst), call->func, args);
+    return new_inst;
+  } else TypeCase(store, ir::insns::Store *, inst) {
+    auto new_inst = new ir::insns::Store(reg_map_if(store->addr), reg_map_if(store->val));
+    return new_inst;
+  } else TypeCase(br, ir::insns::Branch *, inst) {
+    auto new_inst = new ir::insns::Branch(reg_map_if(br->val), bb_map_to(br->true_target), bb_map_to(br->false_target));
+    return new_inst;
+  } else TypeCase(jmp, ir::insns::Jump *, inst) {
+    auto new_inst = new ir::insns::Jump(bb_map_to(jmp->target));
+    return new_inst;
+  } else TypeCase(ret, ir::insns::Return *, inst) {
+    auto ret_val = ret->val;
+    if (ret_val.has_value()) ret_val.value() = reg_map_if(ret_val.value());
+    auto new_inst = new ir::insns::Return(ret_val);
+  } else TypeCase(phi, ir::insns::Phi *, inst) {
+    auto new_inst = new ir::insns::Phi(reg_map_if(phi->dst));
+    if (inst->bb == bb_map[!map_curid].at(entry)) { // new entry
+      for (auto pair : phi->incoming) {
+        auto income_bb = pair.first;
+        if (income_bb->loop == nullptr || income_bb->loop != entry->loop) { // not in loop
+          continue;
         }
+        auto mapped_bb = bb_map[!map_curid].at(income_bb);
+        auto mapped_reg = reg_map[!map_curid].at(pair.second);
+        new_inst->incoming[mapped_bb] = mapped_reg;
+      }
+    } else {
+      for (auto pair : phi->incoming) {
+        auto mapped_bb = bb_map[map_curid].at(pair.first);
+        auto mapped_reg = reg_map[map_curid].at(pair.second);
+        new_inst->incoming[mapped_bb] = mapped_reg;
       }
     }
-  }
-  return ret;
+    return new_inst;
+  } else assert(false);
 }
 
-Instruction * copy_inst(Instruction *inst){
-  Instruction *new_inst;
-  TypeCase(output, ir::insns::Output *, inst){
-    Reg dst = cur_func->new_reg(output->dst.type);
-    reg_map[output->dst] = dst;
-    TypeCase(binary, ir::insns::Binary *, output){
-      new_inst = new ir::insns::Binary(dst, binary->op, reg_map.at(binary->src1), reg_map.at(binary->src2));
-    } else TypeCase(unary, ir::insns::Unary *, output){
-      new_inst = new ir::insns::Unary(dst, unary->op, reg_map.at(unary->src));
-    } else TypeCase(loadaddr, ir::insns::LoadAddr *, output){
-      new_inst = new ir::insns::LoadAddr(dst, loadaddr->var_name);
-    } else TypeCase(gep, ir::insns::GetElementPtr *, output){
-      auto indices = gep->indices;
-      for(auto &index : indices){
-        index = reg_map.at(index);
+void copy_bb(BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *exit) {
+  // map prev & succ
+  for (auto prev_bb : bb->prev) {
+    if (bb == entry) continue; // new_entry's prev has been done
+    new_bb->prev.insert(bb_map[map_curid].at(prev_bb));
+  }
+  for (auto succ_bb : bb->succ) {
+    if (succ_bb == exit || succ_bb == entry) {
+      new_bb->succ.insert(succ_bb);
+      succ_bb->prev.insert(new_bb);
+      if (succ_bb == entry) {
+        entry->prev.erase(bb_map[!map_curid].at(bb));
       }
-      new_inst = new ir::insns::GetElementPtr(dst, gep->type, reg_map.at(gep->base), indices);
-    } else TypeCase(load, ir::insns::Load *, output){
-      new_inst = new ir::insns::Load(dst, reg_map.at(load->addr));
-    } else TypeCase(phi, ir::insns::Phi *, output) {
-      // TODO:leave to ZQH
-      new_inst = new ir::insns::Phi(output->dst);
-      for(auto &pair : phi->incoming){
-        auto mapped_reg = reg_map.at(pair.second);
-        auto mapped_bb = bb_map.at(pair.first);
-        
-      }
-    } else TypeCase(call, ir::insns::Call *, output){
-      auto args = call->args;
-      for(auto &arg : args){
-        arg = reg_map.at(arg);
-      }
-      new_inst = new ir::insns::Call(dst, call->func, args);
-    } else TypeCase(loadimm, ir::insns::LoadImm *, output){
-      new_inst = new ir::insns::LoadImm(dst, loadimm->imm);
-    } 
-  } else TypeCase(store, ir::insns::Store *, inst) {
-    new_inst = new ir::insns::Store(reg_map.at(store->addr), reg_map.at(store->val));
-  } else TypeCase(br, ir::insns::Branch *, inst){
-    new_inst = new ir::insns::Branch(reg_map.at(br->val), bb_map.at(br->true_target), bb_map.at(br->false_target));
-  } else TypeCase(jmp, ir::insns::Jump *, inst){
-    new_inst = new ir::insns::Jump(bb_map.at(jmp->target));
-  } else {
-    assert(false);
+    } else {
+      new_bb->succ.insert(bb_map[map_curid].at(succ_bb));
+    }
+  }
+  // create new Regs
+  for (auto &insn : bb->insns) {
+    TypeCase(output, ir::insns::Output *, insn.get()) {
+      Reg reg = bb->func->new_reg(output->dst.type);
+      reg_map[map_curid][output->dst] = reg;
+    }
+  }
+  // copy insts
+  for (auto &insn : bb->insns) {
+    new_bb->push_back(copy_inst(insn.get(), entry, exit));
   }
 }
 
-BasicBlock * copy_bb(BasicBlock *bb, int cnt = 0){
-  BasicBlock* new_bb = new BasicBlock;
-  new_bb->label = "copy_" + std::to_string(cnt) + bb->label;
-
-  return new_bb;
-}
-
-void loop_unroll(Function * func){
-  auto const_map = find_const_int(func);
-  func->cfg->compute_dom();
+void loop_unroll(ir::Function * func) {
+  func->cfg->build();
   func->loop_analysis();
-    for (auto &loop_ptr : func->loops) {
-    Loop * loop = loop_ptr.get();
-    if(!loop->no_inner){
+  for (auto &loop_ptr : func->loops) {
+    Loop *loop = loop_ptr.get();
+    if (!loop->no_inner) { // only perform on deepest loop
       continue;
     }
-    BasicBlock *idom_prev = loop->header->idom;
-    bool check = true;
-    unordered_set<BasicBlock*> loop_bbs;
+    unordered_set<BasicBlock *> loop_bbs; // add bbs into loop_bbs
     vector<BasicBlock *> stack;
     stack.push_back(loop->header);
-    while(stack.size()){
+    while (stack.size()) {
       auto bb = stack.back();
       stack.pop_back();
-      if(bb->loop != loop){
+      if (bb->loop != loop) {
         continue;
       }
       loop_bbs.insert(bb);
-      for(auto each : bb->dom){
+      for (auto each : bb->dom) {
         stack.push_back(each);
       }
     }
-    unordered_set<Reg> defs;
-    BasicBlock * out = nullptr;
-
-    for (BasicBlock *bb : loop_bbs) {
-      if(!check){
-        break;
-      }
-      for(auto &inst : bb->insns){
-        auto uses = inst->use();
-        for(auto &use : uses){
-          reg_map[use] = use;
-        }
-      }
-      // 这里判断只有一个出口
-      for (BasicBlock *suc : bb->succ) {
-        if (!suc->loop || suc->loop != loop) {
-          if(out && suc != out){
+    BasicBlock *exit_bb = nullptr;
+    bool check = true; // check loop has only one exit (the exit bb is outside of loop)
+    for (auto bb : loop_bbs) {
+      if (!check) break;
+      for (auto succ_bb : bb->succ) {
+        if (succ_bb->loop == nullptr || succ_bb->loop != loop) {
+          if (exit_bb != nullptr && succ_bb != exit_bb) {
             check = false;
             break;
-          } else {
-            out = suc;
           }
+          exit_bb = succ_bb;
         }
       }
     }
-    if(!out || !check){
+    if (exit_bb == nullptr || !check) { // dead loop or multiple exit
       continue;
     }
+    // Unroll this loop
+    map_curid = 0;
+    for (auto bb : loop_bbs) {
+      bb_map[map_curid][bb] = bb;
+      for (auto &insn : bb->insns) {
+        TypeCase(output, ir::insns::Output *, insn.get()) {
+          reg_map[map_curid][output->dst] = output->dst;
+        }
+      }
+    }
+    unordered_set<BasicBlock *> back_paths; // bbs in original loop that go back to entry
+    for (auto entry_prev_bb : loop->header->prev) {
+      if (entry_prev_bb->loop != nullptr && entry_prev_bb->loop == loop) { // bb in loop
+        back_paths.insert(entry_prev_bb);
+      }
+    }
+    unordered_set<BasicBlock *> exit_paths; // bbs in original loop that go to exit
+    for (auto exit_prev_bb : exit_bb->prev) {
+      if (exit_prev_bb->loop != nullptr && exit_prev_bb->loop == loop) { // bb in loop
+        exit_paths.insert(exit_prev_bb);
+      }
+    }
+    unordered_set<BasicBlock *> loop0_to_entry; // bb in loop0 -> loop1-entry, inserted after for loop to make loop0 clean
+    BasicBlock *loop1_entry = nullptr;
+    for (int l = 1; l < UNROLL_CNT; l++) {
+      map_curid ^= 1;
+      // 1. Create new bbs
+      for (auto bb : loop_bbs) {
+        BasicBlock* new_bb = new BasicBlock;
+        new_bb->func = func;
+        func->bbs.emplace_back(new_bb);
+        new_bb->label = "unroll_" + std::to_string(l) + "_" + bb->label;
+        bb_map[map_curid][bb] = new_bb;
+      }
+      // 2. Connect entry with prev loop
+      auto entry = loop->header;
+      auto new_entry = bb_map[map_curid][loop->header];
+      if (l == 1) loop1_entry = new_entry;
+      for (auto entry_prev_bb : entry->prev) {
+        if (entry_prev_bb->loop == nullptr || entry_prev_bb->loop != loop) {
+          continue; // bb not in loop
+        }
+        if (l == 1) { // delayed to make loop0 clean
+          loop0_to_entry.insert(bb_map[!map_curid][entry_prev_bb]);
+        } else {
+          bb_map[!map_curid][entry_prev_bb]->succ.erase(entry);
+          bb_map[!map_curid][entry_prev_bb]->succ.insert(new_entry);
+          auto ter_inst = bb_map[!map_curid][entry_prev_bb]->insns.back().get();
+          TypeCase(jmp, ir::insns::Jump *, ter_inst) {
+            assert(jmp->target == entry);
+            jmp->target = new_entry;
+          } else TypeCase(br, ir::insns::Branch *, ter_inst) {
+            assert(br->true_target == entry || br->false_target == entry);
+            if (br->true_target == entry)
+              br->true_target = new_entry;
+            if (br->false_target == entry)
+              br->false_target = new_entry;
+          } else assert(false);
+        }
+        new_entry->prev.insert(bb_map[!map_curid][entry_prev_bb]);
+      }
+      // 3. Fill new bbs
+      for (auto bb : loop_bbs) {
+        copy_bb(bb, bb_map[map_curid][bb], loop->header, exit_bb);
+      }
+      // 4. Modify entry's phi, exit's phi
+      for (auto &insn : entry->insns) {
+        TypeCase(phi, ir::insns::Phi *, insn.get()) {
+          for (auto bb : back_paths) {
+            Reg reg = phi->incoming.at(bb_map[!map_curid].at(bb));
+            if (reg_map[map_curid].count(reg)) reg = reg_map[map_curid].at(reg);
+            phi->incoming.erase(bb_map[!map_curid].at(bb));
+            phi->incoming[bb_map[map_curid].at(bb)] = reg;
+          }
+        } else break;
+      }
+      for (auto &insn : exit_bb->insns) {
+        TypeCase(phi, ir::insns::Phi *, insn.get()) {
+          for (auto bb : exit_paths) {
+            Reg reg = phi->incoming.at(bb);
+            if (reg_map[map_curid].count(reg)) reg = reg_map[map_curid].at(reg);
+            phi->incoming[bb_map[map_curid].at(bb)] = reg;
+          }
+        } else break;
+      }
+    }
+    // loop0 -> loop1 entry
+    for (auto bb : loop0_to_entry) {
+      bb->succ.erase(loop->header);
+      bb->succ.insert(loop1_entry);
+      auto ter_inst = bb->insns.back().get();
+      TypeCase(jmp, ir::insns::Jump *, ter_inst) {
+        assert(jmp->target == loop->header);
+        jmp->target = loop1_entry;
+      } else TypeCase(br, ir::insns::Branch *, ter_inst) {
+        assert(br->true_target == loop->header || br->false_target == loop->header);
+        if (br->true_target == loop->header)
+          br->true_target = loop1_entry;
+        if (br->false_target == loop->header)
+          br->false_target = loop1_entry;
+      } else assert(false);
+    }
+  }
+}
 
+void loop_unroll(ir::Program *prog) {
+  for(auto &func : prog->functions) {
+    loop_unroll(&func.second);
   }
 }
 
