@@ -197,8 +197,8 @@ if __name__ == '__main__':
         report_testcases.append(pair[0])
 
     xml_name = "test_result.xml"
-    if len(sys.argv) == 6:
-        xml_name = sys.argv[5]
+    if len(sys.argv) == 5:
+        xml_name = sys.argv[4]
     with open(xml_name, "w") as f:
         TestSuite.to_file(f, [TestSuite(test_dir, report_testcases)])
 
