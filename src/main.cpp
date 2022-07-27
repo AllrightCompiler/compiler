@@ -92,9 +92,10 @@ int main(int argc, char *argv[]) {
     ir_gen.visit_compile_unit(ast);
 
     auto &ir_program = ir_gen.get_program();
-    // if (has_option(argc, argv, "-O2")) {
-      mediumend::run_medium(ir_program.get());
-    // }
+    if (has_option(argc, argv, "-O2")) {
+      mediumend::passes.clear();
+    }
+    mediumend::run_medium(ir_program.get());
     if (has_option(argc, argv, "--ir")) {
       os << *ir_program;
       return 0;
