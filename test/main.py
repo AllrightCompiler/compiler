@@ -3,21 +3,30 @@ import subprocess
 import sys
 
 from argparse import ArgumentParser
+from enum import Enum, auto
 from glob import glob
 from tempfile import TemporaryDirectory
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, Union
 
 from parse import parse
 
 
-TEST_ROUND = 1
-TIMEOUT = 10
+TEST_ROUND = 5
+TIMEOUT = 120
 
 
 class Config(NamedTuple):
     compiler: str
     testcases: str
     compiler_args: str
+
+
+class Result(Enum):
+    LINKER_ERROR = auto()
+    PASSED = auto()
+    WRONG_ANSWER = auto()
+    TIME_LIMIT_EXCEEDED = auto()
+    GCC_ERROR = auto()
 
 
 def get_config(argv: list[str]) -> Config:
@@ -58,6 +67,48 @@ def get_time(file: str) -> Optional[int]:
     return ((h * 60 + m) * 60 + s) * 1_000_000 + us
 
 
+def run(
+    workdir: str,
+    assemble: str,
+    input: str,
+    answer: str,
+    round: int
+) -> Union[Result, float]:
+    executable = os.path.join(workdir, 'main')
+    output = os.path.join(workdir, 'output')
+    time = os.path.join(workdir, 'time')
+    if os.system(f'gcc -march=armv7 {assemble} runtime/libsysy.a'
+                 f' -o {executable}') != 0:
+        return Result.LINKER_ERROR
+    answer_content, answer_exitcode = get_answer(answer)
+    average_time = 0
+    timing = True
+    for _ in range(round):
+        proc = subprocess.Popen(
+            executable,
+            stdin=open(input) if os.path.exists(input) else None,
+            stdout=open(output, 'w'), stderr=open(time, 'w'))
+        try:
+            proc.wait(TIMEOUT)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return Result.TIME_LIMIT_EXCEEDED
+        if proc.returncode != answer_exitcode \
+                or open(output).read().splitlines() != answer_content:
+            return Result.WRONG_ANSWER
+        if round > 1:
+            print('.', end='', flush=True)
+        t = get_time(time)
+        if t is None:
+            timing = False
+        else:
+            average_time += t
+    if timing:
+        return average_time / 1_000 / TEST_ROUND
+    else:
+        return Result.PASSED
+
+
 def test(config: Config, testcase: str) -> bool:
     with TemporaryDirectory() as tempdir:
         print(testcase, end=': ', flush=True)
@@ -65,11 +116,8 @@ def test(config: Config, testcase: str) -> bool:
         input = os.path.join(config.testcases, f'{testcase}.in')
         answer = os.path.join(config.testcases, f'{testcase}.out')
         assemble = os.path.join(tempdir, 'asm.s')
-        executable = os.path.join(tempdir, 'main')
-        output = os.path.join(tempdir, 'output')
-        time = os.path.join(tempdir, 'time')
-        command = f'{config.compiler} {source} \
-                -o {assemble} {config.compiler_args}'
+        command = (f'{config.compiler} {source}'
+                   f' -o {assemble} {config.compiler_args}')
         proc = subprocess.Popen(command, shell=True)
         try:
             proc.wait(TIMEOUT)
@@ -77,38 +125,35 @@ def test(config: Config, testcase: str) -> bool:
             proc.kill()
             print('\033[0;31mCompiler TLE\033[0m')
             return False
-        if proc.returncode != 0 \
-                or os.system(f'gcc -march=armv7 {assemble} runtime/libsysy.a \
-                    -o {executable}') != 0:
+        if proc.returncode != 0:
             print('\033[0;31mCompiler Error\033[0m')
             return False
-        answer_content, answer_exitcode = get_answer(answer)
-        average_time = 0
-        timing = True
-        for i in range(TEST_ROUND):
-            proc = subprocess.Popen(
-                executable,
-                stdin=open(input) if os.path.exists(input) else None,
-                stdout=open(output, 'w'), stderr=open(time, 'w'))
-            try:
-                proc.wait(TIMEOUT)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                print('\033[0;31mTime Limit Exceeded\033[0m')
-                return False
-            if proc.returncode != answer_exitcode \
-                    or open(output).read().splitlines() != answer_content:
-                print('\033[0;31mWrong Answer\033[0m')
-                return False
-            print('.', end='', flush=True)
-            t = get_time(time)
-            if t is None:
-                timing = False
-            else:
-                average_time += t
-        message = f'{round(average_time / TEST_ROUND, 4):.3f}' \
-            if timing else 'Passed'
-        print(f' \033[0;32m{message}\033[0m')
+        result = run(tempdir, assemble, input, answer, TEST_ROUND)
+        if result == Result.LINKER_ERROR:
+            print('\033[0;31mLinker Error\033[0m')
+            return False
+        elif result == Result.WRONG_ANSWER:
+            print('\033[0;31mWrong Answer\033[0m')
+            return False
+        elif result == Result.TIME_LIMIT_EXCEEDED:
+            print('\033[0;31mTime Limit Exceeded\033[0m')
+            return False
+        else:
+            runtime = result
+        print(' ', end='')
+        if not isinstance(runtime, float) or runtime == 0:
+            print('\033[0;32mPassed\033[0m')
+            return True
+        result = Result.GCC_ERROR \
+            if os.system(
+                'gcc -march=armv7 -xc++ -O2 -S'
+                f' -include runtime/sylib.h {source} -o {assemble}') != 0 \
+            else run(tempdir, assemble, input, answer, 1)
+        if isinstance(result, Result):
+            print('\033[0;31mGCC Error\033[0m')
+        else:
+            print(f'\033[0;32m{runtime :.3f}ms / {result :.3f}ms'
+                  f' = {result / runtime :.2%}\033[0m')
         return True
 
 

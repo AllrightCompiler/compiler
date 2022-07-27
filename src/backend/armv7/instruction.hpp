@@ -14,8 +14,12 @@ enum RegType {
   Fp,
 };
 
-inline constexpr RegType ir_to_machine_reg_type(ScalarType t) {
+inline constexpr RegType ir_to_machine_reg_type(int t) {
   return t == Float ? Fp : General;
+}
+
+inline RegType machine_reg_type(const Type &t) {
+  return t.is_array() ? General : ir_to_machine_reg_type(t.base_type);
 }
 
 // 此结构几乎与ir::Reg一致
@@ -46,7 +50,7 @@ struct Reg {
   static Reg from(ir::Reg ir_reg) {
     return Reg{ir_to_machine_reg_type(ir_reg.type), -ir_reg.id};
   }
-  static Reg from(ScalarType t, int id) {
+  static Reg from(int t, int id) {
     return Reg{ir_to_machine_reg_type(t), id};
   }
 };
@@ -96,11 +100,12 @@ struct RegRegShift {
 // using Operand2 = std::variant<int, RegImmShift, RegRegShift>;
 
 struct Operand2 {
-  std::variant<int, RegImmShift, RegRegShift> opd;
+  std::variant<int, RegImmShift, RegRegShift, float> opd;
 
   bool is_imm8m() const { return opd.index() == 0; }
   bool is_imm_shift() const { return opd.index() == 1; }
   bool is_reg_shift() const { return opd.index() == 2; }
+  bool is_fpimm() const { return opd.index() == 3; }
 
   template <typename T> auto &get() const { return std::get<T>(opd); }
 
@@ -131,6 +136,7 @@ struct Operand2 {
   static Operand2 from(ShiftType type, Reg r, int s) {
     return Operand2{.opd = RegImmShift{type, r, s}};
   }
+  static Operand2 from(float imm) { return Operand2{.opd = imm}; }
 };
 
 struct Instruction {
@@ -155,7 +161,8 @@ struct Instruction {
   }
 
   std::ostream &write_op(std::ostream &os, const char *op,
-                         bool is_float = false, bool is_ldst = false) const;
+                         bool is_float = false, bool is_ldst = false,
+                         bool is_push_pop = false) const;
 };
 
 void next_instruction(std::ostream &os);
@@ -237,11 +244,21 @@ struct Move : Instruction {
   }
 
   // “正规”的mov Rd, Rs
+  // 不允许通用寄存器与浮点寄存器之间的 vmov
   bool is_reg_mov() const {
     if (!src.is_imm_shift())
       return false;
     auto &reg_shift = std::get<RegImmShift>(src.opd);
-    return !flip && reg_shift.s == 0;
+    return !flip && reg_shift.s == 0 &&
+           (dst.is_float() == reg_shift.r.is_float());
+  }
+
+  bool is_transfer_vmov() const {
+    if (!src.is_imm_shift()) {
+      return false;
+    }
+    auto &reg_shift = std::get<RegImmShift>(src.opd);
+    return dst.is_float() != reg_shift.r.is_float();
   }
 };
 
@@ -480,9 +497,11 @@ struct Pop : SpRelative {
 struct Call : Instruction {
   std::string func;
   int nr_gp_args, nr_fp_args;
+  int variadic_at; // 第几个参数是 `...`
 
-  Call(std::string func, int nr_gp_args, int nr_fp_args)
-      : func{std::move(func)}, nr_gp_args{nr_gp_args}, nr_fp_args{nr_fp_args} {}
+  Call(std::string func, int nr_gp_args, int nr_fp_args, int variadic_at = -1)
+      : func{std::move(func)}, nr_gp_args{nr_gp_args}, nr_fp_args{nr_fp_args},
+        variadic_at{variadic_at} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override {
@@ -544,11 +563,32 @@ struct PseudoCompare : Instruction {
   }
 };
 
+enum class ConvertType {
+  Float2Int,
+  Int2Float,
+};
+
+struct Convert : Instruction {
+  Reg dst, src;
+  ConvertType type;
+
+  Convert(Reg dst, Reg src, ConvertType type) : dst{dst}, src{src}, type{type} {
+    assert(dst.is_float());
+    assert(src.is_float());
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
+};
+
 struct Phi : Instruction {
   std::vector<std::pair<BasicBlock *, Reg>> srcs;
   Reg dst;
 
-  Phi(Reg dst, std::vector<std::pair<BasicBlock *, Reg>> srcs) : dst{dst}, srcs{std::move(srcs)} {}
+  Phi(Reg dst, std::vector<std::pair<BasicBlock *, Reg>> srcs)
+      : dst{dst}, srcs{std::move(srcs)} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
@@ -564,6 +604,19 @@ struct Phi : Instruction {
       ptrs.push_back(&r);
     return ptrs;
   }
+};
+
+struct Vneg : Instruction {
+  Reg dst, src;
+  Vneg(Reg dst, Reg src) : dst{dst}, src{src} {
+    assert(dst.is_float());
+    assert(src.is_float());
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
 };
 
 } // namespace armv7

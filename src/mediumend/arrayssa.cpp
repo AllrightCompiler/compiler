@@ -57,7 +57,7 @@ void array_mem2reg(ir::Program *prog) {
           func->new_reg(ScalarType::String), each.first));
     }
     unordered_map<Reg, BasicBlock *> alloc_set;
-    unordered_map<Reg, ScalarType> alloc2type;
+    unordered_map<Reg, int> alloc2type;
     unordered_map<Reg, unordered_set<BasicBlock *>> defs;
     unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
     unordered_map<ir::insns::Phi *, Reg> phi2mem;

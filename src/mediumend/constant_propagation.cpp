@@ -34,7 +34,10 @@ void constant_propagation(ir::Program *prog) {
         TypeCase(loadimm, ir::insns::LoadImm *, ins.get()) {
           const_map[loadimm->dst] = loadimm->imm;
           stack.insert(bb.get());
-          stack.insert(bb->succ.begin(), bb->succ.end());
+          auto use_list = func->use_list[loadimm->dst];
+          for(auto &use : use_list){
+            stack.insert(use->bb);
+          }
         }
         TypeCase(phi, ir::insns::Phi *, ins.get()){
           stack.insert(bb.get());

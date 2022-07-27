@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-// #include <iostream>
+#include <iostream>
 
 namespace armv7 {
 
@@ -44,14 +44,13 @@ bool ColoringRegAllocator::move_related(Reg n) const {
 }
 
 bool ColoringRegAllocator::ok(Reg t, Reg r) const {
-  int d = degree.find(t)->second;
-  return d < K || !t.is_virt() || adj_set.count({t, r});
+  return degree.at(t) < K || !t.is_virt() || adj_set.count({t, r});
 }
 
 bool ColoringRegAllocator::conservative(const std::set<Reg> &nodes) const {
   int k = 0;
   for (Reg n : nodes) {
-    int d = degree.find(n)->second;
+    int d = degree.at(n);
     if (d >= K)
       ++k;
   }
@@ -60,7 +59,7 @@ bool ColoringRegAllocator::conservative(const std::set<Reg> &nodes) const {
 
 Reg ColoringRegAllocator::get_alias(Reg n) const {
   if (coalesced_nodes.count(n))
-    return get_alias(alias.find(n)->second);
+    return get_alias(alias.at(n));
   return n;
 }
 
@@ -100,43 +99,71 @@ void ColoringRegAllocator::build() {
       auto def = ins->def();
       auto use = ins->use();
       TypeCase(mov, Move *, ins) {
-        if (mov->is_reg_mov()) {
-          for (Reg u : use)
-            live.erase(u);
-          for (Reg n : def)
-            move_list[n].insert(mov);
-          for (Reg n : use)
-            move_list[n].insert(mov);
-          worklist_moves.insert(mov);
+        // NOTE: phi函数解构产生的mov的源寄存器和目的寄存器不应被合并
+        if (mov->is_reg_mov() && !f->phi_moves.count(mov)) {
+          auto consider = false;
+          for (Reg u : use) {
+            if (this->reg_filter(u)) {
+              consider = true;
+              live.erase(u);
+            }
+          }
+          for (Reg n : def) {
+            if (this->reg_filter(n)) {
+              consider = true;
+              move_list[n].insert(mov);
+            }
+          }
+          for (Reg n : use) {
+            if (this->reg_filter(n)) {
+              move_list[n].insert(mov);
+            }
+          }
+          if (consider) {
+            worklist_moves.insert(mov);
+          }
         }
       }
 
-      for (Reg d : def)
-        live.insert(d);
-      for (Reg d : def)
-        for (Reg l : live)
-          add_edge(l, d);
+      for (Reg d : def) {
+        if (this->reg_filter(d)) {
+          live.insert(d);
+        }
+      }
+      for (Reg d : def) {
+        if (this->reg_filter(d)) {
+          for (Reg l : live) {
+            add_edge(l, d);
+          }
+        }
+      }
       // live := use(I) ∪ (live - def(I))
-      for (Reg d : def)
-        live.erase(d);
-      for (Reg u : use)
-        live.insert(u);
+      for (Reg d : def) {
+        if (this->reg_filter(d)) {
+          live.erase(d);
+        }
+      }
+      for (Reg u : use) {
+        if (this->reg_filter(u)) {
+          live.insert(u);
+        }
+      }
     }
   }
 }
 
 void ColoringRegAllocator::make_worklist() {
-  // TODO: 也许单独拿出来做寄存器重映射比较好?
+  // TODO: 增量式的initial计算 (见论文)
   std::set<Reg> vregs;
   for (auto &bb : f->bbs) {
     for (auto &insn : bb->insns) {
       auto def = insn->def();
       auto use = insn->use();
       for (Reg d : def)
-        if (d.is_virt())
+        if (d.is_virt() && this->reg_filter(d))
           vregs.insert(d);
       for (Reg u : use)
-        if (u.is_virt())
+        if (u.is_virt() && this->reg_filter(u))
           vregs.insert(u);
     }
   }
@@ -173,8 +200,7 @@ void ColoringRegAllocator::decrement_degree(Reg m) {
     enable_moves(nodes);
     // std::cout << "DecrementDegree: remove " << m << " from spillWorklist\n";
 
-    // NOTE: 这里按照原论文应该移除。实际效果需要进一步确认
-    // spill_worklist.erase(m);
+    spill_worklist.erase(m);
     if (move_related(m))
       freeze_worklist.insert(m);
     else
@@ -296,6 +322,31 @@ void ColoringRegAllocator::freeze_moves(Reg u) {
   }
 }
 
+double ColoringRegAllocator::get_basic_spill_cost(Reg r) {
+  if (spilling_regs.count(r))
+    return 1e100;
+
+  if (f->reg_val.count(r)) {
+    auto &val = f->reg_val.at(r);
+    switch (val.index()) {
+    case RegValueType::Imm: {
+      // 存活到寄存器分配阶段的立即数寄存器不能作为imm8m嵌入指令中
+      // 需要至少1条指令重新加载
+      uint32_t x = static_cast<uint32_t>(std::get<Imm>(val));
+      return x >= 0x10000 ? 2.0 : 1.0;
+    }
+    case RegValueType::GlobalName:
+      return 2.0;
+    case RegValueType::StackAddr:
+      // 多数栈上地址可以嵌入至ldr/str中，因此认为rematerialize所需代价少于1条指令
+      return 0.9;
+    default:
+      assert(false);
+    }
+  }
+  return 5.0;
+}
+
 void ColoringRegAllocator::select_spill() {
   // printf(">>> select_spill candidates: ");
   // int i = 0;
@@ -308,15 +359,24 @@ void ColoringRegAllocator::select_spill() {
   // printf("\n");
 
   // TODO: heuristic
-  // NOTE:
-  // 现在只有这个heuristic勉强能用，实际上选择了编号最*小*的虚拟节点(负数的原因)
-  // 使用度数仍然会挂掉，问题没有太好的解决
-  Reg u = *std::prev(spill_worklist.end());
   // Reg u = *std::max_element(
   //     spill_worklist.begin(), spill_worklist.end(),
   //     [this](const Reg &a, const Reg &b) { return degree[a] < degree[b]; });
 
-  // std::cout << "<<< spill target: " << u << '\n';
+  std::vector<std::pair<double, Reg>> spill_costs;
+  for (Reg r : spill_worklist) {
+    auto basic_cost = get_basic_spill_cost(r);
+    auto cost = basic_cost / degree.at(r);
+    spill_costs.push_back({cost, r});
+  }
+  auto [_, u] = *std::min_element(spill_costs.begin(), spill_costs.end());
+
+  // if (spilling_regs.count(u)) {
+  //   std::cerr << "bad choice from " << spill_worklist.size() << " regs\n";
+  // }
+
+  // std::cout << "<<< spill target: " << u << " from " << spill_worklist.size()
+  // << " candidates\n";
   spill_worklist.erase(u);
   simplify_worklist.insert(u);
   freeze_moves(u);
@@ -372,36 +432,104 @@ std::map<Reg, int> ColoringRegAllocator::assign_colors() {
 
 void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
   if (is_gp_pass) {
-    // NOTE: 在最后的def后添加store，每个use前插入load
-    // 这时应该还是单赋值形式，但立即数加载等指令可能会产生连续的def
+    // NOTE: 在*每个*def后添加store，每个use前插入load
     for (Reg r : nodes) {
-      auto obj = new StackObject;
-      obj->size = 4;
-      f->stack_objects.emplace_back(obj);
-      f->normal_objs.push_back(obj);
+      StackObject *obj = nullptr;
+      const RegValue *val = nullptr;
+      if (f->reg_val.count(r)) {
+        val = &(f->reg_val.at(r));
+      } else {
+        obj = new StackObject;
+        obj->size = 4;
+        f->stack_objects.emplace_back(obj);
+        f->normal_objs.push_back(obj);
+      }
 
       for (auto &bb : f->bbs) {
         auto &insns = bb->insns;
-        auto last_def = insns.end();
-        for (auto it = insns.begin(); it != insns.end(); ++it) {
+        for (auto it = insns.begin(); it != insns.end();) {
           auto ins = it->get();
           auto def = ins->def();
           auto use = ins->use();
 
-          if (def.count(r)) {
-            last_def = it;
-            continue;
-          }
-          if (use.count(r))
-            insns.emplace(it, new LoadStack{r, obj, 0});
-        }
+          // def 和 use 分别使用不同新虚拟寄存器的方案
+          // // TODO: 需要把def和use分开，之后处理
+          // assert(!def.count(r) || !use.count(r));
 
-        if (last_def != insns.end())
-          insns.emplace(std::next(last_def), new StoreStack{r, obj, 0});
+          // if (use.count(r)) {
+          //   Reg tmp = f->new_reg(r.type);
+          //   insns.emplace(it, new LoadStack{tmp, obj, 0});
+          //   ins->replace_reg(r, tmp); // TODO: 只替换属于use集合的目标寄存器
+          //   spilling_regs.insert(tmp);
+          // }
+
+          // ++it;
+          // if (def.count(r)) {
+          //   Reg tmp = f->new_reg(r.type);
+          //   insns.emplace(it, new StoreStack{tmp, obj, 0});
+          //   ins->replace_reg(r, tmp); // TODO: 只替换属于def集合的目标寄存器
+          //   spilling_regs.insert(tmp);
+          // }
+
+          Reg tmp;
+          if (def.count(r) || use.count(r)) {
+            tmp = f->new_reg(r.type);
+            ins->replace_reg(r, tmp);
+            spilling_regs.insert(tmp);
+          }
+
+          if (use.count(r)) {
+            if (obj)
+              insns.emplace(it, new LoadStack{tmp, obj, 0});
+            else {
+              switch (val->index()) {
+              case RegValueType::Imm:
+                if (!def.count(r)) // 跳过movt
+                  f->emit_imm(insns, it, tmp, std::get<Imm>(*val));
+                break;
+              case RegValueType::GlobalName:
+                insns.emplace(it, new LoadAddr{tmp, std::get<GlobalName>(*val)});
+                break;
+              case RegValueType::StackAddr:
+                insns.emplace(it, new LoadStackAddr{tmp, std::get<StackAddr>(*val), 0});
+                break;
+              }
+            }
+          }
+
+          ++it;
+          if (def.count(r)) {
+            if (obj)
+              insns.emplace(it, new StoreStack{tmp, obj, 0});
+            else
+              insns.erase(std::prev(it));
+          }
+        }
       }
     }
   } else {
-    // TODO
+    // spill 到通用虚拟寄存器，到 gp_pass 一并处理
+    // 指令插入位置同 gp_pass
+    for (auto r : nodes) {
+      auto const gr = f->new_reg(RegType::General);
+      for (auto &bb : f->bbs) {
+        auto &instrs = bb->insns;
+        auto last_def = instrs.cend();
+        for (auto iter = instrs.cbegin(); iter != instrs.cend(); ++iter) {
+          auto instr = iter->get();
+          if (instr->def().count(r)) {
+            last_def = iter;
+            continue;
+          }
+          if (instr->use().count(r)) {
+            instrs.emplace(iter, new Move{r, Operand2::from(gr)});
+          }
+        }
+        if (last_def != instrs.cend()) {
+          instrs.emplace(std::next(last_def), new Move{gr, Operand2::from(r)});
+        }
+      }
+    }
   }
 }
 
@@ -410,8 +538,10 @@ void ColoringRegAllocator::init(Function &func, bool is_gp_pass) {
   this->is_gp_pass = is_gp_pass;
   if (is_gp_pass) {
     K = 14; // 16个通用寄存器去掉sp和pc
+    this->reg_filter = [](Reg const &_) { return true; };
   } else {
     K = NR_FPRS; // 32个单精度vfp寄存器
+    this->reg_filter = [](Reg const &reg) { return reg.is_float(); };
   }
 
   alias.clear();
@@ -427,6 +557,8 @@ void ColoringRegAllocator::init(Function &func, bool is_gp_pass) {
   frozen_moves.clear();
   worklist_moves.clear();
   active_moves.clear();
+
+  spilling_regs.clear();
 }
 
 void ColoringRegAllocator::replace_virtual_regs(
@@ -446,7 +578,7 @@ void ColoringRegAllocator::replace_virtual_regs(
       for (auto p : reg_ptrs) {
         Reg old = *p;
         if (reg_map.count(old))
-          *p = Reg{old.type, reg_map.find(old)->second};
+          *p = Reg{old.type, reg_map.at(old)};
         // if (verbose) {
         //   std::cout << old << " --> " << *p << '\n';
         // }
@@ -471,7 +603,7 @@ void ColoringRegAllocator::do_reg_alloc(Function &func, bool is_gp_pass) {
   do {
     // printf("function %s loop %d\n", f->name.c_str(), ++i);
 
-    f->do_liveness_analysis();
+    f->do_liveness_analysis(this->reg_filter);
     build();
     make_worklist();
 
@@ -496,6 +628,7 @@ void ColoringRegAllocator::do_reg_alloc(Function &func, bool is_gp_pass) {
       // printf("\n\n\n");
       // f->emit(std::cout);
 
+      // 这里不清空spilling_regs，其内容应当累积
       add_spill_code(spilled_nodes);
       spilled_nodes.clear();
       colored_nodes.clear();
