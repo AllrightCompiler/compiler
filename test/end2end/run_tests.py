@@ -92,7 +92,7 @@ def run_test(args):
     try:
         proc.wait(TIMEOUT)
     except subprocess.TimeoutExpired:
-        proc.terminate()
+        proc.kill()
         print('\033[0;31mCompiler TLE\033[0m')
         return ret_err(test_name, timeStarted, "Compiler TLE")
     if proc.returncode:
@@ -102,14 +102,23 @@ def run_test(args):
     command = f'arm-linux-gnueabihf-gcc -march=armv7 -static {asm_path} {lib_path} -o {exe_path}'
     timeStarted = time.time()
     proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
-    proc.wait()
+    try:
+        proc.wait(TIMEOUT)
+    except subprocess.TimeoutExpired:
+        print('\033[0;31mLinker TLE\033[0m')
+        return ret_err(test_name, timeStarted, "Linker TLE")
     if proc.returncode:
         print('\033[0;31mLinker Error\033[0m')
         return ret_err(test_name, timeStarted, "Linker Error")
 
     command = f'scp {exe_path} compile:~/tmp/tmp/main'
     proc = subprocess.Popen(command, stderr=open("/dev/null", "w"), shell=True)
-    proc.wait()
+    try:
+        proc.wait(TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        print('\033[0;31mscp TLE\033[0m')
+        return ret_err(test_name, timeStarted, "scp TLE")
 
     timeStarted = time.time()
     if (os.path.exists(input_path)):
@@ -129,7 +138,12 @@ def run_test(args):
 
     command = f'ssh compile "cat tmp/tmp/tmp.err"'
     proc = subprocess.Popen(command, stdout=open(outerr_path, "w"), shell=True)
-    proc.wait()
+    try:
+        proc.wait(TIMEOUT)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        print('\033[0;31mssh TLE\033[0m')
+        return ret_err(test_name, timeStarted, "ssh TLE")
 
     command = f'diff -b -B {output_path} {ans_path}'
     timeStarted = time.time()
