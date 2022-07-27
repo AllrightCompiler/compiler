@@ -28,11 +28,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   remove_unused_function,
   main_global_var_to_local,
   // 纯函数可以用来做GVN和无用代码移除
-  mark_pure_func,
-  function_inline,
   gvn_gcm,
-  // 原 simplification_phi, constant_propagation都被合并进了constant_propagation
-  constant_propagation,
   remove_uneffective_inst,
 };
 
