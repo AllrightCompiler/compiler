@@ -19,6 +19,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"array_ssa_destruction", array_ssa_destruction},
   {"remove_useless_loop", remove_useless_loop},
   {"clean_hodgepodge", clean_hodgepodge},
+  {"loop_fusion", loop_fusion},
 };
 
 // define default passes here
