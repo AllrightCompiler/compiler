@@ -30,6 +30,9 @@ Instruction *copy_inst(Instruction *inst, BasicBlock *entry, BasicBlock *exit) {
   } else TypeCase(unary, ir::insns::Unary *, inst) {
     auto new_inst = new ir::insns::Unary(reg_map_if(unary->dst), unary->op, reg_map_if(unary->src));
     return new_inst;
+  } else TypeCase(convert, ir::insns::Convert *, inst) {
+    auto new_inst = new ir::insns::Convert(reg_map_if(convert->dst), reg_map_if(convert->src));
+    return new_inst;
   } else TypeCase(load, ir::insns::Load *, inst) {
     auto new_inst = new ir::insns::Load(reg_map_if(load->dst), reg_map_if(load->addr));
     return new_inst;
@@ -67,7 +70,7 @@ Instruction *copy_inst(Instruction *inst, BasicBlock *entry, BasicBlock *exit) {
     if (ret_val.has_value()) ret_val.value() = reg_map_if(ret_val.value());
     auto new_inst = new ir::insns::Return(ret_val);
   } else TypeCase(phi, ir::insns::Phi *, inst) {
-    auto new_inst = new ir::insns::Phi(reg_map_if(phi->dst));
+    auto new_inst = new ir::insns::Phi(reg_map_if(phi->dst), phi->array_ssa);
     if (inst->bb == bb_map[!map_curid].at(entry)) { // new entry
       for (auto pair : phi->incoming) {
         auto income_bb = pair.first;
@@ -104,13 +107,6 @@ void copy_bb(BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *
       }
     } else {
       new_bb->succ.insert(bb_map[map_curid].at(succ_bb));
-    }
-  }
-  // create new Regs
-  for (auto &insn : bb->insns) {
-    TypeCase(output, ir::insns::Output *, insn.get()) {
-      Reg reg = bb->func->new_reg(output->dst.type);
-      reg_map[map_curid][output->dst] = reg;
     }
   }
   // copy insts
@@ -220,6 +216,15 @@ void loop_unroll(ir::Function * func) {
         new_entry->prev.insert(bb_map[!map_curid][entry_prev_bb]);
       }
       // 3. Fill new bbs
+      // First create all new regs
+      for (auto bb : loop_bbs) {
+        for (auto &insn : bb->insns) {
+          TypeCase(output, ir::insns::Output *, insn.get()) {
+            Reg reg = bb->func->new_reg(output->dst.type);
+            reg_map[map_curid][output->dst] = reg;
+          }
+        }
+      }
       for (auto bb : loop_bbs) {
         copy_bb(bb, bb_map[map_curid][bb], loop->header, exit_bb);
       }
