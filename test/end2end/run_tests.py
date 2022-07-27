@@ -7,7 +7,7 @@ from junit_xml import TestSuite, TestCase
 from multiprocessing import Pool
 from parse import parse
 
-TIMEOUT = 30
+TIMEOUT = 60
 
 def get_testcases(test_dir):
     testcases = []
@@ -122,21 +122,20 @@ def run_test(args):
 
     timeStarted = time.time()
     if (os.path.exists(input_path)):
-        command = f'ssh compile "cd tmp/tmp; ./main < {input_path} 2> tmp.err"'
+        command = f'ssh compile "cd tmp/tmp; timeout {TIMEOUT} ./main < {input_path} 2> tmp.err"'
     else:
-        command = f'ssh compile "cd tmp/tmp; ./main 2> tmp.err"'
+        command = f'ssh compile "cd tmp/tmp; timeout {TIMEOUT} ./main 2> tmp.err"'
     proc = subprocess.Popen(command, stdout=open(output_path, "w"), shell=True)
-    try:
-        proc.wait(TIMEOUT)
+    proc.wait()
+    if proc.returncode:
+        print('\033[0;31mTLE\033[0m')
+        return ret_err(test_name, timeStarted, "TLE")
+    else:
         runTime = time.time() - timeStarted
         with open(output_path, "a") as f:
             f.write("\n"+str(proc.returncode))
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        print('\033[0;31mTLE\033[0m')
-        return ret_err(test_name, timeStarted, "TLE")
 
-    command = f'ssh compile "cat tmp/tmp/tmp.err"'
+    command = 'ssh compile "cat tmp/tmp/tmp.err"'
     proc = subprocess.Popen(command, stdout=open(outerr_path, "w"), shell=True)
     try:
         proc.wait(TIMEOUT)
