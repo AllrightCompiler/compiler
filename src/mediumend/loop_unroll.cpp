@@ -156,6 +156,10 @@ void loop_unroll(ir::Function * func) {
     }
     // Unroll this loop
     map_curid = 0;
+    bb_map[0].clear();
+    bb_map[1].clear();
+    reg_map[0].clear();
+    reg_map[1].clear();
     for (auto bb : loop_bbs) {
       bb_map[map_curid][bb] = bb;
       for (auto &insn : bb->insns) {
@@ -231,21 +235,25 @@ void loop_unroll(ir::Function * func) {
       // 4. Modify entry's phi, exit's phi
       for (auto &insn : entry->insns) {
         TypeCase(phi, ir::insns::Phi *, insn.get()) {
+          phi->remove_use_def();
           for (auto bb : back_paths) {
             Reg reg = phi->incoming.at(bb_map[!map_curid].at(bb));
             if (reg_map[map_curid].count(reg)) reg = reg_map[map_curid].at(reg);
             phi->incoming.erase(bb_map[!map_curid].at(bb));
             phi->incoming[bb_map[map_curid].at(bb)] = reg;
           }
+          phi->add_use_def();
         } else break;
       }
       for (auto &insn : exit_bb->insns) {
         TypeCase(phi, ir::insns::Phi *, insn.get()) {
+          phi->remove_use_def();
           for (auto bb : exit_paths) {
             Reg reg = phi->incoming.at(bb);
             if (reg_map[map_curid].count(reg)) reg = reg_map[map_curid].at(reg);
             phi->incoming[bb_map[map_curid].at(bb)] = reg;
           }
+          phi->add_use_def();
         } else break;
       }
     }
