@@ -11,10 +11,10 @@ class ColoringRegAllocator {
   std::map<Reg, std::set<Reg>> adj_list;
   std::set<std::pair<Reg, Reg>> adj_set;
   std::map<Reg, int> degree;
-  
+
   std::map<Reg, Reg> alias;
   std::map<Reg, std::set<Move *>> move_list;
-  
+
   // 每个寄存器节点最多在其中一个集合中
   std::set<Reg> simplify_worklist; // list of low-degree non-move-related nodes
   std::set<Reg> freeze_worklist; // low-degree move-related nodes
@@ -30,11 +30,15 @@ class ColoringRegAllocator {
   std::set<Move *> worklist_moves;
   std::set<Move *> active_moves;
 
+  std::set<Reg> spilling_regs;
+
   int K; // 可用于分配的物理寄存器数量
   Function *f;
   bool is_gp_pass;
+  RegFilter reg_filter;
 
   void init(Function &func, bool is_gp_pass);
+  double get_basic_spill_cost(Reg r);
 
   // functions
   std::set<Reg> adjacent(Reg n) const;

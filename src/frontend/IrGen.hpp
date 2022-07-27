@@ -35,13 +35,13 @@ class IrGen {
 
   std::unordered_map<Var *, ir::Storage> mem_vars;
 
-  ir::Reg new_reg(::ScalarType t) {
+  ir::Reg new_reg(int t) {
     auto &nr_regs = cur_func ? local_regs : global_regs;
     return ir::Reg{t, ++nr_regs};
   }
 
   ir::BasicBlock *new_bb();
-  ir::Reg scalar_cast(ir::Reg src, ScalarType dst_type);
+  ir::Reg scalar_cast(ir::Reg src, int dst_type);
 
   void emit(ir::Instruction *insn) {
     cur_bb->insns.emplace_back(insn);

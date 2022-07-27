@@ -86,14 +86,14 @@ public:
 
 struct SymbolTable {
   struct Function {
-    std::optional<ScalarType> ret_type; // std::nullopt代表void
+    std::optional<int> ret_type; // std::nullopt代表void
     std::vector<Type> param_types;
     std::vector<string> param_names;
     ScopeStack scopes;
   };
 
   struct LibFunction {
-    std::optional<ScalarType> ret_type;
+    std::optional<int> ret_type;
     std::vector<Type> param_types;
     bool variadic;
   };

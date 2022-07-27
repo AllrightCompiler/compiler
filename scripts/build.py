@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-TIMEOUT = 10
+TIMEOUT = 60
 
 compiler = './compiler -O2'
 testcases_dir = '/mnt/d/compiler-testcases/functional'
@@ -19,7 +19,10 @@ def assembly(testcases, output_dir='asm'):
         out_path = os.path.join(output_dir, asm_name)
 
         command = f'{compiler} {in_path}'
-        proc = subprocess.Popen(command, stdout=open(out_path, 'w'), shell=True)
+        proc = subprocess.Popen(command, shell=True,
+            stdout=open(out_path, 'w'), 
+            stderr=open('/dev/null', 'w')
+        )
         ok = True
         try:
             proc.wait(TIMEOUT)

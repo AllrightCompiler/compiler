@@ -36,7 +36,7 @@ Typer::Typer() {
       .param_types = {Type{Int}, Type{Float, std::vector<int>{0}}},
       .variadic = false};
   funcs["putf"] = {.ret_type = std::nullopt,
-                   .param_types = {Type{String}, Type{Int}},
+                   .param_types = {Type{String}},
                    .variadic = true};
   funcs["starttime"] = {
       .ret_type = std::nullopt, .param_types = {}, .variadic = false};
@@ -217,7 +217,9 @@ void Typer::visit_statement(const ast::Statement &node) {
     if (!t || t->is_array())
       throw CompileError{"invalid type for condition expression"};
     visit_statement(*if_->then());
-    visit_statement(*if_->otherwise());
+    if (auto otherwise = if_->otherwise().get()) {
+      visit_statement(*otherwise);
+    }
     return;
   }
   TypeCase(while_, const ast::While *, stmt) {
@@ -446,7 +448,7 @@ ConstValue eval(BinaryOp op, const ConstValue &lhs, const ConstValue &rhs) {
   __builtin_unreachable();
 }
 
-ConstValue Typer::implicit_cast(ScalarType dst_type, ConstValue val) const {
+ConstValue Typer::implicit_cast(int dst_type, ConstValue val) const {
   if (dst_type == val.type)
     return val;
   if (dst_type == Int && val.type == Float)

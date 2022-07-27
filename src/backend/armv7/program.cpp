@@ -34,12 +34,38 @@ void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
   emit_load_imm(bb->insns, bb->insns.end(), dst, imm);
 }
 
-void BasicBlock::insert_before_branch(Instruction *insn) {
+void Function::emit_imm(
+    std::list<std::unique_ptr<Instruction>> &insns,
+    const std::list<std::unique_ptr<Instruction>>::iterator &it, Reg dst,
+    int imm) {
+  emit_load_imm(insns, it, dst, imm);
+  if (dst.is_virt())
+    reg_val[dst] = imm;
+}
+
+void Function::emit_imm(BasicBlock *bb, Reg dst, int imm) {
+  emit_load_imm(bb, dst, imm);
+  if (dst.is_virt())
+    reg_val[dst] = imm;
+}
+
+std::list<std::unique_ptr<Instruction>>::iterator BasicBlock::seq_end() {
   auto it = insns.begin();
-  for (; it != insns.end(); ++it)
-    if (it->get()->is<Branch>())
+  for (; it != insns.end(); ++it) {
+    if ((*it)->is<Branch>()) {
+      // 如果这是一个典型条件跳转 (e.g. cmp r0, #0; bne Lx)
+      // 将指令插入到cmp之前
+      if ((*it)->cond != ExCond::Always && it != insns.begin() &&
+          (*std::prev(it))->is<Compare>())
+        --it;
       break;
-  insns.emplace(it, insn);
+    }
+  }
+  return it;
+}
+
+void BasicBlock::insert_before_branch(Instruction *insn) {
+  insns.emplace(seq_end(), insn);
 }
 
 class ProgramTranslator {
@@ -75,17 +101,19 @@ class ProgramTranslator {
     nr_gp_params = nr_fp_params = 0;
     std::vector<int> stack_params;
     for (int i = 0; i < nr_params; ++i) {
-      auto type = ir_to_machine_reg_type(params[i].base_type);
+      auto type = machine_reg_type(params[i]);
       Reg dst = Reg{type, -(i + 1)};
       if (type != Fp) {
-        if (nr_gp_params++ < NR_ARG_GPRS) {
-          entry_bb->push(new Move{dst, Operand2::from(Reg{type, r0 + i})});
+        if (nr_gp_params < NR_ARG_GPRS) {
+          entry_bb->push(
+              new Move{dst, Operand2::from(Reg{type, r0 + nr_gp_params++})});
         } else {
           stack_params.push_back(i);
         }
       } else {
-        if (nr_fp_params++ < NR_ARG_FPRS) {
-          entry_bb->push(new Move{dst, Operand2::from(Reg{type, s0 + i})});
+        if (nr_fp_params < NR_ARG_FPRS) {
+          entry_bb->push(
+              new Move{dst, Operand2::from(Reg{type, s0 + nr_fp_params++})});
         } else {
           stack_params.push_back(i);
         }
@@ -125,7 +153,7 @@ class ProgramTranslator {
       dst_fn.param_objs.push_back(obj);
       dst_fn.stack_objects.emplace_back(obj);
 
-      Reg dst = Reg::from(params[i].base_type, -(i + 1));
+      Reg dst{machine_reg_type(params[i]), -(i + 1)};
       // entry_bb->push(new LoadStack{dst, obj, 0});
       dst_fn.defer_stack_param_load(dst, obj);
     }
@@ -140,27 +168,30 @@ class ProgramTranslator {
       fn.normal_objs.push_back(obj);
       fn.stack_objects.emplace_back(obj);
 
-      bb->push(new LoadStackAddr{Reg::from(alloca->dst), obj, 0});
+      Reg dst = Reg::from(alloca->dst);
+      fn.reg_val[dst] = obj;
+      bb->push(new LoadStackAddr{dst, obj, 0});
     }
     else TypeCase(load, ii::Load *, ins) {
       bb->push(new Load{Reg::from(load->dst), Reg::from(load->addr), 0});
     }
     else TypeCase(load, ii::LoadAddr *, ins) {
-      bb->push(new LoadAddr{Reg::from(load->dst), load->var_name});
+      Reg dst = Reg::from(load->dst);
+      fn.reg_val[dst] = load->var_name;
+      bb->push(new LoadAddr{dst, load->var_name});
     }
     else TypeCase(load, ii::LoadImm *, ins) {
-      // TODO: 对于某些浮点立即数，可以生成vmov.f32
       Reg dst = Reg::from(load->dst);
       if (!dst.is_float()) {
-        emit_load_imm(bb, dst, load->imm.iv);
+        fn.emit_imm(bb, dst, load->imm.iv);
       } else {
         float imm = load->imm.fv;
-        if (is_vmov_f32_imm(imm))
-          ; // TODO
-        else {
+        if (false && is_vmov_f32_imm(imm)) { // TODO
+          bb->push(new Move(dst, Operand2::from(imm)));
+        } else {
           Reg t = fn.new_reg(General);
-          emit_load_imm(bb, t, *reinterpret_cast<int *>(&imm));
-          // TODO: emit vmov
+          fn.emit_imm(bb, t, *reinterpret_cast<int *>(&imm));
+          bb->push(new Move(dst, Operand2::from(t)));
         }
       }
     }
@@ -182,7 +213,7 @@ class ProgramTranslator {
               Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
         } else {
           Reg imm_reg = fn.new_reg(General);
-          emit_load_imm(bb, imm_reg, dim);
+          fn.emit_imm(bb, imm_reg, dim);
           bb->push(new FusedMul{t, index_reg, imm_reg, s});
         }
         index_reg = t;
@@ -196,7 +227,7 @@ class ProgramTranslator {
               new Move{t, Operand2::from(LSL, index_reg, __builtin_ctz(dim))});
         } else {
           Reg imm_reg = fn.new_reg(General);
-          emit_load_imm(bb, imm_reg, dim);
+          fn.emit_imm(bb, imm_reg, dim);
           bb->push(new RType{RType::Op::Mul, t, index_reg, imm_reg});
         }
         index_reg = t;
@@ -207,7 +238,18 @@ class ProgramTranslator {
                              Operand2::from(LSL, index_reg, 2)});
     }
     else TypeCase(cvt, ii::Convert *, ins) {
-      // TODO: emit vmov + vcvt
+      auto const dst = Reg::from(cvt->dst);
+      auto const src = Reg::from(cvt->src);
+      auto const temp = fn.new_reg(RegType::Fp);
+      if (cvt->dst.type != cvt->src.type) {
+        if (cvt->dst.type == ScalarType::Float) { // int -> float
+          bb->push(new Move(temp, Operand2::from(src)));
+          bb->push(new Convert(dst, temp, ConvertType::Int2Float));
+        } else { // float -> int
+          bb->push(new Convert(temp, src, ConvertType::Float2Int));
+          bb->push(new Move(dst, Operand2::from(temp)));
+        }
+      }
     }
     else TypeCase(unary, ii::Unary *, ins) {
       Reg dst = Reg::from(unary->dst);
@@ -217,11 +259,11 @@ class ProgramTranslator {
         if (!dst.is_float()) {
           bb->push(new IType{IType::Op::RevSub, dst, src, 0});
         } else {
-          // TODO: emit vneg
+          bb->push(new Vneg(dst, src));
         }
         break;
       case UnaryOp::Not: {
-        if (!dst.is_float()) {
+        if (!dst.is_float() && !src.is_float()) {
           // bb->push(new Move{dst, Operand2::from(0)});
           // bb->push(new Compare{src, Operand2::from(0)});
           // bb->push(ExCond::Eq, new Move{dst, Operand2::from(1)});
@@ -229,7 +271,8 @@ class ProgramTranslator {
           bb->push(new CountLeadingZero{dst, src});
           bb->push(new Move{dst, Operand2::from(LSR, dst, 5)});
         } else {
-          // TODO: emit vcmp vmrs etc.
+          auto cmp = std::make_unique<Compare>(src, Operand2::from(0));
+          bb->push(ExCond::Eq, new PseudoCompare(cmp.release(), dst));
         }
 
         if (cmp_info.count(src)) {
@@ -314,17 +357,18 @@ class ProgramTranslator {
         Reg arg_reg = Reg::from(call->args[*it]);
         bb->push(new Push{{arg_reg}});
       }
+      nr_gp_args = nr_fp_args = 0;
       for (auto i : reg_args) {
         Reg arg_reg = Reg::from(call->args[i]);
         if (!arg_reg.is_float()) {
-          bb->push(
-              new Move{Reg{arg_reg.type, r0 + i}, Operand2::from(arg_reg)});
+          bb->push(new Move{Reg{arg_reg.type, r0 + nr_gp_args++},
+                            Operand2::from(arg_reg)});
         } else {
-          // TODO: move or explicit vmov?
-          bb->push(new Move{Reg{Fp, s0 + i}, Operand2::from(arg_reg)});
+          bb->push(
+              new Move{Reg{Fp, s0 + nr_fp_args++}, Operand2::from(arg_reg)});
         }
       }
-      bb->push(new Call{call->func, nr_gp_args, nr_fp_args});
+      bb->push(new Call{call->func, nr_gp_args, nr_fp_args, call->variadic_at});
       // 这里钻了个空子，这个语法中函数的返回值只能是int或float
       // 如果接收返回值的寄存器类型是String表明实际上无返回值
       if (call->dst.type != String)
@@ -493,10 +537,7 @@ void emit_global_array(std::ostream &os, const std::shared_ptr<Var> &var) {
   for (auto &[index, val] : *var->arr_val) {
     if (index > cur_index)
       os << "    .space " << (index - cur_index) * 4 << ", 0\n";
-    if (val.type != Float)
-      os << "    .word " << val.iv << '\n';
-    else
-      os << "    .float " << val.fv << '\n';
+    os << "    .word " << val.iv << '\n';
     cur_index = index + 1;
   }
   if (nr_elems > cur_index)
@@ -514,10 +555,7 @@ void emit_global_var(std::ostream &os, const std::string &name,
 
   if (var->val) {
     auto init = var->val.value();
-    if (init.type != Float)
-      os << "    .word " << init.iv << '\n';
-    else
-      os << "    .float " << init.fv << '\n';
+    os << "    .word " << init.iv << '\n';
   } else {
     os << "    .space 4, 0\n";
   }
@@ -576,7 +614,7 @@ int round_up_to_imm8m(int x) {
   int bits = 8 * sizeof(x);
   int hi = bits - 1 - __builtin_clz(x);
   int lo = __builtin_ctz(x);
-  if (hi & 1) {
+  if (!(hi & 1)) {
     if (hi - lo + 1 <= 7)
       return x;
   } else {
@@ -585,7 +623,7 @@ int round_up_to_imm8m(int x) {
   }
 
   int a;
-  if (hi & 1)
+  if (!(hi & 1))
     a = 1 << (hi - 6);
   else
     a = 1 << (hi - 7);
@@ -863,6 +901,10 @@ void Function::replace_pseudo_insns() {
 
 void Function::resolve_phi() {
   // de-SSA (phi resolution)
+  // 假定当前是Conventional SSA，如为T-SSA需要额外转换
+  // 稳妥的实现:
+  // 每个move被拆成两步，引入新的临时变量以消除顺序依赖，达到phi函数的并行求值效果
+  // TODO: 实现ParallelCopy减少插入的mov数量
   std::vector<std::tuple<BasicBlock *, Reg, Reg>> pending_moves; // bb, dst, src
   for (auto &bb : bbs) {
     auto &insns = bb->insns;
@@ -870,11 +912,17 @@ void Function::resolve_phi() {
       TypeCase(phi, Phi *, it->get()) {
         for (auto &[bb, src] : phi->srcs) {
           // 在跳转前插入mov
-          // Reg dst = phi->dst;
-          // Reg mid = new_reg(dst.type);
-          // bb->insert_before_branch(new Move{mid, Operand2::from(src)});
-          // pending_moves.push_back({bb, dst, mid});
-          bb->insert_before_branch(new Move{phi->dst, Operand2::from(src)});
+          Reg dst = phi->dst;
+          Reg mid = new_reg(dst.type);
+          auto mov = new Move{mid, Operand2::from(src)};
+          bb->insert_before_branch(mov);
+
+          pending_moves.push_back({bb, dst, mid});
+          phi_moves.insert(mov);
+
+          // auto mov = new Move{phi->dst, Operand2::from(src)};
+          // bb->insert_before_branch(mov);
+          // phi_moves.insert(mov);
         }
         it = insns.erase(it);
       }
@@ -883,8 +931,11 @@ void Function::resolve_phi() {
       }
     }
   }
-  // for (auto &[bb, dst, src] : pending_moves)
-  //   bb->insert_before_branch(new Move{dst, Operand2::from(src)});
+  for (auto &[bb, dst, src] : pending_moves) {
+    auto mov = new Move{dst, Operand2::from(src)};
+    bb->insert_before_branch(mov);
+    phi_moves.insert(mov);
+  }
 }
 
 } // namespace armv7

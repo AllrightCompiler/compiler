@@ -30,7 +30,7 @@ inline std::string op_string(UnaryOp op) {
   }
 }
 
-inline std::string op_string(BinaryOp op, ScalarType t) {
+inline std::string op_string(BinaryOp op, int t) {
   bool f = t == Float;
   switch (op) {
   case BinaryOp::Add:
@@ -229,7 +229,7 @@ void BasicBlock::change_succ(BasicBlock* old_bb, BasicBlock* new_bb){
         jmp->target = new_bb;
       }
     }
-  }  
+  }
 }
 
 void BasicBlock::change_prev(BasicBlock* old_bb, BasicBlock* new_bb){
@@ -354,7 +354,11 @@ void Call::emit(std::ostream &os) const {
   for (size_t i = 0; i < args.size(); ++i) {
     if (i != 0)
       os << ", ";
-    os << type_string(sig.param_types[i]) << " " << reg_name(args[i]);
+    if (i < sig.param_types.size())
+      os << type_string(sig.param_types[i]);
+    else
+      os << type_string(args[i].type);
+    os << " " << reg_name(args[i]);
   }
   os << ")";
 }

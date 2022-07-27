@@ -40,7 +40,7 @@ enum ScalarType {
 };
 
 struct Type {
-  ScalarType base_type;
+  int base_type;
   bool is_const;
   std::vector<int> dims; // 数组第一维可以是0
 
@@ -74,10 +74,10 @@ struct Type {
   bool is_pointer_to_scalar() const { return dims.size() == 1 && dims[0] == 0; }
 
   Type() {}
-  Type(ScalarType btype) : base_type{btype}, is_const{false} {}
-  Type(ScalarType btype, bool const_qualified)
+  Type(int btype) : base_type{btype}, is_const{false} {}
+  Type(int btype, bool const_qualified)
       : base_type{btype}, is_const{const_qualified} {}
-  Type(ScalarType btype, std::vector<int> dimensions)
+  Type(int btype, std::vector<int> dimensions)
       : base_type{btype}, is_const{false}, dims{std::move(dimensions)} {}
   Type(Type type, std::vector<int> dimensions)
       : base_type{type.base_type}, is_const{false}, dims{
@@ -89,7 +89,7 @@ struct Type {
 // std::variant过于难用，这里直接用union
 // 此ConstValue特指标量
 struct ConstValue {
-  ScalarType type;
+  int type;
   union {
     int iv;
     float fv;
@@ -185,7 +185,7 @@ struct hash<vector<T>> {
 template <> class hash<Type> {
 public:
   size_t operator()(const Type &r) const {
-    return hash<ScalarType>()(r.base_type) * 17 + hash<std::vector<int> >()(r.dims);
+    return hash<int>()(r.base_type) * 17 + hash<std::vector<int> >()(r.dims);
   }
 };
 } // namespace std

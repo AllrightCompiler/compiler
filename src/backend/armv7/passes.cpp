@@ -19,6 +19,10 @@ void backend_passes(Program &p) {
 
     f.resolve_phi();
 
+    reg_allocator.do_reg_alloc(f, false); // fp reg
+
+    // f.emit(std::cerr);
+
     reg_allocator.do_reg_alloc(f);
 
     remove_useless(f);
@@ -54,7 +58,6 @@ void fold_constants(Function &f) {
       auto ins = insn.get();
 
       // 匹配常数加载指令
-      // TODO: vmov fp immediate
       bool is_load_imm = false;
       TypeCase(mov, Move *, ins) {
         if (mov->src.is_imm8m()) {
@@ -65,6 +68,13 @@ void fold_constants(Function &f) {
           Reg dst = mov->dst;
           if (dst.is_virt())
             constants[dst] = imm;
+          is_load_imm = true;
+        } else if (mov->src.is_fpimm()) {
+          float imm = mov->src.get<float>();
+          assert(!mov->flip);
+          if (mov->dst.is_virt()) {
+            constants[mov->dst] = imm;
+          }
           is_load_imm = true;
         }
       }
@@ -160,7 +170,7 @@ void fold_constants(Function &f) {
       }
       else TypeCase(mov, Move *, ins) {
         auto opt_imm = eval_operand2(mov->src);
-        if (opt_imm) {
+        if (opt_imm && !mov->is_transfer_vmov()) {
           int imm = opt_imm.value();
           Reg dst = mov->dst;
           if (dst.is_virt())
@@ -225,7 +235,7 @@ void remove_useless(Function &f) {
         if (mov->is_reg_mov() && mov->use().count(mov->dst))
           remove = true;
       }
-      
+
       if (remove)
         it = insns.erase(it);
       else

@@ -22,11 +22,11 @@ using std::unordered_set;
 using std::vector;
 
 struct Reg {
-  ScalarType type;
+  int type;
   int id;
 
   Reg() {}
-  Reg(ScalarType type, int id) : type{type}, id{id} {}
+  Reg(int type_, int id_) : type{type_}, id{id_} {}
 
   bool operator<(const Reg &b) const { return id < b.id; }
   bool operator==(const Reg &b) const { return id == b.id; }
@@ -130,6 +130,14 @@ struct BasicBlock {
   void rpo_dfs(vector<BasicBlock *> &rpo);
   void loop_dfs();
   void clear_visit() { visit = false; }
+  static void add_edge(BasicBlock *from, BasicBlock *to) {
+    from->succ.insert(to);
+    to->prev.insert(from);
+  }
+  static void remove_edge(BasicBlock *from, BasicBlock *to) {
+    from->succ.erase(to);
+    to->prev.erase(from);
+  }
   void change_succ(BasicBlock *old_bb, BasicBlock *new_bb);
   void change_prev(BasicBlock *old_bb, BasicBlock *new_bb);
 };
@@ -137,7 +145,7 @@ struct BasicBlock {
 void calc_loop_level(Loop *loop);
 
 struct FunctionSignature {
-  optional<ScalarType> ret_type;
+  optional<int> ret_type;
   vector<Type> param_types;
 };
 
@@ -155,7 +163,7 @@ struct Function {
   vector<unique_ptr<Loop>> loops;
 
   list<unique_ptr<BasicBlock>> bbs;
-  Reg new_reg(ScalarType t) { return ir::Reg{t, ++nr_regs}; }
+  Reg new_reg(int t) { return ir::Reg{t, ++nr_regs}; }
   ~Function();
   bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
   bool is_pure() const { return pure == 1; }
@@ -191,7 +199,7 @@ inline std::string var_name(std::string name) { return "@" + name; }
 
 inline std::string label_name(std::string name) { return "%" + name; }
 
-inline std::string type_string(ScalarType t) {
+inline std::string type_string(int t) {
   if (t == Int)
     return "i32";
   if (t == Float)
@@ -199,7 +207,7 @@ inline std::string type_string(ScalarType t) {
   return "?";
 }
 
-inline std::string type_string(const std::optional<ScalarType> &t) {
+inline std::string type_string(const std::optional<int> &t) {
   if (!t)
     return "void";
   return type_string(t.value());
@@ -357,9 +365,11 @@ struct Call : Output {
   string func;
   vector<Reg> args;
   vector<Reg> global_use;
+  int variadic_at; // 第几个参数是 `...`
 
-  Call(Reg dst, string callee, vector<Reg> arg_regs)
-      : func{std::move(callee)}, args{std::move(arg_regs)}, Output{dst} {}
+  Call(Reg dst, string callee, vector<Reg> arg_regs, int variadic_at = -1)
+      : func{std::move(callee)}, args{std::move(arg_regs)},
+        variadic_at{variadic_at}, Output{dst} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
