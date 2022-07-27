@@ -9,7 +9,7 @@ using ir::Instruction;
 using ir::Reg;
 using ir::Loop;
 
-static const int UNROLL_CNT = 2;
+static const int UNROLL_CNT = 4;
 static int map_curid;
 static unordered_map<Reg, Reg> reg_map[2]; // contains only regs inside loop, two maps representing now and prev
 static unordered_map<BasicBlock*, BasicBlock*> bb_map[2]; // contains only bbs inside loop, two maps representing now and prev
@@ -71,7 +71,7 @@ Instruction *copy_inst(Instruction *inst, BasicBlock *entry, BasicBlock *exit) {
     auto new_inst = new ir::insns::Return(ret_val);
   } else TypeCase(phi, ir::insns::Phi *, inst) {
     auto new_inst = new ir::insns::Phi(reg_map_if(phi->dst), phi->array_ssa);
-    if (inst->bb == bb_map[!map_curid].at(entry)) { // new entry
+    if (inst->bb == entry) { // new entry
       for (auto pair : phi->incoming) {
         auto income_bb = pair.first;
         if (income_bb->loop == nullptr || income_bb->loop != entry->loop) { // not in loop
@@ -102,9 +102,6 @@ void copy_bb(BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *
     if (succ_bb == exit || succ_bb == entry) {
       new_bb->succ.insert(succ_bb);
       succ_bb->prev.insert(new_bb);
-      if (succ_bb == entry) {
-        entry->prev.erase(bb_map[!map_curid].at(bb));
-      }
     } else {
       new_bb->succ.insert(bb_map[map_curid].at(succ_bb));
     }
@@ -263,19 +260,7 @@ void loop_unroll(ir::Function * func) {
       for (auto bb : loop_bbs) {
         copy_bb(bb, bb_map[map_curid][bb], loop->header, exit_bb);
       }
-      // 4. Modify entry's phi, exit's phi
-      for (auto &insn : entry->insns) {
-        TypeCase(phi, ir::insns::Phi *, insn.get()) {
-          phi->remove_use_def();
-          for (auto bb : back_paths) {
-            Reg reg = phi->incoming.at(bb_map[!map_curid].at(bb));
-            if (reg_map[map_curid].count(reg)) reg = reg_map[map_curid].at(reg);
-            phi->incoming.erase(bb_map[!map_curid].at(bb));
-            phi->incoming[bb_map[map_curid].at(bb)] = reg;
-          }
-          phi->add_use_def();
-        } else break;
-      }
+      // 4. Modify entry's phi (Delayed), exit's phi
       for (auto &insn : exit_bb->insns) {
         TypeCase(phi, ir::insns::Phi *, insn.get()) {
           phi->remove_use_def();
@@ -287,6 +272,29 @@ void loop_unroll(ir::Function * func) {
           phi->add_use_def();
         } else break;
       }
+    }
+    // Modify Loop0 entry's phi & prev
+    vector<BasicBlock *> entry_prev_bb_to_insert;
+    for (auto entry_prev_bb : loop->header->prev) {
+      if (entry_prev_bb->loop == nullptr || entry_prev_bb->loop != loop) {
+        continue; // bb not in loop
+      }
+      entry_prev_bb_to_insert.push_back(bb_map[map_curid].at(entry_prev_bb));
+    }
+    for (auto bb : entry_prev_bb_to_insert) {
+      loop->header->prev.insert(bb);
+    }
+    for (auto &insn : loop->header->insns) {
+      TypeCase(phi, ir::insns::Phi *, insn.get()) {
+        phi->remove_use_def();
+        for (auto bb : back_paths) {
+          Reg reg = phi->incoming.at(bb);
+          if (reg_map[map_curid].count(reg)) reg = reg_map[map_curid].at(reg);
+          phi->incoming.erase(bb);
+          phi->incoming[bb_map[map_curid].at(bb)] = reg;
+        }
+        phi->add_use_def();
+      } else break;
     }
     // loop0 -> loop1 entry
     for (auto bb : loop0_to_entry) {
