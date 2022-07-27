@@ -106,7 +106,7 @@ void remove_uneffective_inst(ir::Program *prog){
       auto &insns = bb->insns;
       for (auto &inst : insns) {
         TypeCase(call, ir::insns::Call *, inst.get()){
-          if(prog->functions.find(call->func) == prog->functions.end() || prog->functions.at(call->func).pure == 0){
+          if(prog->functions.find(call->func) == prog->functions.end() || !prog->functions.at(call->func).is_pure()){
             stack.insert(call);
           }
         } else TypeCase(term, ir::insns::Terminator *, inst.get()){
