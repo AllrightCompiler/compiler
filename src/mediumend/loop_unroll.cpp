@@ -168,6 +168,37 @@ void loop_unroll(ir::Function * func) {
         }
       }
     }
+    // Add phi for regs defined in loop but used outside
+    for (auto bb : loop_bbs) {
+      for (auto &insn : bb->insns) {
+        TypeCase(output, ir::insns::Output *, insn.get()) {
+          Reg reg = output->dst, newreg;
+          if (!bb->func->use_list.count(reg)) continue;
+          bool flag = false;
+          vector<Instruction *> insts_to_change_use;
+          for (auto i : bb->func->use_list.at(reg)) {
+            if (i->bb->loop != nullptr && i->bb->loop == loop) continue; // in loop
+            TypeCase(phi, ir::insns::Phi *, i) {
+              if (i->bb == exit_bb) continue;
+            }
+            if (!flag) { // create phi
+              newreg = func->new_reg(reg.type);
+              auto phi_i = new ir::insns::Phi(newreg);
+              for (auto exit_prev : exit_bb->prev) {
+                assert(exit_prev->loop != nullptr && exit_prev->loop == loop);
+                phi_i->incoming[exit_prev] = reg;
+              }
+              exit_bb->push_front(phi_i);
+            }
+            flag = true;
+            insts_to_change_use.push_back(i);
+          }
+          for (auto i : insts_to_change_use) {
+            i->change_use(reg, newreg);
+          }
+        }
+      }
+    }
     unordered_set<BasicBlock *> back_paths; // bbs in original loop that go back to entry
     for (auto entry_prev_bb : loop->header->prev) {
       if (entry_prev_bb->loop != nullptr && entry_prev_bb->loop == loop) { // bb in loop
