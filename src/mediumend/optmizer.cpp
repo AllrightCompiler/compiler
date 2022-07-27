@@ -27,6 +27,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   mem2reg,
   remove_unused_function,
   main_global_var_to_local,
+  mark_pure_func,
   // 纯函数可以用来做GVN和无用代码移除
   gvn_gcm,
   remove_uneffective_inst,
