@@ -1,6 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 #include <cassert>
 
@@ -281,10 +281,12 @@ void constant_propagation(ir::Program *prog) {
             ir::BasicBlock *target;
             if (const_map.at(br->val).iv) {
               target = br->true_target;
-              bb->succ.erase(br->false_target);
-              br->false_target->prev.erase(bb);
-              stack.insert(br->false_target);
-              checkbb(br->false_target);
+              if(br->true_target != br->false_target){
+                bb->succ.erase(br->false_target);
+                br->false_target->prev.erase(bb);
+                stack.insert(br->false_target);
+                checkbb(br->false_target);
+              }
             } else {
               target = br->false_target;
               bb->succ.erase(br->true_target);

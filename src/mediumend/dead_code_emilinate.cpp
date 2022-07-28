@@ -1,6 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 namespace mediumend {
 
@@ -91,6 +91,11 @@ void remove_unused_function(ir::Program *prog){
   }
 }
 
+void check_inst(ir::Instruction *inst){
+  assert(inst);
+  assert(inst->bb);
+}
+
 void remove_uneffective_inst(ir::Program *prog){
   for(auto &each : prog->functions){
     ir::Function *func = &each.second;
@@ -101,7 +106,7 @@ void remove_uneffective_inst(ir::Program *prog){
       auto &insns = bb->insns;
       for (auto &inst : insns) {
         TypeCase(call, ir::insns::Call *, inst.get()){
-          if(prog->functions.find(call->func) == prog->functions.end() || prog->functions.at(call->func).pure == 0){
+          if(prog->functions.find(call->func) == prog->functions.end() || !prog->functions.at(call->func).is_pure()){
             stack.insert(call);
           }
         } else TypeCase(term, ir::insns::Terminator *, inst.get()){
@@ -128,6 +133,7 @@ void remove_uneffective_inst(ir::Program *prog){
           if(useful_inst.count(def)){
             continue;
           }
+          check_inst(def);
           stack.insert(def);
         }
       }
@@ -378,12 +384,16 @@ bool remove_useless_loop(ir::Function *func) {
         if (!suc->loop || suc->loop != loop) {
           if(out && suc != out){
             check = false;
+            break;
           } else {
             out_bb = bb;
             out = suc;
           }
         }
       }
+    }
+    if(!out || !check){
+      continue;
     }
     int raw_size = out->live_in.size() + defs.size();
     defs.merge(out->live_in);
@@ -393,7 +403,7 @@ bool remove_useless_loop(ir::Function *func) {
     if (!out) {
       check = false;  
     }
-    if(check == false){
+    if(!check){
       continue;
     }
     changed = true;

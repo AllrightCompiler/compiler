@@ -115,6 +115,8 @@ struct BasicBlock {
   // modify use-def
   void pop_front();
   // not modify use-def
+  void insert_at_pos(int pos, Instruction *insn);
+  // not modify use-def
   void insert_after_phi(Instruction *insn);
   // modify use-def
   void insert_after_inst(Instruction *prev, Instruction *insn);
@@ -128,7 +130,6 @@ struct BasicBlock {
   void rpo_dfs(vector<BasicBlock *> &rpo);
   void loop_dfs();
   void clear_visit() { visit = false; }
-
   static void add_edge(BasicBlock *from, BasicBlock *to) {
     from->succ.insert(to);
     to->prev.insert(from);
@@ -137,7 +138,6 @@ struct BasicBlock {
     from->succ.erase(to);
     to->prev.erase(from);
   }
-
   void change_succ(BasicBlock *old_bb, BasicBlock *new_bb);
   void change_prev(BasicBlock *old_bb, BasicBlock *new_bb);
 };
@@ -426,6 +426,7 @@ struct Binary : Output {
 
 struct Phi : Output {
   std::unordered_map<BasicBlock *, Reg> incoming;
+  std::unordered_set<Reg> use_before_def;
   bool array_ssa;
 
   Phi(Reg dst, bool array_ssa = false) : Output{dst}, array_ssa(array_ssa) {}
@@ -453,6 +454,9 @@ struct Phi : Output {
     for (auto each : incoming) {
       ret.insert(each.second);
     }
+    for(auto each : use_before_def){
+      ret.insert(each);
+    }
     return ret;
   }
 };
@@ -478,9 +482,11 @@ struct MemDef : Output {
   Reg store_dst;
   Reg store_val;
   bool call_def;
-  MemDef(Reg dst, Reg dep, Reg store_dst, Reg store_val, bool call_def)
+  unordered_set<Reg> uses_before_def;
+  MemDef(Reg dst, Reg dep, Reg store_dst, Reg store_val, bool call_def,
+         unordered_set<Reg> uses_before_def)
       : dep(dep), store_dst{store_dst}, store_val{store_val},
-        call_def(call_def), Output{dst} {}
+        call_def(call_def), uses_before_def(uses_before_def), Output{dst} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
@@ -489,7 +495,11 @@ struct MemDef : Output {
     return {&store_dst, &store_val, &dst, &dep};
   }
   unordered_set<Reg> use() const override {
-    return {store_dst, store_val, dep};
+    unordered_set<Reg> ret = {store_dst, store_val, dep};
+    for (auto each : uses_before_def) {
+      ret.insert(each);
+    }
+    return ret;
   }
 };
 

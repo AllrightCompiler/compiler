@@ -141,6 +141,17 @@ void BasicBlock::pop_front() {
   insns.pop_front(); // auto release
 }
 
+void BasicBlock::insert_at_pos(int pos, Instruction *insn) {
+  auto it = insns.begin();
+  while (pos--) {
+    assert(it != insns.end());
+    it++;
+  }
+  insns.emplace(it, insn);
+  insn->bb = this;
+  // insn->add_use_def();
+}
+
 void BasicBlock::insert_after_phi(Instruction *insn) {
   auto it = insns.begin();
   for (; it != insns.end(); it++) {
@@ -666,6 +677,9 @@ void MemDef::add_use_def() {
   bb->func->use_list[store_dst].insert(this);
   bb->func->use_list[store_val].insert(this);
   bb->func->use_list[dep].insert(this);
+  for(auto each : uses_before_def){
+    bb->func->use_list[each].insert(this);
+  }
 }
 
 void MemDef::remove_use_def() {
@@ -673,6 +687,9 @@ void MemDef::remove_use_def() {
   bb->func->use_list[store_dst].erase(this);
   bb->func->use_list[store_val].erase(this);
   bb->func->use_list[dep].erase(this);
+  for(auto each : uses_before_def){
+    bb->func->use_list[each].erase(this);
+  }
 }
 
 void MemDef::change_use(Reg old_reg, Reg new_reg) {
@@ -688,6 +705,12 @@ void MemDef::change_use(Reg old_reg, Reg new_reg) {
   }
   if(dep == old_reg){
     dep = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+  if(uses_before_def.count(old_reg)){
+    uses_before_def.erase(old_reg);
+    uses_before_def.insert(new_reg);
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
   }
@@ -796,11 +819,17 @@ void Phi::add_use_def() {
   for (auto &[bb, reg] : incoming) {
     bb->func->use_list[reg].insert(this);
   }
+  for (auto &reg : use_before_def) {
+    bb->func->use_list[reg].insert(this);
+  }
 }
 
 void Phi::remove_use_def() {
   Output::remove_use_def();
   for (auto &[bb, reg] : incoming) {
+    bb->func->use_list[reg].erase(this);
+  }
+  for (auto &reg : use_before_def) {
     bb->func->use_list[reg].erase(this);
   }
 }
@@ -812,6 +841,12 @@ void Phi::change_use(Reg old_reg, Reg new_reg) {
       bb->func->use_list[new_reg].insert(this);
       bb->func->use_list[old_reg].erase(this);
     }
+  }
+  if(use_before_def.count(old_reg)){
+    use_before_def.erase(old_reg);
+    use_before_def.insert(new_reg);
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
   }
 }
 
