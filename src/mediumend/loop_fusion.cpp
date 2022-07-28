@@ -222,8 +222,10 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
         continue;
       }
       auto inst = iter->release();
+      inst->remove_use_def();
       inst->bb = idom_prev;
       idom_prev->insert_before_ter(inst);
+      inst->add_use_def();
       iter = mid_bb->insns.erase(iter);
     }
   }
@@ -233,6 +235,7 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
       auto mid_reg = phi->incoming.at(mid_bb);
       if(cur_func->def_list.count(mid_reg) && cur_func->def_list.at(mid_reg)->bb == mid_bb){
         copy_propagation(cur_func->use_list, phi->dst, mid_reg);
+        iter->get()->remove_use_def();
         iter = succ->insns.erase(iter);
         continue;
       }
@@ -243,6 +246,8 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
       phi->bb = mid_bb;
       phi->incoming.erase(mid_bb);
       phi->incoming.erase(b2);
+      phi->remove_use_def();
+      phi->add_use_def();
     }
     else {
       break;
@@ -264,6 +269,8 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
           phi->incoming[each] = raw_reg;
         }
       }
+      phi->remove_use_def();
+      phi->add_use_def();
     }
     else {
       break;
