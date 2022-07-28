@@ -8,9 +8,9 @@ namespace mediumend {
 
 using ir::BasicBlock;
 using ir::Function;
+using ir::Instruction;
 using ir::Loop;
 using ir::Reg;
-using ir::Instruction;
 
 using std::unordered_map;
 
@@ -40,33 +40,28 @@ bool is_cmp(ir::insns::Binary *binary) {
   }
 }
 
-unordered_set<Instruction *> get_effective_use(Instruction * inst, BasicBlock *bb){
+unordered_set<Instruction *> get_effective_use(Instruction *inst,
+                                               BasicBlock *bb) {
   unordered_set<Instruction *> ret;
   unordered_set<Instruction *> visited;
   vector<Instruction *> stack;
   stack.push_back(inst);
-  while(stack.size()){
+  while (stack.size()) {
     inst = stack.back();
     stack.pop_back();
-    if(visited.count(inst) || inst->bb != bb){
+    if (visited.count(inst) || inst->bb != bb) {
       continue;
     }
     visited.insert(inst);
-    TypeCase(output, ir::insns::Output *, inst){
+    TypeCase(output, ir::insns::Output *, inst) {
       auto uses = cur_func->use_list[output->dst];
-      for(auto each : uses){
+      for (auto each : uses) {
         stack.push_back(each);
       }
     }
-    TypeCase(memdef, ir::insns::MemDef *, inst){
-      ret.insert(memdef);
-    }
-    TypeCase(call, ir::insns::Call *, inst){
-      ret.insert(call);
-    }
-    TypeCase(store, ir::insns::Store *, inst){
-      ret.insert(store);
-    }
+    TypeCase(memdef, ir::insns::MemDef *, inst) { ret.insert(memdef); }
+    TypeCase(call, ir::insns::Call *, inst) { ret.insert(call); }
+    TypeCase(store, ir::insns::Store *, inst) { ret.insert(store); }
   }
   return ret;
 }
@@ -155,50 +150,131 @@ LoopCond get_loop_cond(Loop *loop, unordered_set<BasicBlock *> loop_bb) {
   return ret;
 }
 
-void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2, unordered_map<Reg, Reg> &phi_map) {
+void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
+                unordered_map<Reg, Reg> &phi_map) {
   auto b1 = to->header;
   auto b2 = from->header;
   auto mid_bb = b2->idom;
-  auto br = b1->insns.back().release();
-  b1->insns.pop_back();
-  auto iter = b2->insns.begin();
   unordered_map<Reg, Reg> reorder_map;
-  for(auto &inst : b2->insns){
+  BasicBlock *succ;
+  for (auto each : b2->succ) {
+    if (each == b2) {
+      continue;
+    }
+    succ = each;
+  }
+  for (auto &inst : b2->insns) {
     inst->bb = b1;
     auto uses = inst->use();
-    for(auto each : uses){
-      if(each == cond_2.var){
+    for (auto each : uses) {
+      if (each == cond_2.var) {
         inst->change_use(each, cond_1.var);
       }
     }
-    // TypeCase(phi, ir::insns::Phi *, inst.get()){
-    //   auto raw = phi_map.at(phi->incoming.at(mid_bb));
-    //   auto dst = phi->dst;
-    //   copy_propagation(cur_func->use_list, dst, raw);
-    //   reorder_map[raw] = phi->incoming.at(b2);
-    // }
+    TypeCase(phi, ir::insns::Phi *, inst.get()) {
+      if (!phi_map.count(phi->incoming.at(mid_bb))) {
+        continue;
+      }
+      auto raw = phi_map.at(phi->incoming.at(mid_bb));
+      auto dst = phi->dst;
+      copy_propagation(cur_func->use_list, dst, raw);
+      reorder_map[raw] = phi->incoming.at(b2);
+    }
   }
-  for(; iter != b2->insns.end(); iter++){
-    TypeCase(phi, ir::insns::Phi *, iter->get()){
-      auto change_reg = phi->incoming.at(b2);
-      phi->incoming.erase(b2);
-      phi->incoming[b1] = change_reg;
-      auto raw_reg = phi->incoming.at(b2->idom);
-      phi->incoming.erase(b2->idom);
-      for(auto each : b1->prev){
-        if(each != b1){
-          phi->incoming[each] = raw_reg;
+  for (auto &inst : b1->insns) {
+    TypeCase(phi, ir::insns::Phi *, inst.get()){
+      auto uses = phi->use();
+      for (auto each : uses) {
+        if (reorder_map.count(each)) {
+          inst->change_use(each, reorder_map.at(each));
         }
       }
     } else {
       break;
     }
   }
+  auto iter = mid_bb->insns.begin();
+  auto idom_prev = b1->idom;
+  for (; iter != mid_bb->insns.end();) {
+    TypeCase(phi, ir::insns::Phi *, iter->get()){
+      auto uses = phi->use();
+      for (auto each : uses) {
+        if (reorder_map.count(each)) {
+          phi->change_use(each, reorder_map.at(each));
+        }
+      }
+      iter++;
+    } else {
+      TypeCase(term, ir::insns::Terminator *, iter->get()){
+        break;
+      }
+      auto inst = iter->release();
+      inst->bb = idom_prev;
+      idom_prev->insert_before_ter(inst);
+      iter = mid_bb->insns.erase(iter);
+    }
+  }
+  iter = succ->insns.begin();
+  for (; iter != succ->insns.end();) {
+    TypeCase(phi, ir::insns::Phi *, iter->get()) {
+      auto mid_reg = phi->incoming.at(mid_bb);
+      if(cur_func->def_list.count(mid_reg) && cur_func->def_list.at(mid_reg)->bb == mid_bb){
+        copy_propagation(cur_func->use_list, phi->dst, mid_reg);
+        iter = succ->insns.erase(iter);
+        continue;
+      }
+      for (auto prev : b1->prev) {
+        phi->incoming[prev] = phi->incoming.at(mid_bb);
+      }
+      phi->incoming[b1] = phi->incoming.at(b2);
+      phi->bb = mid_bb;
+      phi->incoming.erase(mid_bb);
+      phi->incoming.erase(b2);
+    }
+    else {
+      break;
+    }
+    iter++;
+  }
+  mid_bb->insns.splice(mid_bb->insns.begin(), succ->insns,
+                      succ->insns.begin(), iter);
+  iter = b2->insns.begin();
+  for (; iter != b2->insns.end(); iter++) {
+    TypeCase(phi, ir::insns::Phi *, iter->get()) {
+      auto change_reg = phi->incoming.at(b2);
+      phi->incoming.erase(b2);
+      phi->incoming[b1] = change_reg;
+      auto raw_reg = phi->incoming.at(b2->idom);
+      phi->incoming.erase(b2->idom);
+      for (auto each : b1->prev) {
+        if (each != b1) {
+          phi->incoming[each] = raw_reg;
+        }
+      }
+    }
+    else {
+      break;
+    }
+  }
+  auto br = b1->insns.back().release();
+  b1->insns.pop_back();
   b1->insns.splice(b1->insns.begin(), b2->insns, b2->insns.begin(), iter);
   b1->insns.splice(b1->insns.end(), b2->insns, iter, b2->insns.end());
   b1->insns.back()->remove_use_def();
   b1->insns.pop_back();
   b1->insns.emplace_back(br);
+  mid_bb->change_succ(b2, succ);
+  succ->change_prev(b2, mid_bb);
+  for (auto iter = cur_func->bbs.begin(); iter != cur_func->bbs.end();) {
+    if (iter->get() == b2) {
+      for (auto &inst : iter->get()->insns) {
+        inst->remove_use_def();
+      }
+      iter = cur_func->bbs.erase(iter);
+    } else {
+      iter++;
+    }
+  }
 }
 
 void loop_fusion(Function *func) {
@@ -212,7 +288,7 @@ void loop_fusion(Function *func) {
     while (stack.size()) {
       auto bb = stack.back();
       stack.pop_back();
-      if(loop_bbs[loop.get()].count(bb)){
+      if (loop_bbs[loop.get()].count(bb)) {
         continue;
       }
       loop_bbs[loop.get()].insert(bb);
@@ -231,7 +307,7 @@ void loop_fusion(Function *func) {
   }
   bool fused = false;
   for (int i = 1; i < func->loops.size(); i++) {
-    if(fused){
+    if (fused) {
       break;
     }
     if ((!func->loops[i - 1]->no_inner) || (!func->loops[i]->no_inner)) {
@@ -247,99 +323,50 @@ void loop_fusion(Function *func) {
         cond_1.update_op == cond_2.update_op) {
       auto loop_1 = func->loops[i].get();
       auto loop_2 = func->loops[i - 1].get();
-      if(loop_1->outer != loop_2->outer){
+      if (loop_1->outer != loop_2->outer) {
         continue;
       }
       auto mid_bb = loop_2->header->idom;
-      if(!loop_1->header->succ.count(mid_bb)){
+      if (!loop_1->header->succ.count(mid_bb)) {
         continue;
       }
-      // unordered_set<Reg> mid_use_regs;
+      unordered_set<Reg> mid_phi_defs;
       unordered_set<Reg> loop_1_defs;
       unordered_set<Reg> loop_2_uses;
-      // for(auto &inst : mid_bb->insns){
-      //   mid_use_regs.merge(inst->use());
-      // }
+
       bool check = true;
-      for(auto &inst : loop_1->header->insns){
-        if(!check){
-          break;
-        }
-        TypeCase(output, ir::insns::Output *, inst.get()){
-          loop_1_defs.insert(output->dst);
-          TypeCase(memuse, ir::insns::MemUse *, output){
-            auto e_use = get_effective_use(memuse, loop_1->header);
-            for(auto each : e_use){
-              TypeCase(memdef, ir::insns::MemDef *, each){
-                if(memdef->dep != memuse->dep || memdef->store_dst != memuse->load_src){
-                  check = false;
-                  break;
-                }
-              } else {
-                check = false;
-                break;
-              }
+      // 添加判断机制
+      auto b1 = loop_1->header;
+      auto b2 = loop_2->header;
+      for(auto &inst : mid_bb->insns){
+        bool is_phi = false;
+        bool is_const = false;
+        TypeCase(phi, ir::insns::Phi *, inst.get()){
+          // 使用、改变，不能同时满足
+          for(auto each : func->use_list[phi->dst]){
+            TypeCase(use_phi, ir::insns::Phi *, each){
+              is_phi = true;
+            } else {
+              is_const = true;
             }
           }
         }
-      }
-      if(!check){
-        continue;
-      }
-      for(auto &inst : loop_2->header->insns){
-        loop_2_uses.merge(inst->use());        
-      }
-      for(auto use : loop_2_uses){
-        if(loop_1_defs.count(use)){
+        if(is_const && is_phi){
           check = false;
           break;
         }
       }
-      if(!check){
+      if (!check) {
         continue;
       }
       unordered_map<Reg, Reg> phi_map;
-      for(auto &inst : mid_bb->insns){
-        TypeCase(phi, ir::insns::Phi *, inst.get()){
+      for (auto &inst : mid_bb->insns) {
+        TypeCase(phi, ir::insns::Phi *, inst.get()) {
           phi_map[phi->dst] = phi->incoming.at(loop_1->header);
         }
       }
       copy_propagation(func->use_list, cond_2.var, cond_1.var);
       fuse_loops(loop_1, loop_2, cond_1, cond_2, phi_map);
-      BasicBlock *succ;
-      for(auto each : loop_2->header->succ){
-        if(each == loop_2->header){
-          continue;
-        }
-        succ = each;
-      }
-      auto iter = succ->insns.begin();
-      for(; iter != succ->insns.end();iter++){
-        TypeCase(phi, ir::insns::Phi *, iter->get()){
-          for(auto prev : loop_1->header->prev){
-            phi->incoming[prev] = phi->incoming.at(mid_bb);
-          }
-          phi->incoming[loop_1->header] = phi->incoming.at(loop_2->header);
-          phi->bb = mid_bb;
-          phi->incoming.erase(mid_bb);
-          phi->incoming.erase(loop_2->header);
-        } else {
-          break;
-        }
-      }
-      mid_bb->insns.splice(mid_bb->insns.begin(), succ->insns, succ->insns.begin(), iter);
-      mid_bb->change_succ(loop_2->header, succ);
-      succ->change_prev(loop_2->header, mid_bb);
-      for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-        if(iter->get() == loop_2->header){
-          for(auto &inst : iter->get()->insns){
-            inst->remove_use_def();
-          }
-          iter = func->bbs.erase(iter);
-        } else {
-          iter++;
-        }
-      }
       fused = true;
     }
   }
