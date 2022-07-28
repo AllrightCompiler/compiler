@@ -26,14 +26,15 @@ void duplicate_load_store_elimination(Function *func) {
         }
       }
       TypeCase(memdef, ir::insns::MemDef *, iter->get()) {
-        auto dep = func->def_list.at(memdef->dep);
-        TypeCase(def, ir::insns::MemDef *, dep){
-          if(memdef->uses_before_def.size() == 0 && def->bb == memdef->bb && memdef->store_dst == def->store_dst){
-            def->remove_use_def();
-            removable_inst.insert(def);
+        if(func->def_list.count(memdef->dep)){
+          auto dep = func->def_list.at(memdef->dep);
+          TypeCase(def, ir::insns::MemDef *, dep){
+            if(memdef->uses_before_def.size() == 0 && def->bb == memdef->bb && memdef->store_dst == def->store_dst){
+              def->remove_use_def();
+              removable_inst.insert(def);
+            }
           }
         }
-
       }
       iter++;
     }

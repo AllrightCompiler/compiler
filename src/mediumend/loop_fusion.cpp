@@ -375,6 +375,10 @@ void loop_fusion(Function *func) {
           check = false;
           break;
         }
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          check = false;
+          break;
+        }
       }
       for(auto &inst : b1->insns){
         TypeCase(memdef, ir::insns::MemDef *, inst.get()){
@@ -396,6 +400,10 @@ void loop_fusion(Function *func) {
             }
           }
         }
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          check = false;
+          break;
+        }
       }
       for(auto &inst : b2->insns){
         TypeCase(memdef, ir::insns::MemDef *, inst.get()){
@@ -416,6 +424,10 @@ void loop_fusion(Function *func) {
               break;
             }
           }
+        }
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          check = false;
+          break;
         }
       }
       if (!check) {
