@@ -36,14 +36,14 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   // clean_hodgepodge,
   // array_ssa_destruction,
 
-  loop_unroll,
-
   function_inline,
   
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,
   array_ssa_destruction,
+
+  loop_unroll,
 
   gvn_gcm,
   clean_hodgepodge,
