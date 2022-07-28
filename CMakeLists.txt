@@ -11,7 +11,7 @@ file(GLOB_RECURSE SRC "src/*.cpp")
 include_directories(src)
 include_directories(3rd_party/antlr4-runtime)
 
-# add_subdirectory(3rd_party/antlr4-runtime)
+add_subdirectory(3rd_party/antlr4-runtime)
 
 add_executable(compiler ${SRC})
-target_link_libraries(compiler antlr4-runtime)
+target_link_libraries(compiler antlr4_runtime)
