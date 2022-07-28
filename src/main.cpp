@@ -92,9 +92,9 @@ int main(int argc, char *argv[]) {
     ir_gen.visit_compile_unit(ast);
 
     auto &ir_program = ir_gen.get_program();
-    if (has_option(argc, argv, "-O2")) {
+    // if (has_option(argc, argv, "-O2")) {
       mediumend::run_medium(ir_program.get());
-    }
+    // }
     if (has_option(argc, argv, "--ir")) {
       os << *ir_program;
       return 0;
@@ -107,7 +107,7 @@ int main(int argc, char *argv[]) {
     } else {
       // TODO: 检查是否可用于LLVM后端
       // split_critical_edges后phi函数的incoming <bb, reg> pair中reg可能并不在bb中定义
-      // mediumend::split_critical_edges(ir_program.get());
+      mediumend::split_critical_edges(ir_program.get());
       auto program = armv7::translate(*ir_program);
       armv7::backend_passes(*program);
       armv7::emit_global(os, *ir_program);

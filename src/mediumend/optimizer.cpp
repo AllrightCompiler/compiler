@@ -27,41 +27,41 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
 std::vector<std::function<void(ir::Program *)> > passes = {
   main_global_var_to_local,
   mem2reg,
-  remove_unused_function,
-  main_global_var_to_local,
-  mark_pure_func, // 纯函数可以用来做GVN和无用代码移除
+  // remove_unused_function,
+  // main_global_var_to_local,
+  // mark_pure_func, // 纯函数可以用来做GVN和无用代码移除
 
+  // // array_mem2reg,
+  // // gvn_gcm,
+  // // clean_hodgepodge,
+  // // array_ssa_destruction,
+
+  // loop_unroll,
+
+  // function_inline,
+  
   // array_mem2reg,
   // gvn_gcm,
   // clean_hodgepodge,
   // array_ssa_destruction,
 
-  loop_unroll,
+  // gvn_gcm,
+  // clean_hodgepodge,
+  // clean_useless_cf,
 
-  function_inline,
-  
-  array_mem2reg,
-  gvn_gcm,
-  clean_hodgepodge,
-  array_ssa_destruction,
+  // remove_uneffective_inst,
+  // remove_useless_loop,
+  // clean_hodgepodge,
 
-  gvn_gcm,
-  clean_hodgepodge,
-  clean_useless_cf,
+  // main_global_var_to_local,
+  // mem2reg,
 
-  remove_uneffective_inst,
-  remove_useless_loop,
-  clean_hodgepodge,
+  // operator_strength_reduction,
+  // gvn_gcm,
+  // clean_hodgepodge,
+  // clean_useless_cf,
 
-  main_global_var_to_local,
-  mem2reg,
-
-  operator_strength_reduction,
-  gvn_gcm,
-  clean_hodgepodge,
-  clean_useless_cf,
-
-  operator_strength_promotion,
+  // operator_strength_promotion,
 };
 
 void clean_hodgepodge(ir::Program *prog) {
