@@ -319,12 +319,12 @@ void gvn(Function *f) {
               auto new_ins = new ir::insns::LoadImm(binary->dst, constval);
               new_ins->bb = binary->bb;
               binary->remove_use_def();
-              insn.reset(new_ins);
               new_ins->add_use_def();
-              hashTable[insn.get()] = binary->dst;
+              hashTable[new_ins] = binary->dst;
               hashTable_loadimm[constval] = binary->dst;
               constMap[binary->dst] = constval;
               rConstMap[constval] = binary->dst;
+              insn.reset(new_ins);
             }
           } else {
             auto reg = std::get<Reg>(ret.value());
