@@ -8,6 +8,11 @@
 
 namespace mediumend {
 
+// IMPORTANT: if add new pass, modify PASS_MAP in optimizer.cpp
+extern const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP;
+// define default passes in optimizer.cpp
+extern std::vector<std::function<void(ir::Program *)> > passes;
+
 void remove_unused_function(ir::Program *prog);
 void mem2reg(ir::Program *prog);
 void constant_propagation(ir::Program *prog);
@@ -25,15 +30,11 @@ void array_mem2reg(ir::Program *prog);
 void array_ssa_destruction(ir::Program *prog);
 void remove_useless_loop(ir::Program * prog);
 void clean_hodgepodge(ir::Program *prog);
+void loop_fusion(ir::Program *prog);
 
-// IMPORTANT: if add new pass, modify PASS_MAP in optimizer.cpp
-extern const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP;
-// define default passes in optimizer.cpp
-extern std::vector<std::function<void(ir::Program *)> > passes;
-
+void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &op1, const ConstValue &op2);
-void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 
 inline void run_medium(ir::Program *prog) {
   for (auto &func : prog->functions){
