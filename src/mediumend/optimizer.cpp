@@ -20,6 +20,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"array_ssa_destruction", array_ssa_destruction},
   {"remove_useless_loop", remove_useless_loop},
   {"clean_hodgepodge", clean_hodgepodge},
+  {"loop_unroll", loop_unroll},
 };
 
 // define default passes here
@@ -34,6 +35,8 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   // gvn_gcm,
   // clean_hodgepodge,
   // array_ssa_destruction,
+
+  loop_unroll,
 
   function_inline,
   

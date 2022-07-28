@@ -410,6 +410,9 @@ bool is_pinned(Instruction *inst) {
       return true;
     }
   }
+  TypeCase(call, ir::insns::MemDef *, inst) {
+    if (inst->bb->func->name != "main") return true;
+  }
   return false;
 }
 
