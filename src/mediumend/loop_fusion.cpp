@@ -61,7 +61,7 @@ unordered_set<Instruction *> get_effective_use(Instruction *inst,
     }
     TypeCase(memdef, ir::insns::MemDef *, inst) { ret.insert(memdef); }
     TypeCase(call, ir::insns::Call *, inst) { ret.insert(call); }
-    TypeCase(store, ir::insns::Store *, inst) { ret.insert(store); }
+    TypeCase(memuse, ir::insns::MemUse *, inst) { ret.insert(memuse); }
   }
   return ret;
 }
@@ -195,6 +195,7 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
   }
   auto iter = mid_bb->insns.begin();
   auto idom_prev = b1->idom;
+  unordered_set<Reg> phi_defs;
   for (; iter != mid_bb->insns.end();) {
     TypeCase(phi, ir::insns::Phi *, iter->get()){
       auto uses = phi->use();
@@ -203,10 +204,22 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
           phi->change_use(each, reorder_map.at(each));
         }
       }
+      phi_defs.insert(phi->dst);
       iter++;
     } else {
       TypeCase(term, ir::insns::Terminator *, iter->get()){
         break;
+      }
+      bool move = true;
+      auto uses = iter->get()->use();
+      for (auto each : uses) {
+        if (phi_defs.count(each)) {
+          move = false;
+        }
+      }
+      if(!move){
+        iter++;
+        continue;
       }
       auto inst = iter->release();
       inst->bb = idom_prev;
@@ -354,6 +367,48 @@ void loop_fusion(Function *func) {
         if(is_const && is_phi){
           check = false;
           break;
+        }
+      }
+      for(auto &inst : b1->insns){
+        TypeCase(memdef, ir::insns::MemDef *, inst.get()){
+          auto effect_inst = get_effective_use(memdef, b1);
+          for(auto each_use : effect_inst){
+            TypeCase(memuse, ir::insns::MemUse *, each_use){
+              if(memuse->load_src != memdef->store_dst || memuse->dep != memdef->dep){
+                check = false;
+                break;
+              }
+            } else TypeCase(use_memdef, ir::insns::MemDef *, each_use){ 
+              if(memdef != use_memdef){
+                check = false;
+                break;  
+              }
+            } else {
+              check = false;
+              break;
+            }
+          }
+        }
+      }
+      for(auto &inst : b2->insns){
+        TypeCase(memdef, ir::insns::MemDef *, inst.get()){
+          auto effect_inst = get_effective_use(memdef, b2);
+          for(auto each_use : effect_inst){
+            TypeCase(memuse, ir::insns::MemUse *, each_use){
+              if(memuse->load_src != memdef->store_dst || memuse->dep != memdef->dep){
+                check = false;
+                break;
+              }
+            } else TypeCase(use_memdef, ir::insns::MemDef *, each_use){ 
+              if(memdef != use_memdef){
+                check = false;
+                break;  
+              }
+            } else {
+              check = false;
+              break;
+            }
+          }
         }
       }
       if (!check) {
