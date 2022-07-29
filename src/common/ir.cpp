@@ -654,14 +654,9 @@ void MemUse::add_use_def() {
 }
 
 void MemUse::remove_use_def() {
-  for(auto inst : bb->func->use_list[dst]) {
-    TypeCase(memdef, ir::insns::MemDef *, inst) {
-      memdef->uses_before_def.erase(dst);
-    }
-  }
+  Output::remove_use_def();
   bb->func->use_list[dep].erase(this);
   bb->func->use_list[load_src].erase(this);
-  Output::remove_use_def();
 }
 
 void MemUse::change_use(Reg old_reg, Reg new_reg) {
@@ -715,14 +710,9 @@ void MemDef::change_use(Reg old_reg, Reg new_reg) {
   }
   if(uses_before_def.count(old_reg)){
     uses_before_def.erase(old_reg);
+    uses_before_def.insert(new_reg);
+    bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
-    if(!bb->func->def_list.count(new_reg)){
-      return;
-    }
-    TypeCase(memuse, ir::insns::MemUse *, bb->func->def_list.at(new_reg)){
-      uses_before_def.insert(new_reg);
-      bb->func->use_list[new_reg].insert(this);
-    }
   }
 }
 
