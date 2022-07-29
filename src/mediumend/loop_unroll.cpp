@@ -22,7 +22,9 @@ struct SimpleLoopInfo {
   int end; // const end, available when type = 1
   Reg end_reg;
   Reg new_end_reg;
+  Reg cond_reg;
   BinaryOp cond_op;
+  Instruction *into_cond; // comparation at init, outside loop
   int inst_cnt;
   BasicBlock *exit_prev;
   BasicBlock *exit;
@@ -58,9 +60,13 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
     }
   }
   info.exit_prev = exit_prev;
+  BasicBlock *into_entry = nullptr;
   for (auto bb : entry->prev) {
     if (bb->loop != nullptr && bb->loop == loop) {
       if (bb != exit_prev) return info; // multiple back edge
+    } else {
+      if (into_entry == nullptr) into_entry = bb;
+      else return info; // multiple ways into loop
     }
   }
   int type = 2;
@@ -77,6 +83,7 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
         type = 1;
       } else info.end_reg = binary_cond->src2;
       info.cond_op = binary_cond->op;
+      info.cond_reg = binary_cond->dst;
       if (binary_cond->bb->func->has_param(binary_cond->src1)) return info;
       TypeCase(binary_update, ir::insns::Binary *, binary_cond->bb->func->def_list.at(binary_cond->src1)) {
         if (binary_update->dst.type != Int) return info;
@@ -107,6 +114,13 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
         } else return info; // no phi inst
       } else return info; // update not binary inst
     } else return info; // cond not binary
+  } else assert(false);
+  TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
+    TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
+      assert(is_cmp(into_binary_cond));
+      if (into_binary_cond->src1 != info.end_reg && into_binary_cond->src2 != info.end_reg) return info; // not loop invariant
+      info.into_cond = into_binary_cond;
+    } else return info;
   } else assert(false);
   info.loop_type = type;
   return info;
@@ -208,7 +222,7 @@ void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *ne
         succ_bb->prev.insert(new_bb);
       }
     } else if (succ_bb == exit) {
-      if (info.loop_type == 0 || last_turn) {
+      if (info.loop_type == 0 || (info.loop_type == 3 && last_turn)) {
         new_bb->succ.insert(succ_bb);
         succ_bb->prev.insert(new_bb);
       }
@@ -299,10 +313,7 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     auto entry = loop->header;
     auto new_entry = bb_map[map_curid][loop->header];
     if (l == 1) loop1_entry = new_entry;
-    for (auto entry_prev_bb : entry->prev) {
-      if (entry_prev_bb->loop == nullptr || entry_prev_bb->loop != loop) {
-        continue; // bb not in loop
-      }
+    for (auto entry_prev_bb : back_paths) {
       if (l == 1) { // delayed to make loop0 clean
         loop0_to_entry.insert(bb_map[!map_curid][entry_prev_bb]);
       } else {
@@ -410,8 +421,17 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
       } else break;
     }
     // 5. Restore loop end
-    Instruction *last_br = bb_map[map_curid].at(info.exit_prev)->insns.back().get();
-    last_br->change_use(info.new_end_reg, info.end_reg);
+    Reg new_cond_reg = reg_map[map_curid].at(info.cond_reg);
+    Instruction *binary_cond = func->def_list.at(new_cond_reg);
+    Reg new_end_reg = info.new_end_reg;
+    if (reg_map[map_curid].count(info.new_end_reg)) {
+      new_end_reg = reg_map[map_curid].at(info.new_end_reg);
+    }
+    Reg old_end_reg = info.end_reg;
+    if (reg_map[map_curid].count(info.end_reg)) {
+      old_end_reg = reg_map[map_curid].at(info.end_reg);
+    }
+    binary_cond->change_use(new_end_reg, old_end_reg);
   }
   // Modify Loop0 entry's phi & prev
   if (info.loop_type != 0) { // delete phi & prev
@@ -574,7 +594,7 @@ void loop_unroll(ir::Function *func) {
       } else loop_info.loop_type = 2;
     }
     if (loop_info.loop_type == 2) { // Decrease end by unroll * step, therefore erase branches jump out in middle
-      Instruction *last_br = loop_info.exit_prev->insns.back().get();
+      Instruction *binary_cond = func->def_list.at(loop_info.cond_reg);
       Reg new_end = func->new_reg(Int);
       Reg imm = func->new_reg(Int);
       auto loadimm_offset = new ir::insns::LoadImm(imm, ConstValue(loop_info.step * unroll_cnt));
@@ -587,8 +607,9 @@ void loop_unroll(ir::Function *func) {
         inst_end->bb->insert_after_inst(inst_end, binary_new_end);
         inst_end->bb->insert_after_inst(inst_end, loadimm_offset);
       }
-      last_br->change_use(loop_info.end_reg, new_end);
+      binary_cond->change_use(loop_info.end_reg, new_end);
       loop_info.new_end_reg = new_end; // save for later use
+      loop_info.into_cond->change_use(loop_info.end_reg, new_end);
     }
     loop_unroll(func, loop, loop_info, loop_bbs, unroll_cnt);
   }
