@@ -51,10 +51,10 @@ std::vector<std::function<void(ir::Program *)> > passes = {
 
   // loop_unroll,
 
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // constant_propagation,
-  // clean_useless_cf,
+  gvn_gcm,
+  clean_hodgepodge,
+  constant_propagation,
+  clean_useless_cf,
 
   // remove_uneffective_inst,
   // remove_useless_loop,
