@@ -38,7 +38,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   // clean_hodgepodge,
   // array_ssa_destruction,
 
-  // function_inline,
+  function_inline,
   
   // array_mem2reg,
   // gvn_gcm,
