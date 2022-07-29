@@ -90,6 +90,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         }
         inst_iter->get()->remove_use_def();
         inst_iter->reset(new ir::insns::Jump(bb2bb[callee->bbs.front().get()]));
+        inst_iter->get()->bb = inst_bb;
         inst_iter++;
         break;
       }

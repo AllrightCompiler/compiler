@@ -23,6 +23,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"loop_fusion", loop_fusion},
   {"loop_unroll", loop_unroll},
   {"duplicate_load_store_elimination", duplicate_load_store_elimination},
+  {"remove_zero_global_def", remove_zero_global_def}
 };
 
 // define default passes here
@@ -39,11 +40,11 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   // array_ssa_destruction,
 
   function_inline,
-  
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,
   clean_useless_cf,
+  remove_zero_global_def,
   loop_fusion,
   gvn_gcm,
   duplicate_load_store_elimination,
