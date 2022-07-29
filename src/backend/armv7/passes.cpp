@@ -33,7 +33,7 @@ void backend_passes(Program &p) {
   }
 }
 
-bool is_add_sub_imm(int x) { return is_imm8m(x) || is_imm12(x); }
+bool is_add_sub_imm(int x) { return is_imm8m(x); }
 
 int compute_shift(ShiftType type, int r, int s) {
   switch (type) {
