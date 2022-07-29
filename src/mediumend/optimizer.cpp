@@ -40,14 +40,14 @@ std::vector<std::function<void(ir::Program *)> > passes = {
 
   function_inline,
   
-  // array_mem2reg,
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // clean_useless_cf,
+  array_mem2reg,
+  gvn_gcm,
+  clean_hodgepodge,
+  clean_useless_cf,
   // loop_fusion,
   // gvn_gcm,
   // duplicate_load_store_elimination,
-  // array_ssa_destruction,
+  array_ssa_destruction,
 
   // loop_unroll,
 
