@@ -178,6 +178,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
       if(branch->true_target == branch->false_target){
         branch->remove_use_def();
         inst.reset(new ir::insns::Jump(branch->true_target));
+        inst->bb = bb;
         ret = true;
       }
     }

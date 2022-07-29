@@ -22,6 +22,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"clean_hodgepodge", clean_hodgepodge},
   {"loop_fusion", loop_fusion},
   {"duplicate_load_store_elimination", duplicate_load_store_elimination},
+  {"remove_zero_global_def", remove_zero_global_def}
 };
 
 // define default passes here

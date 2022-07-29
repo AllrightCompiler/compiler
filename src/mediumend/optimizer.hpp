@@ -32,6 +32,7 @@ void remove_useless_loop(ir::Program * prog);
 void clean_hodgepodge(ir::Program *prog);
 void loop_fusion(ir::Program *prog);
 void duplicate_load_store_elimination(ir::Program *prog);
+void remove_zero_global_def(ir::Program *prog);
 
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);

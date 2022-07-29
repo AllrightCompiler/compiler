@@ -549,6 +549,9 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
     if(use_list.count(output->dst)) {
       for (auto i : use_list.at(output->dst)) {
         use = nullptr;
+        if(output->dst.id == 166){
+          int a = 1;
+        }
         schedule_late(visited, placement, cfg, bbs, use_list, i);
         TypeCase(phi, ir::insns::Phi *, i) {
           for (auto pair : phi->incoming) {
