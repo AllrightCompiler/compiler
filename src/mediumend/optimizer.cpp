@@ -39,11 +39,11 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   // array_ssa_destruction,
 
   function_inline,
-  
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,
   clean_useless_cf,
+  remove_zero_global_def,
   loop_fusion,
   gvn_gcm,
   duplicate_load_store_elimination,
