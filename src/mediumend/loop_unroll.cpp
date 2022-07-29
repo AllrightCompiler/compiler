@@ -11,7 +11,7 @@ using ir::Loop;
 
 static const int UNROLL_CNT = 4;
 static int map_curid;
-static unordered_map<Reg, Reg> reg_map[2]; // contains only regs inside loop, two maps representing now and prev
+static unordered_map<Reg, Reg> reg_map[3]; // contains only regs inside loop, two maps representing now and prev, 2 used for temp storage
 static unordered_map<BasicBlock*, BasicBlock*> bb_map[2]; // contains only bbs inside loop, two maps representing now and prev
 
 // Simple loop: one exit, one back edge to entry (and only one exit_prev), cond_var appear twice (phi, update)
@@ -23,12 +23,15 @@ struct SimpleLoopInfo {
   Reg end_reg;
   Reg new_end_reg;
   Reg cond_reg;
+  Reg indvar_reg; // ind var after updated in loop
   BinaryOp cond_op;
   ir::insns::Binary *into_cond; // comparation at init, outside loop
   ir::insns::Branch *into_br; // br at init, outside loop
   int inst_cnt;
   BasicBlock *exit_prev;
   BasicBlock *exit;
+  BasicBlock *into_entry;
+  BasicBlock *new_into_entry;
 };
 
 bool is_cmp(ir::insns::Binary *binary) {
@@ -70,6 +73,7 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
       else return info; // multiple ways into loop
     }
   }
+  info.into_entry = into_entry;
   int type = 2;
   Instruction *inst_cond = exit_prev->insns.back().get();
   TypeCase(br_cond, ir::insns::Branch *, inst_cond) {
@@ -113,6 +117,7 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
             info.start = init_imm->imm.iv;
           } else return info; // i init is not imm
         } else return info; // no phi inst
+        info.indvar_reg = binary_update->dst;
       } else return info; // update not binary inst
     } else return info; // cond not binary
   } else assert(false);
@@ -187,17 +192,26 @@ Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry
   } else TypeCase(phi, ir::insns::Phi *, inst) {
     auto new_inst = new ir::insns::Phi(reg_map_if(phi->dst), phi->array_ssa);
     if (inst->bb == entry) { // new entry
+      bool first = true;
       for (auto pair : phi->incoming) {
         auto income_bb = pair.first;
         if (income_bb->loop == nullptr || income_bb->loop != entry->loop) { // not in loop
           continue;
         }
-        auto mapped_bb = bb_map[!map_curid].at(income_bb);
-        auto mapped_reg = reg_map[!map_curid].at(pair.second);
-        new_inst->incoming[mapped_bb] = mapped_reg;
+        if (info.loop_type == 3) {
+          if (first) {
+            auto mapped_reg = reg_map[!map_curid].at(pair.second);
+            new_inst->incoming[info.new_into_entry] = mapped_reg;
+            first = false;
+          }
+        } else {
+          auto mapped_bb = bb_map[!map_curid].at(income_bb);
+          auto mapped_reg = reg_map[!map_curid].at(pair.second);
+          new_inst->incoming[mapped_bb] = mapped_reg;
+        }
         if (info.loop_type == 3) { // in remaining loop
-          mapped_bb = bb_map[map_curid].at(income_bb);
-          mapped_reg = reg_map[map_curid].at(pair.second);
+          auto mapped_bb = bb_map[map_curid].at(income_bb);
+          auto mapped_reg = reg_map[map_curid].at(pair.second);
           new_inst->incoming[mapped_bb] = mapped_reg;
         }
       }
@@ -240,6 +254,7 @@ void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *ne
 }
 
 void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unordered_set<BasicBlock *> &loop_bbs, const int unroll_cnt) {
+  debug(std::cerr) << "loop unroll type " << info.loop_type << " " << func->name << ":" << loop->header->label << std::endl;
   map_curid = 0;
   bb_map[0].clear();
   bb_map[1].clear();
@@ -371,8 +386,14 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     }
   }
   if (info.loop_type == 2) { // remaining loop
+    reg_map[2] = reg_map[map_curid]; // save reg_map for later restore
     map_curid ^= 1;
     // 1. Create new bbs
+    BasicBlock *into_entry = info.into_br->bb;
+    BasicBlock *new_into_entry = new BasicBlock;
+    new_into_entry->func = func;
+    func->bbs.emplace_back(new_into_entry);
+    new_into_entry->label = "unroll_" + std::to_string(unroll_cnt) + "_" + into_entry->label;
     for (auto bb : loop_bbs) {
       BasicBlock *new_bb = new BasicBlock;
       new_bb->func = func;
@@ -381,21 +402,70 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
       new_bb->label = "unroll_" + std::to_string(unroll_cnt) + "_" + bb->label;
       bb_map[map_curid][bb] = new_bb;
     }
-    // 2. Connect entry with prev loop
-    auto entry = loop->header;
+    // 2. Connect into_entry, entry with prev loop
+    auto into_entry_ter_inst = into_entry->insns.back().get();
+    TypeCase(br, ir::insns::Branch *, into_entry_ter_inst) {
+      Reg new_cond = func->new_reg(Int);
+      auto new_into_entry_br = new ir::insns::Branch(new_cond, br->true_target, br->false_target);
+      auto new_into_entry_cond = new ir::insns::Binary(new_cond, info.into_cond->op, info.into_cond->src1, info.into_cond->src2);
+      Reg init_reg_i;
+      if (new_into_entry_cond->src1 == info.end_reg) {
+        init_reg_i = new_into_entry_cond->src2;
+      } else if (new_into_entry_cond->src2 == info.end_reg) {
+        init_reg_i = new_into_entry_cond->src1;
+      } else assert(false);
+      new_into_entry->push_back(new_into_entry_br);
+      new_into_entry->push_front(new_into_entry_cond);
+      Reg new_phi_reg_i = Reg(Int, -1);
+      // add phi for merge init and last loop in new_into_entry, copy phis from entry to into_entry
+      for (auto &entry_inst : loop->header->insns) {
+        TypeCase(entry_phi, ir::insns::Phi *, entry_inst.get()) {
+          Reg new_phi_reg = func->new_reg(Int);
+          auto new_into_entry_phi = new ir::insns::Phi(new_phi_reg);
+          auto back_bb = bb_map[!map_curid].at(info.exit_prev); // only one back_path
+          new_into_entry_phi->incoming[back_bb] = reg_map[!map_curid].at(entry_phi->incoming.at(info.exit_prev));
+          new_into_entry_phi->incoming[into_entry] = entry_phi->incoming.at(into_entry);
+          new_into_entry->push_front(new_into_entry_phi);
+          if (entry_phi->incoming.at(info.exit_prev) == info.indvar_reg) {
+            new_phi_reg_i = new_phi_reg;
+          }
+          reg_map[!map_curid][entry_phi->incoming.at(info.exit_prev)] = new_phi_reg;
+        } else break;
+      }
+      assert(new_phi_reg_i.id != -1);
+      new_into_entry_cond->change_use(init_reg_i, new_phi_reg_i);
+      if (new_into_entry_br->true_target == loop->header) new_into_entry_br->true_target = bb_map[map_curid][loop->header];
+      else if (new_into_entry_br->false_target == loop->header) new_into_entry_br->false_target = bb_map[map_curid][loop->header];
+      else assert(false);
+      new_into_entry->succ.insert(new_into_entry_br->true_target);
+      new_into_entry_br->true_target->prev.insert(new_into_entry);
+      new_into_entry->succ.insert(new_into_entry_br->false_target);
+      new_into_entry_br->false_target->prev.insert(new_into_entry);
+      // modify into_entry's br to new_into_entry than exit
+      if (br->true_target == exit_bb) {
+        br->true_target = new_into_entry;
+      } else if (br->false_target == exit_bb) {
+        br->false_target = new_into_entry;
+      } else assert(false);
+    } else assert(false);
+    // modify into_entry's succ to new_into_entry than exit
+    into_entry->succ.erase(exit_bb);
+    into_entry->succ.insert(new_into_entry);
+    new_into_entry->prev.insert(into_entry);
     auto new_entry = bb_map[map_curid][loop->header];
     auto old_exit_prev = bb_map[!map_curid].at(info.exit_prev);
     auto new_exit_prev = bb_map[map_curid].at(info.exit_prev);
-    new_entry->prev.insert(old_exit_prev);
+    new_into_entry->prev.insert(old_exit_prev);
+    old_exit_prev->succ.insert(new_into_entry);
     new_entry->prev.insert(new_exit_prev);
     old_exit_prev->succ.erase(exit_bb);
-    old_exit_prev->succ.insert(new_entry);
     auto old_ter_inst = old_exit_prev->insns.back().get();
     TypeCase(br, ir::insns::Branch *, old_ter_inst) {
-      if (br->true_target == exit_bb) br->true_target = new_entry;
-      else if (br->false_target == exit_bb) br->false_target = new_entry;
+      if (br->true_target == exit_bb) br->true_target = new_into_entry;
+      else if (br->false_target == exit_bb) br->false_target = new_into_entry;
       else assert(false);
     } else assert(false);
+    info.new_into_entry = new_into_entry; // save for future use
     // 3. Fill new bbs
     // First create all new regs
     for (auto bb : loop_bbs) {
@@ -415,11 +485,16 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     for (auto &insn : exit_bb->insns) {
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         phi->remove_use_def();
-        for (auto bb : exit_paths) {
-          Reg reg = phi->incoming.at(bb);
-          if (reg_map[map_curid].count(reg)) reg = reg_map[map_curid].at(reg);
-          phi->incoming[bb_map[map_curid].at(bb)] = reg;
-        }
+        assert(exit_paths.size() == 1); // only one exit_prev
+        auto bb = *(exit_paths.begin());
+        // from new_into_entry
+        Reg reg = phi->incoming.at(bb);
+        if (reg_map[!map_curid].count(reg)) reg = reg_map[!map_curid].at(reg);
+        phi->incoming[new_into_entry] = reg;
+        // from the remaining loop
+        reg = phi->incoming.at(bb);
+        if (reg_map[map_curid].count(reg)) reg = reg_map[map_curid].at(reg);
+        phi->incoming[bb_map[map_curid].at(bb)] = reg;
         phi->add_use_def();
       } else break;
     }
@@ -447,12 +522,18 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     for (auto bb : exit_paths) { // only one exit_prev
       exit_bb->prev.erase(bb);
     }
+    if (info.loop_type == 2) {
+      exit_bb->prev.erase(info.into_entry); // because into_entry now points to new_into_entry
+    }
     // modify exit's phi
     for (auto &insn : exit_bb->insns) {
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         phi->remove_use_def();
-        for (auto bb : exit_paths) { // only one exit_prev
+        for (auto bb : exit_paths) {
           phi->incoming.erase(bb);
+        }
+        if (info.loop_type == 2) {
+          phi->incoming.erase(info.into_entry); // because into_entry now points to new_into_entry
         }
         phi->add_use_def();
       } else break;
@@ -473,7 +554,10 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
       } else break;
     }
   } else {
-    if (info.loop_type == 2) map_curid ^= 1; // correct map_cur_id
+    if (info.loop_type == 2) {
+      map_curid ^= 1; // correct map_cur_id
+      reg_map[map_curid] = reg_map[2]; // restore map
+    }
     vector<BasicBlock *> entry_prev_bb_to_insert;
     for (auto bb : back_paths) {
       entry_prev_bb_to_insert.push_back(bb_map[map_curid].at(bb));
@@ -539,6 +623,7 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
 }
 
 void loop_unroll(ir::Function *func) {
+  // if (func->name == "main") return;
   func->cfg->build();
   func->loop_analysis();
   for (auto &loop_ptr : func->loops) {
@@ -579,6 +664,7 @@ void loop_unroll(ir::Function *func) {
     }
     // Unroll this loop
     auto loop_info = get_loop_info(loop, loop_bbs, exit_bb);
+    if (loop_info.inst_cnt > 100) continue;
     loop_info.exit = exit_bb;
     int unroll_cnt = UNROLL_CNT;
     if (loop_info.loop_type == 1) {
@@ -592,7 +678,7 @@ void loop_unroll(ir::Function *func) {
       } else assert(false);
       assert(full_cnt >= 0);
       if (full_cnt == 0 || full_cnt == 1) continue;
-      if (full_cnt < 50 && full_cnt * loop_info.inst_cnt <= 500) {
+      if (full_cnt < 100 && full_cnt * loop_info.inst_cnt <= 500) {
         unroll_cnt = full_cnt; // fully unroll
       } else loop_info.loop_type = 2;
     }

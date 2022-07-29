@@ -47,11 +47,14 @@ std::vector<std::function<void(ir::Program *)> > passes = {
 
   gvn_gcm,
   clean_hodgepodge,
+  constant_propagation,
   clean_useless_cf,
 
   remove_uneffective_inst,
   remove_useless_loop,
   clean_hodgepodge,
+  constant_propagation,
+  clean_useless_cf,
 
   main_global_var_to_local,
   mem2reg,
@@ -59,6 +62,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   operator_strength_reduction,
   gvn_gcm,
   clean_hodgepodge,
+  constant_propagation,
   clean_useless_cf,
 
   operator_strength_promotion,
@@ -66,7 +70,6 @@ std::vector<std::function<void(ir::Program *)> > passes = {
 
 void clean_hodgepodge(ir::Program *prog) {
   remove_uneffective_inst(prog);
-  constant_propagation(prog);
   remove_unused_function(prog);
 }
 
