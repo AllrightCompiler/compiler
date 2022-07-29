@@ -24,7 +24,8 @@ struct SimpleLoopInfo {
   Reg new_end_reg;
   Reg cond_reg;
   BinaryOp cond_op;
-  Instruction *into_cond; // comparation at init, outside loop
+  ir::insns::Binary *into_cond; // comparation at init, outside loop
+  ir::insns::Branch *into_br; // br at init, outside loop
   int inst_cnt;
   BasicBlock *exit_prev;
   BasicBlock *exit;
@@ -118,9 +119,11 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
   TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
     TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
       assert(is_cmp(into_binary_cond));
+      // assert(into_binary_cond->src1 == info.end_reg || into_binary_cond->src2 == info.end_reg);
       if (into_binary_cond->src1 != info.end_reg && into_binary_cond->src2 != info.end_reg) return info; // not loop invariant
       info.into_cond = into_binary_cond;
     } else return info;
+    info.into_br = into_br_cond;
   } else assert(false);
   info.loop_type = type;
   return info;
@@ -609,7 +612,12 @@ void loop_unroll(ir::Function *func) {
       }
       binary_cond->change_use(loop_info.end_reg, new_end);
       loop_info.new_end_reg = new_end; // save for later use
-      loop_info.into_cond->change_use(loop_info.end_reg, new_end);
+      // into_entry cond change
+      Reg new_cond_reg = func->new_reg(Int);
+      auto new_into_cond = new ir::insns::Binary(new_cond_reg, loop_info.into_cond->op, loop_info.into_cond->src1, loop_info.into_cond->src2);
+      loop_info.into_cond->bb->insert_after_inst(loop_info.into_cond, new_into_cond); // create new cond
+      new_into_cond->change_use(loop_info.end_reg, new_end);
+      loop_info.into_br->change_use(loop_info.into_cond->dst, new_into_cond->dst);
     }
     loop_unroll(func, loop, loop_info, loop_bbs, unroll_cnt);
   }
