@@ -6,14 +6,20 @@ import sys
 import subprocess
 
 
-TIMEOUT = 10
+TIMEOUT = 60
 
 def unzip_packed_asm(zip_path):
     os.system(f'unzip {zip_path}')
 
 
-def get_answer(path: str) -> tuple[list[str], int]:
+def get_normalized_content(path: str) -> list[str]:
     content = open(path).read().splitlines()
+    content = list(map(lambda s: s.strip(), content))
+    return content
+
+
+def get_answer(path: str) -> tuple[list[str], int]:
+    content = get_normalized_content(path)
     return content[:-1], int(content[-1])
 
 
@@ -43,7 +49,7 @@ def judge_single(name, asm_dir, testcases_dir, temp_dir):
         
     answer_content, answer_exitcode = get_answer(answer)
     if proc.returncode != answer_exitcode \
-        or open(output).read().splitlines() != answer_content:
+        or get_normalized_content(output) != answer_content:
         print(f'\033[0;31m{name} Wrong Answer\033[0m')
         return False
         
@@ -72,4 +78,8 @@ def offline_judge(asm_dir, testcases_dir, temp_dir):
 if __name__ == '__main__':
     os.system('rm -r asm')
     unzip_packed_asm('asm.zip')
-    offline_judge('asm', 'functional', 'temp')
+
+    if len(sys.argv) > 1:
+        offline_judge('asm', 'performance', 'temp')
+    else:
+        offline_judge('asm', 'functional', 'temp')
