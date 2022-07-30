@@ -71,7 +71,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   constant_propagation,
   clean_useless_cf,
 
-  // operator_strength_promotion,
+  operator_strength_promotion,
 };
 
 void clean_hodgepodge(ir::Program *prog) {
