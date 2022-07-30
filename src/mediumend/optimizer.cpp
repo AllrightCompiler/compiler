@@ -44,9 +44,9 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   gvn_gcm,
   clean_hodgepodge,
 
-  // clean_useless_cf,
-  // remove_zero_global_def,
-  // loop_fusion,
+  clean_useless_cf,
+  remove_zero_global_def,
+  loop_fusion,
 
   gvn_gcm,
   clean_hodgepodge,
