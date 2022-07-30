@@ -62,14 +62,14 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   constant_propagation,
   clean_useless_cf,
 
-  // main_global_var_to_local,
-  // mem2reg,
+  main_global_var_to_local,
+  mem2reg,
 
-  // operator_strength_reduction,
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // constant_propagation,
-  // clean_useless_cf,
+  operator_strength_reduction,
+  gvn_gcm,
+  clean_hodgepodge,
+  constant_propagation,
+  clean_useless_cf,
 
   // operator_strength_promotion,
 };
