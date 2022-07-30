@@ -48,9 +48,9 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   // remove_zero_global_def,
   // loop_fusion,
 
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // duplicate_load_store_elimination,
+  gvn_gcm,
+  clean_hodgepodge,
+  duplicate_load_store_elimination,
   array_ssa_destruction,
 
   // loop_unroll,
