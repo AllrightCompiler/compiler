@@ -346,23 +346,16 @@ bool check_common_var(BasicBlock *b1, BasicBlock *b2, BasicBlock *mid_bb) {
     }
   }
   for(auto &inst : mid_bb->insns){
-    bool is_phi = false;
-    bool is_const = false;
     TypeCase(phi, ir::insns::Phi *, inst.get()){
       // 使用、改变，不能同时满足
       common_map[phi->dst] = common_map.at(phi->incoming.at(b1));
       for(auto each : cur_func->use_list[phi->dst]){
         TypeCase(use_phi, ir::insns::Phi *, each){
-          is_phi = true;
         } else {
-          is_const = true;
+          return false;
         }
       }
-      if(is_const && is_phi){
-        return false;
-      }
     }
-
     TypeCase(call, ir::insns::Call *, inst.get()){
       return false;
     }
