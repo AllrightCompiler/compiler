@@ -53,7 +53,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  // loop_unroll,
+  loop_unroll,
 
   gvn_gcm,
   clean_hodgepodge,
