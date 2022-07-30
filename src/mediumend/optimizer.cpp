@@ -30,54 +30,54 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
 std::vector<std::function<void(ir::Program *)> > passes = {
   main_global_var_to_local,
   mem2reg,
-  remove_unused_function,
-  main_global_var_to_local,
-  mark_pure_func, // 纯函数可以用来做GVN和无用代码移除
+  // remove_unused_function,
+  // main_global_var_to_local,
+  // mark_pure_func, // 纯函数可以用来做GVN和无用代码移除
 
+  // // array_mem2reg,
+  // // gvn_gcm,
+  // // clean_hodgepodge,
+  // // array_ssa_destruction,
+
+  // function_inline,
+  
   // array_mem2reg,
   // gvn_gcm,
   // clean_hodgepodge,
+  // clean_useless_cf,
+  // // loop_fusion,
+  // // gvn_gcm,
+  // // duplicate_load_store_elimination,
   // array_ssa_destruction,
 
-  function_inline,
-  
-  array_mem2reg,
-  gvn_gcm,
-  clean_hodgepodge,
-  clean_useless_cf,
-  // loop_fusion,
+  // // loop_unroll,
+
   // gvn_gcm,
-  // duplicate_load_store_elimination,
-  array_ssa_destruction,
+  // clean_hodgepodge,
+  // constant_propagation,
+  // clean_useless_cf,
 
-  // loop_unroll,
+  // remove_uneffective_inst,
+  // remove_useless_loop,
+  // clean_hodgepodge,
+  // constant_propagation,
+  // clean_useless_cf,
 
-  gvn_gcm,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
-
-  remove_uneffective_inst,
-  remove_useless_loop,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
-
+  // // main_global_var_to_local,
+  // // mem2reg,
   // main_global_var_to_local,
   // mem2reg,
-  main_global_var_to_local,
-  mem2reg,
 
+  // // operator_strength_reduction,
+  // // gvn_gcm,
+  // // clean_hodgepodge,
+  // // constant_propagation,
+  // // clean_useless_cf,
   // operator_strength_reduction,
   // gvn_gcm,
   // clean_hodgepodge,
   // constant_propagation,
   // clean_useless_cf,
-  operator_strength_reduction,
-  gvn_gcm,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
 
   // operator_strength_promotion,
 };
