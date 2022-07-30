@@ -32,19 +32,14 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   mem2reg,
   remove_unused_function,
   main_global_var_to_local,
-  mark_pure_func, // 纯函数可以用来做GVN和无用代码移除
-
-  // array_mem2reg,
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // array_ssa_destruction,
+  mark_pure_func,
 
   function_inline,
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,
   clean_useless_cf,
-  // remove_zero_global_def,
+  remove_zero_global_def,
   loop_fusion,
   gvn_gcm,
   duplicate_load_store_elimination,

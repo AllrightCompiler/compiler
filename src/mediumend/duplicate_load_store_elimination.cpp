@@ -65,78 +65,72 @@ void duplicate_load_store_elimination(ir::Program *prog) {
 void remove_zero_global_def(ir::Program *prog) {
   auto &func = prog->functions.at("main");
   unordered_set<Instruction *> none_zero_inst;
-  vector<BasicBlock *> stack;
+  unordered_set<Instruction *> stack;
   func.clear_visit();
-  stack.push_back(func.bbs.front().get());
   unordered_map<Reg, Reg> reg2base;
   unordered_map<std::string, Reg> name2reg;
-  while (stack.size()) {
-    bool changed = false;
-    auto bb = stack.back();
-    stack.pop_back();
-    for (auto &inst : bb->insns) {
-      if (none_zero_inst.count(inst.get())) {
-        continue;
-      }
-      TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
-        if (name2reg.count(loadaddr->var_name)) {
-          reg2base[loadaddr->dst] = name2reg.at(loadaddr->var_name);
-          continue;
-        }
-        reg2base[loadaddr->dst] = loadaddr->dst;
-        name2reg[loadaddr->var_name] = loadaddr->dst;
+  vector<BasicBlock *> dom_stack;
+  func.cfg->compute_dom();
+  dom_stack.push_back(func.bbs.front().get());
+  while(dom_stack.size()) {
+    auto bb = dom_stack.back();
+    dom_stack.pop_back();
+    for(auto &ins : bb->insns){
+      auto inst = ins.get();
+      TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
         if (prog->global_vars.at(loadaddr->var_name)->arr_val.get() &&
             prog->global_vars.at(loadaddr->var_name)->arr_val.get()->size() &&
             !none_zero_inst.count(loadaddr)) {
-          none_zero_inst.insert(loadaddr);
-          changed = true;
+          stack.insert(loadaddr);
         }
+        if(!name2reg.count(loadaddr->var_name)){
+          reg2base[loadaddr->dst] = loadaddr->dst;
+          name2reg[loadaddr->var_name] = loadaddr->dst;
+        }
+        reg2base[loadaddr->dst] = name2reg.at(loadaddr->var_name);
       }
-      TypeCase(memdef, ir::insns::MemDef *, inst.get()) {
+      TypeCase(memdef, ir::insns::MemDef *, inst) {
         auto def_val = func.def_list.at(memdef->store_val);
         TypeCase(loadimm, ir::insns::LoadImm *, def_val) {
           if (loadimm->imm != 0) {
-            none_zero_inst.insert(memdef);
-            changed = true;
+            stack.insert(memdef);
           }
         }
         else {
-          none_zero_inst.insert(inst.get());
-          changed = true;
+          stack.insert(inst);
         }
         reg2base[memdef->dst] = reg2base.at(memdef->dep);
-        if (none_zero_inst.count(func.def_list.at(memdef->dep)) &&
-            !none_zero_inst.count(memdef)) {
-          none_zero_inst.insert(memdef);
-          changed = true;
-        }
       }
-      TypeCase(phi, ir::insns::Phi *, inst.get()) {
-        if (phi->array_ssa) {
-          for (auto &use : phi->use()) {
-            auto use_def = func.def_list.at(use);
-            if (none_zero_inst.count(use_def)) {
-              if(!none_zero_inst.count(phi)){
-                none_zero_inst.insert(inst.get());
-                changed = true;
-              }
-            }
-            if (reg2base.count(use)) {
-              reg2base[phi->dst] = reg2base.at(use);
+      TypeCase(alloca, ir::insns::Alloca *, inst) {
+        stack.insert(inst);
+      }
+      TypeCase(phi, ir::insns::Phi *, inst){
+        if(phi->array_ssa){
+          for(auto each : phi->incoming){
+            if(reg2base.count(each.second)){
+              reg2base[phi->dst] = reg2base.at(each.second);
+              break;
             }
           }
         }
       }
-      TypeCase(alloca, ir::insns::Alloca *, inst.get()) {
-        none_zero_inst.insert(inst.get());
-        reg2base[alloca->dst] = alloca->dst;
-      }
     }
-    if (changed || !bb->visit) {
-      bb->visit = true;
-      for (auto suc : bb->succ) {
-        stack.push_back(suc);
-      }
+    for(auto each : bb->dom){
+      dom_stack.push_back(each);
+    }
+  }
+  while (stack.size()) {
+    bool changed = false;
+    auto iter = stack.begin();
+    auto inst = *iter;
+    stack.erase(iter);
+    if (none_zero_inst.count(inst)) {
+      continue;
+    }
+    none_zero_inst.insert(inst);
+    TypeCase(output, ir::insns::Output *, inst){
+      auto uses = func.use_list[output->dst];
+      stack.merge(uses);
     }
   }
   for (auto &each : func.bbs) {
