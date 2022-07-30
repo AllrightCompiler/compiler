@@ -23,6 +23,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"loop_fusion", loop_fusion},
   {"loop_unroll", loop_unroll},
   {"duplicate_load_store_elimination", duplicate_load_store_elimination},
+  {"remove_zero_global_def", remove_zero_global_def}
 };
 
 // define default passes here
@@ -31,21 +32,24 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   mem2reg,
   remove_unused_function,
   main_global_var_to_local,
-  mark_pure_func, // 纯函数可以用来做GVN和无用代码移除
-
-  // array_mem2reg,
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // array_ssa_destruction,
-
+  remove_uneffective_inst, // important! must done before mark_pure_func
+  mark_pure_func,
+  
+  gvn_gcm,
+  clean_hodgepodge,
+  
   function_inline,
   
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,
-  clean_useless_cf,
+
+  // clean_useless_cf,
+  // remove_zero_global_def,
   // loop_fusion,
+
   // gvn_gcm,
+  // clean_hodgepodge,
   // duplicate_load_store_elimination,
   array_ssa_destruction,
 

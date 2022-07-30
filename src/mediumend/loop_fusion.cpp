@@ -150,11 +150,18 @@ LoopCond get_loop_cond(Loop *loop, unordered_set<BasicBlock *> loop_bb) {
   return ret;
 }
 
-void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
-                unordered_map<Reg, Reg> &phi_map) {
+void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2) {
   auto b1 = to->header;
   auto b2 = from->header;
   auto mid_bb = b2->idom;
+  unordered_map<Reg, Reg> phi_map;
+  for (auto &inst : mid_bb->insns) {
+    TypeCase(phi, ir::insns::Phi *, inst.get()) {
+      phi_map[phi->dst] = phi->incoming.at(b1);
+    }
+  }
+  copy_propagation(cur_func->use_list, cond_2.var, cond_1.var);
+
   unordered_map<Reg, Reg> reorder_map;
   BasicBlock *succ;
   for (auto each : b2->succ) {
@@ -177,7 +184,13 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
       }
       auto raw = phi_map.at(phi->incoming.at(mid_bb));
       auto dst = phi->dst;
-      copy_propagation(cur_func->use_list, dst, raw);
+      auto use_list = cur_func->use_list[dst];
+      for(auto each : use_list){
+        if(each->bb == b2){
+          each->change_use(dst, raw);
+        }
+      }
+      // check here
       reorder_map[raw] = phi->incoming.at(b2);
     }
   }
@@ -213,7 +226,7 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
       bool move = true;
       auto uses = iter->get()->use();
       for (auto each : uses) {
-        if (phi_defs.count(each)) {
+        if (cur_func->def_list.count(each) && cur_func->def_list.at(each)->bb == mid_bb) {
           move = false;
         }
       }
@@ -297,6 +310,164 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2,
   }
 }
 
+bool check_common_var(BasicBlock *b1, BasicBlock *b2, BasicBlock *mid_bb) {
+  unordered_map<Reg, Reg> common_map;
+  unordered_map<Reg, Reg> used_map;
+  unordered_set<Reg> common_set;
+  for(auto &inst : b1->insns){
+    TypeCase(phi, ir::insns::Phi *, inst.get()){
+      common_map[phi->dst] = phi->dst;
+      common_map[phi->incoming.at(b1)] = phi->dst;
+    }
+    TypeCase(memdef, ir::insns::MemDef *, inst.get()){
+      auto effect_inst = get_effective_use(memdef, b1);
+      for(auto each_use : effect_inst){
+        TypeCase(memuse, ir::insns::MemUse *, each_use){
+          if(memuse->load_src != memdef->store_dst || memuse->dep != memdef->dep){
+            return false;
+          }
+        } else TypeCase(use_memdef, ir::insns::MemDef *, each_use){ 
+          if(memdef != use_memdef){
+            return false;
+          }
+        } else {
+          return false;
+        }
+      }
+    }
+    TypeCase(call, ir::insns::Call *, inst.get()){
+      return false;
+    }
+    TypeCase(output, ir::insns::Output *, inst.get()){
+      auto uses = inst->use();
+      for(auto each : uses){
+        if(common_map.count(each)){
+          used_map[output->dst] = common_map.at(each);
+        }
+      }
+    }
+  }
+  for(auto &inst : mid_bb->insns){
+    TypeCase(phi, ir::insns::Phi *, inst.get()){
+      // 使用、改变，不能同时满足
+      common_map[phi->dst] = common_map.at(phi->incoming.at(b1));
+      for(auto each : cur_func->use_list[phi->dst]){
+        TypeCase(use_phi, ir::insns::Phi *, each){
+        } else {
+          return false;
+        }
+      }
+    }
+    TypeCase(call, ir::insns::Call *, inst.get()){
+      return false;
+    }
+  }
+  for(auto &inst : b2->insns){
+    TypeCase(phi, ir::insns::Phi *, inst.get()){
+      if(common_map.count(phi->incoming.at(mid_bb))){
+        common_map[phi->dst] = common_map.at(phi->incoming.at(mid_bb));
+        common_map[phi->incoming.at(b2)] = common_map.at(phi->incoming.at(mid_bb));
+        common_set.insert(phi->incoming.at(b2));
+      }
+    }
+    TypeCase(memdef, ir::insns::MemDef *, inst.get()){
+      auto effect_inst = get_effective_use(memdef, b2);
+      for(auto each_use : effect_inst){
+        TypeCase(memuse, ir::insns::MemUse *, each_use){
+          if(memuse->load_src != memdef->store_dst || memuse->dep != memdef->dep){
+            return false;
+          }
+        } else TypeCase(use_memdef, ir::insns::MemDef *, each_use){ 
+          if(memdef != use_memdef){
+            return false;
+          }
+        } else {
+          return false;
+        }
+      }
+    }
+    TypeCase(call, ir::insns::Call *, inst.get()){
+      return false;
+    }
+    TypeCase(output, ir::insns::Output *, inst.get()){
+      auto uses = inst->use();
+      for(auto each : uses){
+        if(common_map.count(each)){
+          used_map[output->dst] = common_map.at(each);
+        }
+      }
+    }
+  }
+  unordered_set<Reg> common_b1_set;
+  for(auto each : common_set){
+    TypeCase(phi, ir::insns::Phi *, cur_func->def_list.at(common_map.at(each))){
+      common_b1_set.insert(phi->incoming.at(b1));
+    } else {
+      return false;
+    }
+  }
+  common_set.merge(common_b1_set);
+  for(auto each : common_set){
+    auto inst = cur_func->def_list.at(each);
+    TypeCase(memdef, ir::insns::MemDef *, inst){
+      vector<Reg> stack;
+      stack.push_back(memdef->store_val);
+      while(stack.size()){
+        auto cur_reg = stack.back();
+        stack.pop_back();
+        auto def_pos = cur_func->def_list.at(cur_reg);
+        TypeCase(binary, ir::insns::Binary *, def_pos){
+          if(binary->op == BinaryOp::Add || binary->op == BinaryOp::Mul){
+            if(used_map.count(binary->src1) != common_map.count(binary->src2)){
+              if(used_map.count(binary->src1)){
+                stack.push_back(binary->src1);
+              } else {
+                stack.push_back(binary->src2);
+              }
+            } else {
+              return false;
+            }
+          } else {
+            return false;
+          }
+        } else TypeCase(memuse, ir::insns::MemUse *, def_pos){
+          if(memuse->load_src != memdef->store_dst){
+            return false;
+          }
+        } else {
+          return false;
+        }
+      }
+    } else {
+      return false;
+    }
+  }
+  for(auto &inst : mid_bb->insns){
+    bool is_phi = false;
+    bool is_const = false;
+    TypeCase(phi, ir::insns::Phi *, inst.get()){
+      // 使用、改变，不能同时满足
+      common_map[phi->dst] = common_map.at(phi->incoming.at(b1));
+      for(auto each : cur_func->use_list[phi->dst]){
+        TypeCase(use_phi, ir::insns::Phi *, each){
+          is_phi = true;
+        } else {
+          is_const = true;
+        }
+      }
+      if(is_const){
+        auto use_list = cur_func->use_list[phi->dst];
+        for(auto each : use_list){
+          if(each->bb == b2){
+            each->change_use(phi->dst, phi->incoming.at(b1));
+          }
+        }
+      }
+    }
+  }
+  return true;
+}
+
 void loop_fusion(Function *func) {
   cur_func = func;
   func->loop_analysis();
@@ -353,95 +524,23 @@ void loop_fusion(Function *func) {
       unordered_set<Reg> mid_phi_defs;
       unordered_set<Reg> loop_1_defs;
       unordered_set<Reg> loop_2_uses;
-
-      bool check = true;
       // 添加判断机制
       auto b1 = loop_1->header;
       auto b2 = loop_2->header;
-      for(auto &inst : mid_bb->insns){
-        bool is_phi = false;
-        bool is_const = false;
-        TypeCase(phi, ir::insns::Phi *, inst.get()){
-          // 使用、改变，不能同时满足
-          for(auto each : func->use_list[phi->dst]){
-            TypeCase(use_phi, ir::insns::Phi *, each){
-              is_phi = true;
-            } else {
-              is_const = true;
-            }
-          }
-        }
-        if(is_const && is_phi){
-          check = false;
-          break;
-        }
-        TypeCase(call, ir::insns::Call *, inst.get()){
-          check = false;
-          break;
-        }
-      }
-      for(auto &inst : b1->insns){
-        TypeCase(memdef, ir::insns::MemDef *, inst.get()){
-          auto effect_inst = get_effective_use(memdef, b1);
-          for(auto each_use : effect_inst){
-            TypeCase(memuse, ir::insns::MemUse *, each_use){
-              if(memuse->load_src != memdef->store_dst || memuse->dep != memdef->dep){
-                check = false;
-                break;
-              }
-            } else TypeCase(use_memdef, ir::insns::MemDef *, each_use){ 
-              if(memdef != use_memdef){
-                check = false;
-                break;  
-              }
-            } else {
-              check = false;
-              break;
-            }
-          }
-        }
-        TypeCase(call, ir::insns::Call *, inst.get()){
-          check = false;
-          break;
-        }
-      }
-      for(auto &inst : b2->insns){
-        TypeCase(memdef, ir::insns::MemDef *, inst.get()){
-          auto effect_inst = get_effective_use(memdef, b2);
-          for(auto each_use : effect_inst){
-            TypeCase(memuse, ir::insns::MemUse *, each_use){
-              if(memuse->load_src != memdef->store_dst || memuse->dep != memdef->dep){
-                check = false;
-                break;
-              }
-            } else TypeCase(use_memdef, ir::insns::MemDef *, each_use){ 
-              if(memdef != use_memdef){
-                check = false;
-                break;  
-              }
-            } else {
-              check = false;
-              break;
-            }
-          }
-        }
-        TypeCase(call, ir::insns::Call *, inst.get()){
-          check = false;
-          break;
-        }
-      }
-      if (!check) {
+      bool check = check_common_var(b1, b2, mid_bb);
+      if(!check){
         continue;
       }
-      unordered_map<Reg, Reg> phi_map;
-      for (auto &inst : mid_bb->insns) {
-        TypeCase(phi, ir::insns::Phi *, inst.get()) {
-          phi_map[phi->dst] = phi->incoming.at(loop_1->header);
-        }
-      }
-      copy_propagation(func->use_list, cond_2.var, cond_1.var);
-      fuse_loops(loop_1, loop_2, cond_1, cond_2, phi_map);
+      fuse_loops(loop_1, loop_2, cond_1, cond_2);
       fused = true;
+    }
+  }
+}
+
+void check_func_bb_inst(Function * func){
+  for(auto &bb : func->bbs){
+    for(auto &inst : bb->insns){
+      assert(inst->bb == bb.get());
     }
   }
 }
@@ -449,6 +548,7 @@ void loop_fusion(Function *func) {
 void loop_fusion(ir::Program *prog) {
   for (auto &each : prog->functions) {
     loop_fusion(&each.second);
+    check_func_bb_inst(&each.second);
   }
 }
 
