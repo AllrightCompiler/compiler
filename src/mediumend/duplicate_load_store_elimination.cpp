@@ -103,6 +103,7 @@ void remove_zero_global_def(ir::Program *prog) {
       }
       TypeCase(alloca, ir::insns::Alloca *, inst) {
         stack.insert(inst);
+        reg2base[alloca->dst] = alloca->dst;
       }
       TypeCase(phi, ir::insns::Phi *, inst){
         if(phi->array_ssa){
