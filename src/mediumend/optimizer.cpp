@@ -32,6 +32,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   mem2reg,
   remove_unused_function,
   main_global_var_to_local,
+  remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
 
   function_inline,
