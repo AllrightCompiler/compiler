@@ -15,7 +15,6 @@ using std::vector;
 const int LONG_CALL_LEN = 64000;
 
 void inline_single_func(Function *caller, Program *prog, unordered_set<string> &cursive_or_long_calls){
-  caller->loop_analysis();
   vector<ir::insns::Call *> calls;
   for(auto & bb : caller->bbs){
     for(auto &inst : bb->insns){
@@ -91,6 +90,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         }
         inst_iter->get()->remove_use_def();
         inst_iter->reset(new ir::insns::Jump(bb2bb[callee->bbs.front().get()]));
+        inst_iter->get()->bb = inst_bb;
         inst_iter++;
         break;
       }
@@ -160,15 +160,13 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     }
     // 找一个合适的位置插入，或者就等后面指令调度
     caller->cfg->build();
-    while(inst_bb->loop){
-      inst_bb = inst_bb->loop->header->idom;
-    }
-    auto jmp = inst_bb->insns.back().release();
-    inst_bb->insns.pop_back();
+    auto insert_bb = caller->bbs.front().get();
+    auto jmp = insert_bb->insns.back().release();
+    insert_bb->insns.pop_back();
     for(int i = 0; i < allocas.size(); i++){
-      inst_bb->push_back(allocas[i]);
+      insert_bb->push_back(allocas[i]);
     }
-    inst_bb->insns.emplace_back(jmp);
+    insert_bb->insns.emplace_back(jmp);
     if(ret_phi){
       ret_phi->add_use_def();
     }

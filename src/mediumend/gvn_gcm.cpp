@@ -319,18 +319,64 @@ void gvn(Function *f) {
               auto new_ins = new ir::insns::LoadImm(binary->dst, constval);
               new_ins->bb = binary->bb;
               binary->remove_use_def();
-              insn.reset(new_ins);
               new_ins->add_use_def();
-              hashTable[insn.get()] = binary->dst;
+              hashTable[new_ins] = binary->dst;
               hashTable_loadimm[constval] = binary->dst;
               constMap[binary->dst] = constval;
               rConstMap[constval] = binary->dst;
+              insn.reset(new_ins);
             }
           } else {
             auto reg = std::get<Reg>(ret.value());
             copy_propagation(f->use_list, binary->dst, reg);
           }
         } else {
+          // check const associativity (i + c1) + c2
+          bool flag = false;
+          BinaryOp new_op;
+          ConstValue new_imm;
+          if (constMap.count(binary->src2)) {
+            if (!binary->bb->func->has_param(binary->src1)) {
+              auto i = binary->bb->func->def_list.at(binary->src1);
+              TypeCase(binary_i, ir::insns::Binary *, i) {
+                if (constMap.count(binary_i->src2)) {
+                  if (binary_i->op == BinaryOp::Mul && binary->op == BinaryOp::Mul) {
+                    new_imm = const_compute(binary, constMap.at(binary_i->src2), constMap.at(binary->src2));
+                    new_op = BinaryOp::Mul;
+                    flag = true;
+                    binary->change_use(binary->src1, binary_i->src1);
+                  }
+                  if ((binary_i->op == BinaryOp::Add || binary_i->op == BinaryOp::Sub) &&
+                      (binary->op == BinaryOp::Add || binary->op == BinaryOp::Sub)) {
+                    new_op = BinaryOp::Add;
+                    ConstValue op1 = constMap.at(binary_i->src2);
+                    ConstValue op2 = constMap.at(binary->src2);
+                    if (binary_i->op == BinaryOp::Sub) op1 = op1.getOpposite();
+                    if (binary->op == BinaryOp::Sub) op2 = op2.getOpposite();
+                    auto dummy_b = new ir::insns::Binary(Reg(op1.type, -1), BinaryOp::Add, Reg(op1.type, -1), Reg(op2.type, -1));
+                    new_imm = const_compute(dummy_b, op1, op2);
+                    delete dummy_b;
+                    flag = true;
+                    binary->change_use(binary->src1, binary_i->src1);
+                  }
+                }
+              }
+            }
+          }
+          if (flag) {
+            binary->op = new_op;
+            if (rConstMap.count(new_imm)) {
+              binary->change_use(binary->src2, rConstMap.at(new_imm));
+            } else {
+              auto new_loadimm = new ir::insns::LoadImm(f->new_reg(new_imm.type), new_imm);
+              binary->bb->push_front(new_loadimm);
+              hashTable[new_loadimm] = new_loadimm->dst;
+              hashTable_loadimm[new_imm] = new_loadimm->dst;
+              constMap[new_loadimm->dst] = new_imm;
+              rConstMap[new_imm] = new_loadimm->dst;
+              binary->change_use(binary->src2, new_loadimm->dst);
+            }
+          }
           Reg new_reg = vn_get(binary); // guarantee right order of insts be visited
           if (new_reg != binary->dst) {
             copy_propagation(f->use_list, binary->dst, new_reg);
@@ -552,6 +598,9 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
     if(use_list.count(output->dst)) {
       for (auto i : use_list.at(output->dst)) {
         use = nullptr;
+        if(output->dst.id == 166){
+          int a = 1;
+        }
         schedule_late(visited, placement, cfg, bbs, use_list, i);
         TypeCase(phi, ir::insns::Phi *, i) {
           for (auto pair : phi->incoming) {
