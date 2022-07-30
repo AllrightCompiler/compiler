@@ -710,9 +710,13 @@ void MemDef::change_use(Reg old_reg, Reg new_reg) {
   }
   if(uses_before_def.count(old_reg)){
     uses_before_def.erase(old_reg);
-    uses_before_def.insert(new_reg);
-    bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
+    if(bb->func->def_list.count(new_reg)){
+      TypeCase(memuse, ir::insns::MemUse *, bb->func->def_list.at(new_reg)){
+        uses_before_def.insert(new_reg);
+        bb->func->use_list[new_reg].insert(this);
+      }
+    }
   }
 }
 

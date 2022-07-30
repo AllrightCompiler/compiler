@@ -34,8 +34,12 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   main_global_var_to_local,
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
-
+  
+  gvn_gcm,
+  clean_hodgepodge,
+  
   function_inline,
+  
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,
@@ -46,7 +50,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  // loop_unroll,
+  loop_unroll,
 
   gvn_gcm,
   clean_hodgepodge,
