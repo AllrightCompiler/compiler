@@ -56,11 +56,11 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   constant_propagation,
   clean_useless_cf,
 
-  // remove_uneffective_inst,
-  // remove_useless_loop,
-  // clean_hodgepodge,
-  // constant_propagation,
-  // clean_useless_cf,
+  remove_uneffective_inst,
+  remove_useless_loop,
+  clean_hodgepodge,
+  constant_propagation,
+  clean_useless_cf,
 
   // main_global_var_to_local,
   // mem2reg,
