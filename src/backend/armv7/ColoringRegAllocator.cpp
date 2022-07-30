@@ -482,6 +482,7 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
             if (obj)
               insns.emplace(it, new LoadStack{tmp, obj, 0});
             else {
+              // f->reg_val[tmp] = f->reg_val.at(r);
               switch (val->index()) {
               case RegValueType::Imm:
                 if (!def.count(r)) // 跳过movt
@@ -538,7 +539,7 @@ void ColoringRegAllocator::init(Function &func, bool is_gp_pass) {
   this->is_gp_pass = is_gp_pass;
   if (is_gp_pass) {
     K = 14; // 16个通用寄存器去掉sp和pc
-    this->reg_filter = [](Reg const &_) { return true; };
+    this->reg_filter = [](Reg const &reg) { return !reg.is_float(); };
   } else {
     K = NR_FPRS; // 32个单精度vfp寄存器
     this->reg_filter = [](Reg const &reg) { return reg.is_float(); };
