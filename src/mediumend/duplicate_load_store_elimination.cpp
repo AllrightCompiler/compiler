@@ -116,8 +116,10 @@ void remove_zero_global_def(ir::Program *prog) {
           for (auto &use : phi->use()) {
             auto use_def = func.def_list.at(use);
             if (none_zero_inst.count(use_def)) {
-              none_zero_inst.insert(inst.get());
-              changed = true;
+              if(!none_zero_inst.count(phi)){
+                none_zero_inst.insert(inst.get());
+                changed = true;
+              }
             }
             if (reg2base.count(use)) {
               reg2base[phi->dst] = reg2base.at(use);
