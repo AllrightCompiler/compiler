@@ -114,7 +114,9 @@ void remove_uneffective_inst(ir::Program *prog){
         } else TypeCase(store, ir::insns::Store *, inst.get()){
           stack.insert(store);
         } else TypeCase(memdef, ir::insns::MemDef *, inst.get()){
-          stack.insert(memdef);
+          if(func->name != "main"){
+            stack.insert(memdef);
+          }
         }
       }
     }
