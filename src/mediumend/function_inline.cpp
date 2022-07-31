@@ -13,6 +13,7 @@ using std::unordered_map;
 using std::vector;
 
 const int LONG_CALL_LEN = 64;
+const int TOO_LONG_CALL_LEN = 1000;
 
 void inline_single_func(Function *caller, Program *prog, unordered_set<string> &cursive_or_long_calls){
   vector<ir::insns::Call *> calls;
@@ -208,7 +209,7 @@ void function_inline(ir::Program *prog) {
         }
       }
     }
-    if(length > LONG_CALL_LEN){
+    if(length > LONG_CALL_LEN && length < TOO_LONG_CALL_LEN){
       cursive_or_long_calls.insert(func.first);
     }
   }
