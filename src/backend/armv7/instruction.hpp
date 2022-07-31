@@ -3,6 +3,7 @@
 #include "backend/armv7/arch.hpp"
 
 #include "common/ir.hpp"
+#include "common/utils.hpp"
 
 #include <set>
 #include <variant>
@@ -50,9 +51,7 @@ struct Reg {
   static Reg from(ir::Reg ir_reg) {
     return Reg{ir_to_machine_reg_type(ir_reg.type), -ir_reg.id};
   }
-  static Reg from(int t, int id) {
-    return Reg{ir_to_machine_reg_type(t), id};
-  }
+  static Reg from(int t, int id) { return Reg{ir_to_machine_reg_type(t), id}; }
 };
 
 std::ostream &operator<<(std::ostream &os, const Reg &r);
@@ -620,3 +619,11 @@ struct Vneg : Instruction {
 };
 
 } // namespace armv7
+
+namespace std {
+template <> struct hash<armv7::Reg> {
+  size_t operator()(armv7::Reg const r) const {
+    return hash<pair<armv7::RegType, int>>{}({r.type, r.id});
+  }
+};
+} // namespace std

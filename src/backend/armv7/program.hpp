@@ -39,6 +39,16 @@ struct BasicBlock {
   }
 };
 
+struct OccurPoint {
+  BasicBlock *bb;
+  std::list<std::unique_ptr<Instruction>>::iterator instr;
+  int index;
+
+  friend bool operator<(OccurPoint const &lhs, OccurPoint const &rhs) {
+    return lhs.bb == rhs.bb ? lhs.index < rhs.index : lhs.bb < rhs.bb;
+  }
+};
+
 using RegFilter = std::function<bool(const Reg &)>;
 
 // 单赋值虚拟寄存器的一些特殊取值
@@ -63,9 +73,12 @@ struct Function {
   std::vector<StackObject *> param_objs, normal_objs;
 
   std::map<Reg, RegValue> reg_val; // 记录一些单赋值虚拟寄存器的取值
-  std::set<Move *> phi_moves; // 由phi指令产生的mov，这些mov相关的寄存器不应被合并
+  std::set<Move *>
+      phi_moves; // 由phi指令产生的mov，这些mov相关的寄存器不应被合并
 
   int regs_used; // 分配的虚拟寄存器总数
+
+  std::unordered_map<Reg, std::set<OccurPoint>> reg_def, reg_use;
 
   Reg new_reg(Reg::Type type) { return Reg{type, -(++regs_used)}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
@@ -75,7 +88,13 @@ struct Function {
                 Reg dst, int imm);
   void emit_imm(BasicBlock *, Reg dst, int imm);
 
-  void do_liveness_analysis(RegFilter filter = [](const Reg &){ return true; });
+  void do_liveness_analysis(RegFilter filter = [](const Reg &) {
+    return true;
+  });
+  void insert_def_use(OccurPoint const &pos, Instruction &instr);
+  void erase_def_use(OccurPoint const &pos, Instruction &instr);
+  void build_def_use();
+
   bool check_and_resolve_stack_store();
   void defer_stack_param_load(Reg r, StackObject *obj);
   void resolve_phi();
