@@ -278,9 +278,8 @@ void array_mem2reg(ir::Program *prog) {
             auto new_inst =
                 new ir::insns::MemDef(dst, dep, name2def.at(gvar), inst->dst,
                                       true, use_before_def[bb][base]);
-            iter = bb->insns.insert(iter,
+            bb->insns.insert(iter,
                                     std::unique_ptr<ir::Instruction>(new_inst));
-            iter++;
             new_inst->bb = bb;
             new_inst->add_use_def();
             alloc_map[bb][base] = dst;
@@ -302,15 +301,15 @@ void array_mem2reg(ir::Program *prog) {
               }
               auto new_inst = new ir::insns::MemDef(dst, dep, use2def.at(reg),
                                                     inst->dst, true, use_before_def[bb][base]);
-              iter = bb->insns.insert(
+              bb->insns.insert(
                   iter, std::unique_ptr<ir::Instruction>(new_inst));
-              iter++;
               new_inst->bb = bb;
               new_inst->add_use_def();
               alloc_map[bb][base] = dst;
               use_before_def[bb][base].clear();
             }
           }
+          continue;
         }
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
           if (phi2mem.count(inst)) {
