@@ -41,7 +41,7 @@ void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction 
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &op1, const ConstValue &op2);
 
-inline void run_medium(ir::Program *prog) {
+inline void run_medium(ir::Program *prog, bool disable_gep_des) {
   for (auto &func : prog->functions){
     func.second.cfg = new CFG(&func.second);
     func.second.cfg->build();
@@ -57,6 +57,7 @@ inline void run_medium(ir::Program *prog) {
     while (std::getline(pass_config, line)) {
       if (!line.length()) continue; // empty line
       assert(PASS_MAP.count(line));
+      if (disable_gep_des && line == "gep_destruction") continue;
       passes.push_back(PASS_MAP.at(line));
     }
   }
