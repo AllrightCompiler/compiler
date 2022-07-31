@@ -141,6 +141,11 @@ void BasicBlock::pop_front() {
   insns.pop_front(); // auto release
 }
 
+void BasicBlock::pop_back() {
+  insns.back()->remove_use_def();
+  insns.pop_back(); // auto release
+}
+
 void BasicBlock::insert_at_pos(int pos, Instruction *insn) {
   auto it = insns.begin();
   while (pos--) {

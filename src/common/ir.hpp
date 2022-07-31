@@ -114,6 +114,8 @@ struct BasicBlock {
   void push_front(Instruction *insn);
   // modify use-def
   void pop_front();
+  // modify use-def
+  void pop_back();
   // not modify use-def
   void insert_at_pos(int pos, Instruction *insn);
   // not modify use-def
