@@ -2,7 +2,7 @@
 #include "mediumend/optimizer.hpp"
 
 #include <cassert>
-#include <queue>
+#include <stack>
 
 namespace mediumend {
 
@@ -13,11 +13,11 @@ using std::unique_ptr;
 
 void sort_basicblock(Function *func){
   list<unique_ptr<BasicBlock>> new_bbs;
-  std::queue<BasicBlock *> bb_queue;
+  std::stack<BasicBlock *> bb_queue;
   bb_queue.push(func->bbs.front().get());
   func->clear_visit();
   while(bb_queue.size()){
-    auto bb = bb_queue.front();
+    auto bb = bb_queue.top();
     bb_queue.pop();
     if(bb->visit) continue;
     new_bbs.emplace_back(bb);
