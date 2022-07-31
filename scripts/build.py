@@ -1,13 +1,19 @@
 import os
+import sys
 import subprocess
 
 TIMEOUT = 60
 
-compiler = './compiler -O2'
+compiler = './compiler'
 testcases_dir = '/mnt/d/compiler-testcases/functional'
 cross_gcc = 'arm-linux-gnueabihf-gcc'
 
 def assembly(testcases, output_dir='asm'):
+    if os.path.exists(output_dir):
+        os.system('rm %s/*' % output_dir)
+    else:
+        os.system('mkdir %s' % output_dir)
+
     # total = len(testcases)
     success, failed = 0, 0
     
@@ -42,9 +48,14 @@ def assembly(testcases, output_dir='asm'):
     print('[assembly] %d success, %d failed' % (success, failed))
 
     # zip assembly sources
-    os.system('zip -r %s.zip %s' % (output_dir, output_dir))
+    zipped = '%s.zip' % output_dir
+    os.system('rm -f %s' % zipped)
+    os.system('zip -r %s %s' % (zipped, output_dir))
 
 if __name__ == '__main__':
+    if len(sys.argv) > 1:
+        testcases_dir = testcases_dir.replace('functional', 'performance')
+
     testcases = os.listdir(testcases_dir)
     testcases = [source for source in testcases if source.endswith('.sy')]
 

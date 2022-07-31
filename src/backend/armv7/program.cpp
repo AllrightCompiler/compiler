@@ -353,6 +353,14 @@ class ProgramTranslator {
             stack_args.push_back(i);
         }
       }
+
+      int sp_adjustment = 4 * stack_args.size(); // NOTE: 目前所有标量类型都是4字节
+      // NOTE: 调用约定要求函数边界的sp按照8字节对齐
+      if ((sp_adjustment & 7) != 0) {
+        sp_adjustment += 4;
+        bb->push(new AdjustSp{-4});
+      }
+
       for (auto it = stack_args.rbegin(); it != stack_args.rend(); ++it) {
         Reg arg_reg = Reg::from(call->args[*it]);
         bb->push(new Push{{arg_reg}});
@@ -375,7 +383,7 @@ class ProgramTranslator {
         bb->push(
             new Move{Reg::from(call->dst),
                      Operand2::from(Reg::from(call->dst.type, 0))}); // r0或s0
-      int sp_adjustment = 4 * stack_args.size(); // NOTE: 所有标量类型都是4字节
+
       if (sp_adjustment != 0)
         bb->push(new AdjustSp{sp_adjustment});
     }
@@ -734,6 +742,13 @@ void Function::emit_prologue_epilogue() {
     stack_obj_size += obj->size;
   stack_obj_size = round_up_to_imm8m(stack_obj_size);
 
+  // NOTE: 调用约定要求函数边界的sp按照8字节对齐
+  int frame_size = stack_obj_size + 4 * (saved_gprs.size() + saved_fprs.size());
+  if ((frame_size & 7) != 0) {
+    frame_size += 4;
+    saved_gprs.insert(saved_gprs.begin(), Reg{General, r3});
+  }
+
   // emit prologue
   auto &prologue = entry->insns;
   // 每次都插入在头部，先生成后面的
@@ -778,7 +793,6 @@ void Function::emit_prologue_epilogue() {
   }
   bbs.emplace_back(exit);
 
-  int frame_size = stack_obj_size + 4 * (saved_gprs.size() + saved_fprs.size());
   resolve_stack_ops(frame_size);
 }
 

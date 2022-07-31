@@ -57,7 +57,8 @@ private:
 
 class Identifier : public Display {
 public:
-  explicit Identifier(std::string name) : m_name{std::move(name)} {}
+  Identifier(std::string name, bool const mangle = true)
+      : m_name{mangle ? '$' + name : std::move(name)} {}
   virtual ~Identifier() = default;
 
   void print(std::ostream &out, unsigned indent) const override;
