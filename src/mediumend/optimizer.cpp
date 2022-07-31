@@ -23,7 +23,8 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"loop_fusion", loop_fusion},
   {"loop_unroll", loop_unroll},
   {"duplicate_load_store_elimination", duplicate_load_store_elimination},
-  {"remove_zero_global_def", remove_zero_global_def}
+  {"remove_zero_global_def", remove_zero_global_def},
+  {"sort_basicblock", sort_basicblock},
 };
 
 // define default passes here
@@ -76,6 +77,7 @@ std::vector<std::function<void(ir::Program *)> > passes = {
   clean_useless_cf,
 
   operator_strength_promotion,
+  sort_basicblock,
 };
 
 void clean_hodgepodge(ir::Program *prog) {
