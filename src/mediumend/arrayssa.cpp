@@ -280,6 +280,7 @@ void array_mem2reg(ir::Program *prog) {
                                       true, use_before_def[bb][base]);
             iter = bb->insns.insert(iter,
                                     std::unique_ptr<ir::Instruction>(new_inst));
+            iter++;
             new_inst->bb = bb;
             new_inst->add_use_def();
             alloc_map[bb][base] = dst;
@@ -303,6 +304,7 @@ void array_mem2reg(ir::Program *prog) {
                                                     inst->dst, true, use_before_def[bb][base]);
               iter = bb->insns.insert(
                   iter, std::unique_ptr<ir::Instruction>(new_inst));
+              iter++;
               new_inst->bb = bb;
               new_inst->add_use_def();
               alloc_map[bb][base] = dst;
