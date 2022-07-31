@@ -25,6 +25,7 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"duplicate_load_store_elimination", duplicate_load_store_elimination},
   {"remove_zero_global_def", remove_zero_global_def},
   {"sort_basicblock", sort_basicblock},
+  {"gep_destruction", gep_destruction},
 };
 
 // define default passes here
@@ -66,6 +67,8 @@ std::vector<std::function<void(ir::Program *)> > passes = {
 
   main_global_var_to_local,
   mem2reg,
+
+  gep_destruction,
 
   operator_strength_reduction,
   gvn_gcm,
