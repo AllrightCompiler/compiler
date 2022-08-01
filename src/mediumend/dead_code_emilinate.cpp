@@ -27,6 +27,7 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
       // 使用了全局变量，不能当作纯函数
       if(auto x = dynamic_cast<ir::insns::LoadAddr *>(inst.get())){
         func->pure = 0;
+        func->array_ssa_pure = 0;
       }
       // 此处为了便于处理递归函数，因此这么做
       TypeCase(call, ir::insns::Call *, inst.get()) {
