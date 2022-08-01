@@ -25,9 +25,9 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
   }
   for (auto &bb : func->bbs) {
     for (auto &inst : bb->insns) {
-      // 修改了全局变量，不是纯函数
       TypeCase(store, ir::insns::Store *, inst.get()){
-        if(func->global_addr.count(store->addr)){
+        if(func->global_addr.count(stor
+        e->addr)){
           func->pure = 0;
           return;
         }
