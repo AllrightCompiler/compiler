@@ -469,7 +469,7 @@ bool is_pinned(Instruction *inst) {
       }
     }
   }
-  TypeCase(call, ir::insns::MemDef *, inst) {
+  TypeCase(memdef, ir::insns::MemDef *, inst) {
     if (inst->bb->func->name != "main") return true;
   }
   return false;
@@ -582,19 +582,23 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
       placement[memuse] = place2;
     }
   } else TypeCase(memdef, ir::insns::MemDef *, inst) {
-    placement[memdef] = root_bb;
-    auto use = memdef->use();
-    BasicBlock *place = nullptr;
-    for (auto use_reg : use) {
-      if (inst->bb->func->has_param(use_reg)) {
-        place = inst->bb->func->bbs.front().get();
-      } else {
-        schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(use_reg));
-        place = placement[def_list.at(use_reg)];
+    if (!is_pinned(memdef)) {
+      placement[memdef] = root_bb;
+      auto use = memdef->use();
+      BasicBlock *place = nullptr;
+      for (auto use_reg : use) {
+        if (inst->bb->func->has_param(use_reg)) {
+          place = inst->bb->func->bbs.front().get();
+        } else {
+          schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(use_reg));
+          place = placement[def_list.at(use_reg)];
+        }
+        if (place->domlevel > placement[memdef]->domlevel) {
+          placement[memdef] = place;
+        }
       }
-      if (place->domlevel > placement[memdef]->domlevel) {
-        placement[memdef] = place;
-      }
+    } else {
+      placement[memdef] = inst->bb;
     }
   } else {
     placement[inst] = inst->bb;
