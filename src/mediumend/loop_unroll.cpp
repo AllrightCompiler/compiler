@@ -524,6 +524,11 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     for (auto bb : exit_paths) { // only one exit_prev
       exit_bb->prev.erase(bb);
     }
+    if (info.loop_type == 1) {
+      for (auto bb : exit_paths) { // only one exit_prev
+        exit_bb->prev.insert(bb_map[map_curid].at(bb));
+      }
+    }
     if (info.loop_type == 2) {
       exit_bb->prev.erase(info.into_entry); // because into_entry now points to new_into_entry
     }
@@ -532,6 +537,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         phi->remove_use_def();
         for (auto bb : exit_paths) {
+          if (info.loop_type == 1) {
+            phi->incoming[bb_map[map_curid].at(bb)] = reg_map[map_curid].at(phi->incoming.at(bb));
+          }
           phi->incoming.erase(bb);
         }
         if (info.loop_type == 2) {
@@ -683,7 +691,8 @@ void loop_unroll(ir::Function *func) {
       if (full_cnt == 0 || full_cnt == 1) continue;
       if (full_cnt < 100 && full_cnt * loop_info.inst_cnt <= 500) {
         unroll_cnt = full_cnt; // fully unroll
-      } else loop_info.loop_type = 2;
+      } else continue; // TODO: temporarily disabled
+      // } else loop_info.loop_type = 2;
     }
     if (loop_info.loop_type == 2) { // Decrease end by unroll * step, therefore erase branches jump out in middle
       Instruction *binary_cond = func->def_list.at(loop_info.cond_reg);
