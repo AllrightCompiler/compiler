@@ -8,10 +8,12 @@
 
 namespace mediumend {
 
+typedef void(*funcptr)(ir::Program*);
+
 // IMPORTANT: if add new pass, modify PASS_MAP in optimizer.cpp
-extern const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP;
+extern const std::map<std::string, funcptr> PASS_MAP;
 // define default passes in optimizer.cpp
-extern std::vector<std::function<void(ir::Program *)> > passes;
+extern std::vector<funcptr> passes;
 
 void remove_unused_function(ir::Program *prog);
 void mem2reg(ir::Program *prog);
@@ -57,12 +59,12 @@ inline void run_medium(ir::Program *prog, bool disable_gep_des) {
     while (std::getline(pass_config, line)) {
       if (!line.length()) continue; // empty line
       assert(PASS_MAP.count(line));
-      if (disable_gep_des && line == "gep_destruction") continue;
       passes.push_back(PASS_MAP.at(line));
     }
   }
 
   for (auto pass : passes) {
+    if (disable_gep_des && pass == gep_destruction) continue;
     pass(prog);
   }
 }
