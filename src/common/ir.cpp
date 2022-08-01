@@ -141,6 +141,19 @@ void BasicBlock::pop_front() {
   insns.pop_front(); // auto release
 }
 
+void BasicBlock::insert_at(list<unique_ptr<Instruction>>::iterator it, Instruction *insn) {
+  insns.emplace(it, insn);
+  insn->bb = this;
+  insn->add_use_def();
+}
+
+list<unique_ptr<Instruction>>::iterator BasicBlock::remove_at(list<unique_ptr<Instruction>>::iterator it) {
+  auto insn = it->release(); // important! otherwise inst will be auto deleted
+  insn->remove_use_def();
+  insn->bb = nullptr;
+  return insns.erase(it);
+}
+
 void BasicBlock::insert_at_pos(int pos, Instruction *insn) {
   auto it = insns.begin();
   while (pos--) {
