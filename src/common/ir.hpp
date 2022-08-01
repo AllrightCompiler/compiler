@@ -114,6 +114,10 @@ struct BasicBlock {
   void push_front(Instruction *insn);
   // modify use-def
   void pop_front();
+  // modify use-def
+  void insert_at(list<unique_ptr<Instruction>>::iterator it, Instruction *insn);
+  // modify use-def
+  list<unique_ptr<Instruction>>::iterator remove_at(list<unique_ptr<Instruction>>::iterator it);
   // not modify use-def
   void insert_at_pos(int pos, Instruction *insn);
   // not modify use-def

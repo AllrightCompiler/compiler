@@ -665,6 +665,7 @@ void loop_unroll(ir::Function *func) {
     // Unroll this loop
     auto loop_info = get_loop_info(loop, loop_bbs, exit_bb);
     if (loop_info.inst_cnt > 100) continue;
+    if (loop_info.loop_type == 0) continue;
     loop_info.exit = exit_bb;
     int unroll_cnt = UNROLL_CNT;
     if (loop_info.loop_type == 1) {

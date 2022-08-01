@@ -110,7 +110,7 @@ AstVisitor::visitInitList(SysYParser::InitListContext *const ctx) {
 antlrcpp::Any AstVisitor::visitFuncDef(SysYParser::FuncDefContext *const ctx) {
   auto const type_ = ctx->funcType()->accept(this).as<ScalarType *>();
   std::unique_ptr<ScalarType> type(type_);
-  Identifier ident(ctx->Ident()->getText());
+  Identifier ident(ctx->Ident()->getText(), false);
   std::vector<std::unique_ptr<Parameter>> params;
   if (auto params_ = ctx->funcFParams()) {
     for (auto param_ : params_->funcFParam()) {
@@ -285,7 +285,7 @@ AstVisitor::visitHexFloatConst(SysYParser::HexFloatConstContext *const ctx) {
 }
 
 antlrcpp::Any AstVisitor::visitCall(SysYParser::CallContext *const ctx) {
-  Identifier ident(ctx->Ident()->getText());
+  Identifier ident(ctx->Ident()->getText(), false);
   std::vector<Call::Argument> args;
   auto args_ctx = ctx->funcRParams();
   if (args_ctx) {
