@@ -121,15 +121,17 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
       } else return info; // update not binary inst
     } else return info; // cond not binary
   } else assert(false);
-  TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
-    TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
-      assert(is_cmp(into_binary_cond));
-      // assert(into_binary_cond->src1 == info.end_reg || into_binary_cond->src2 == info.end_reg);
-      if (into_binary_cond->src1 != info.end_reg && into_binary_cond->src2 != info.end_reg) return info; // not loop invariant
-      info.into_cond = into_binary_cond;
-    } else return info;
-    info.into_br = into_br_cond;
-  } else assert(false);
+  if (type != 1) { // if type 1: should not have br after gvn_gcm and clean_cf
+    TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
+      TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
+        assert(is_cmp(into_binary_cond));
+        // assert(into_binary_cond->src1 == info.end_reg || into_binary_cond->src2 == info.end_reg);
+        if (into_binary_cond->src1 != info.end_reg && into_binary_cond->src2 != info.end_reg) return info; // not loop invariant
+        info.into_cond = into_binary_cond;
+      } else return info;
+      info.into_br = into_br_cond;
+    } else assert(false);
+  }
   info.loop_type = type;
   return info;
 }
