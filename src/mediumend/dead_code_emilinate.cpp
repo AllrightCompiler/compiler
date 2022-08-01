@@ -20,22 +20,13 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
   for(auto &type : func->sig.param_types){
     if(type.is_array()){
       func->pure = 0;
-      return;
     }
   }
   for (auto &bb : func->bbs) {
     for (auto &inst : bb->insns) {
-      TypeCase(store, ir::insns::Store *, inst.get()){
-        if(func->global_addr.count(stor
-        e->addr)){
-          func->pure = 0;
-          return;
-        }
-      }
       // 使用了全局变量，不能当作纯函数
       if(auto x = dynamic_cast<ir::insns::LoadAddr *>(inst.get())){
         func->pure = 0;
-        return;
       }
       // 此处为了便于处理递归函数，因此这么做
       TypeCase(call, ir::insns::Call *, inst.get()) {
@@ -46,11 +37,16 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
           }
         }
         func->pure = 0;
-        return;
+        func->array_ssa_pure = 0;
       }
     }
   }
-  func->pure = 1;
+  if(func->pure == -1){
+    func->pure = 1;
+  }
+  if(func->array_ssa_pure == -1){
+    func->array_ssa_pure = 1;
+  }
 }
 
 void mark_pure_func(ir::Program *prog){
