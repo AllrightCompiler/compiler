@@ -40,7 +40,7 @@ std::vector<funcptr> passes = {
   gvn_gcm,
   clean_hodgepodge,
   
-  function_inline,
+
   
   array_mem2reg,
   gvn_gcm,
@@ -56,6 +56,18 @@ std::vector<funcptr> passes = {
   array_ssa_destruction,
 
   loop_unroll,
+
+
+  function_inline,
+
+  array_mem2reg,
+  gvn_gcm,
+  clean_hodgepodge,
+  clean_useless_cf,
+  gvn_gcm,
+  duplicate_load_store_elimination,
+  array_ssa_destruction,
+
 
   gvn_gcm,
   clean_hodgepodge,
