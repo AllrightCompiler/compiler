@@ -42,6 +42,7 @@ void gep_destruction(ir::Program *prog);
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &op1, const ConstValue &op2);
+bool in_array_ssa();
 
 inline void run_medium(ir::Program *prog, bool disable_gep_des) {
   for (auto &func : prog->functions){
@@ -63,9 +64,9 @@ inline void run_medium(ir::Program *prog, bool disable_gep_des) {
     }
   }
 
-  for (auto pass : passes) {
-    if (disable_gep_des && pass == gep_destruction) continue;
-    pass(prog);
+  for (int i = 0; i < passes.size(); i++) {
+    if (disable_gep_des && passes[i] == gep_destruction) continue;
+    passes[i](prog);
   }
 }
 

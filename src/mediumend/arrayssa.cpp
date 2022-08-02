@@ -9,6 +9,12 @@ using ir::Function;
 using ir::Reg;
 using std::unordered_map;
 
+static bool array_ssa_enable = false;
+
+bool in_array_ssa() {
+  return array_ssa_enable;
+}
+
 unordered_map<Reg, Reg> find_base(Function *func) {
   unordered_map<Reg, Reg> reg2base;
   unordered_map<std::string, Reg> name2base;
@@ -356,9 +362,11 @@ void array_mem2reg(ir::Program *prog) {
     }
     remove_unused_phi(func);
   }
+  array_ssa_enable = true;
 }
 
 void array_ssa_destruction(ir::Program *prog) {
+  array_ssa_enable = false;
   for (auto &each : prog->functions) {
     Function *func = &each.second;
     for (auto &bb : func->bbs) {

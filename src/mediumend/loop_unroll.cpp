@@ -121,15 +121,17 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
       } else return info; // update not binary inst
     } else return info; // cond not binary
   } else assert(false);
-  TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
-    TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
-      assert(is_cmp(into_binary_cond));
-      // assert(into_binary_cond->src1 == info.end_reg || into_binary_cond->src2 == info.end_reg);
-      if (into_binary_cond->src1 != info.end_reg && into_binary_cond->src2 != info.end_reg) return info; // not loop invariant
-      info.into_cond = into_binary_cond;
-    } else return info;
-    info.into_br = into_br_cond;
-  } else assert(false);
+  if (type != 1) { // if type 1: should not have br after gvn_gcm and clean_cf
+    TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
+      TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
+        assert(is_cmp(into_binary_cond));
+        // assert(into_binary_cond->src1 == info.end_reg || into_binary_cond->src2 == info.end_reg);
+        if (into_binary_cond->src1 != info.end_reg && into_binary_cond->src2 != info.end_reg) return info; // not loop invariant
+        info.into_cond = into_binary_cond;
+      } else return info;
+      info.into_br = into_br_cond;
+    } else assert(false);
+  }
   info.loop_type = type;
   return info;
 }
@@ -522,6 +524,11 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     for (auto bb : exit_paths) { // only one exit_prev
       exit_bb->prev.erase(bb);
     }
+    if (info.loop_type == 1) {
+      for (auto bb : exit_paths) { // only one exit_prev
+        exit_bb->prev.insert(bb_map[map_curid].at(bb));
+      }
+    }
     if (info.loop_type == 2) {
       exit_bb->prev.erase(info.into_entry); // because into_entry now points to new_into_entry
     }
@@ -530,6 +537,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         phi->remove_use_def();
         for (auto bb : exit_paths) {
+          if (info.loop_type == 1) {
+            phi->incoming[bb_map[map_curid].at(bb)] = reg_map[map_curid].at(phi->incoming.at(bb));
+          }
           phi->incoming.erase(bb);
         }
         if (info.loop_type == 2) {
@@ -681,7 +691,8 @@ void loop_unroll(ir::Function *func) {
       if (full_cnt == 0 || full_cnt == 1) continue;
       if (full_cnt < 100 && full_cnt * loop_info.inst_cnt <= 500) {
         unroll_cnt = full_cnt; // fully unroll
-      } else loop_info.loop_type = 2;
+      } else continue; // TODO: temporarily disabled
+      // } else loop_info.loop_type = 2;
     }
     if (loop_info.loop_type == 2) { // Decrease end by unroll * step, therefore erase branches jump out in middle
       Instruction *binary_cond = func->def_list.at(loop_info.cond_reg);
