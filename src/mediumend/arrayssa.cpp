@@ -40,7 +40,22 @@ unordered_map<Reg, Reg> find_base(Function *func) {
 
 void array_mem2reg(ir::Program *prog) {
   unordered_map<std::string, unordered_set<std::string>> used_gvar;
+  unordered_map<std::string, unordered_set<int>> modified_param;
+  unordered_map<std::string, unordered_map<Reg, Reg>> greg2base;
+  unordered_map<std::string, unordered_map<std::string, Reg>> gname2base;
+  unordered_map<std::string, unordered_map<Reg, unordered_set<BasicBlock *>>> gdefs;
+  unordered_map<std::string, unordered_map<Reg, BasicBlock *>> galloc_set;
+  vector<BasicBlock *> stack;
   for (auto &each : prog->functions) {
+    modified_param[each.first] = {};
+    greg2base[each.first] = {};
+    gname2base[each.first] = {};
+    gdefs[each.first] = {};
+    galloc_set[each.first] = {};
+    auto &reg2base = greg2base[each.first];
+    auto &name2base = gname2base[each.first];
+    auto &defs = gdefs[each.first];
+    auto &alloc_set = galloc_set[each.first];
     Function *func = &each.second;
     for (auto &bb : func->bbs) {
       for (auto &inst : bb->insns) {
@@ -49,38 +64,16 @@ void array_mem2reg(ir::Program *prog) {
         }
       }
     }
-  }
-  for (auto &each : prog->functions) {
-    Function *func = &each.second;
-    CFG *cfg = func->cfg;
-    cfg->remove_unreachable_bb();
-    cfg->compute_dom();
-    auto df = cfg->compute_df();
     auto entry = func->bbs.front().get();
-
-    for (auto each : prog->global_vars) {
-      entry->push_front(new ir::insns::LoadAddr(
-          func->new_reg(ScalarType::String), each.first));
-    }
-    unordered_map<Reg, BasicBlock *> alloc_set;
-    unordered_map<Reg, int> alloc2type;
-    unordered_map<Reg, unordered_set<BasicBlock *>> defs;
-    unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
-    unordered_map<ir::insns::Phi *, Reg> phi2mem;
-
-    unordered_map<Reg, Reg> reg2base;
-    unordered_map<std::string, Reg> name2base;
-    vector<BasicBlock *> stack;
-    stack.push_back(entry);
     for (int i = 0; i < func->sig.param_types.size(); i++) {
       auto &param = func->sig.param_types[i];
       if (param.is_array()) {
         auto reg = Reg(param.base_type, i + 1);
         reg2base[reg] = reg;
         alloc_set[reg] = entry;
-        alloc_map[entry][reg] = reg;
       }
     }
+    stack.push_back(entry);
     while (stack.size()) {
       auto bb = stack.back();
       stack.pop_back();
@@ -90,9 +83,6 @@ void array_mem2reg(ir::Program *prog) {
       for (auto &ins : bb->insns) {
         auto inst = ins.get();
         TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
-          if (!prog->global_vars.at(loadaddr->var_name)->type.is_array()) {
-            continue;
-          }
           if (!name2base.count(loadaddr->var_name)) {
             name2base[loadaddr->var_name] = loadaddr->dst;
             alloc_set[loadaddr->dst] = bb;
@@ -110,7 +100,11 @@ void array_mem2reg(ir::Program *prog) {
         }
         else TypeCase(store, ir::insns::Store *, inst) {
           if (reg2base.count(store->addr)) {
-            defs[reg2base.at(store->addr)].insert(bb);
+            auto base = reg2base.at(store->addr);
+            defs[base].insert(bb);
+            if(func->has_param(base)){
+              modified_param.at(func->name).insert(base.id);
+            }
           }
         }
         else TypeCase(call, ir::insns::Call *, inst) {
@@ -121,6 +115,35 @@ void array_mem2reg(ir::Program *prog) {
             }
           }
         }
+      }
+    }
+
+  }
+  for (auto &each : prog->functions) {
+    Function *func = &each.second;
+    CFG *cfg = func->cfg;
+    cfg->remove_unreachable_bb();
+    cfg->compute_dom();
+    auto df = cfg->compute_df();
+    auto entry = func->bbs.front().get();
+    for (auto each : prog->global_vars) {
+      entry->push_front(new ir::insns::LoadAddr(
+          func->new_reg(ScalarType::String), each.first));
+    }
+    auto &reg2base = greg2base[each.first];
+    auto &name2base = gname2base[each.first];
+    auto &defs = gdefs[each.first];
+    auto &alloc_set = galloc_set[each.first];
+
+    unordered_map<Reg, int> alloc2type;
+    unordered_map<BasicBlock *, unordered_map<Reg, Reg>> alloc_map;
+    unordered_map<ir::insns::Phi *, Reg> phi2mem;
+
+    for (int i = 0; i < func->sig.param_types.size(); i++) {
+      auto &param = func->sig.param_types[i];
+      if (param.is_array()) {
+        auto reg = Reg(param.base_type, i + 1);
+        alloc_map[entry][reg] = reg;
       }
     }
 
@@ -291,8 +314,12 @@ void array_mem2reg(ir::Program *prog) {
             alloc_map[bb][base] = dst;
             use_before_def[bb][base].clear();
           }
+          int cnt = use.size();
           for (auto reg : use) {
             if (reg2base.find(reg) != reg2base.end()) {
+              if(prog->functions.count(inst->func) && !modified_param.at(inst->func).count(cnt)){
+                continue;
+              }
               auto base = reg2base[reg];
               Reg dst = func->new_reg(ScalarType::String);
               BasicBlock *pos = bb;
@@ -314,6 +341,7 @@ void array_mem2reg(ir::Program *prog) {
               alloc_map[bb][base] = dst;
               use_before_def[bb][base].clear();
             }
+            cnt--;
           }
           continue;
         }
