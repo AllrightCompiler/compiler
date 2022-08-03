@@ -83,6 +83,9 @@ void remove_zero_global_def(ir::Program *prog) {
             !none_zero_inst.count(loadaddr)) {
           stack.insert(loadaddr);
         }
+        if(prog->global_vars.at(loadaddr->var_name)->val.has_value()){
+          stack.insert(loadaddr);
+        }
         if(!name2reg.count(loadaddr->var_name)){
           reg2base[loadaddr->dst] = loadaddr->dst;
           name2reg[loadaddr->var_name] = loadaddr->dst;
