@@ -19,7 +19,8 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"array_mem2reg", array_mem2reg},  // 在array ssa之前必须进行一次gvn_gcm
   {"array_ssa_destruction", array_ssa_destruction},
   {"remove_useless_loop", remove_useless_loop},
-  {"clean_hodgepodge", clean_hodgepodge},
+  {"gvn_no_cfg", gvn_no_cfg},
+  {"gvn_cfg", gvn_cfg},
   {"loop_fusion", loop_fusion},
   {"loop_unroll", loop_unroll},
   {"duplicate_load_store_elimination", duplicate_load_store_elimination},
@@ -33,92 +34,68 @@ const std::map<std::string, funcptr> PASS_MAP = {
 std::vector<funcptr> passes = {
   main_global_var_to_local,
   mem2reg,
+  remove_uneffective_inst,
   remove_unused_function,
   main_global_var_to_local,
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
-  
-  gvn_gcm,
-  clean_hodgepodge,
-  
-  
-  
-  array_mem2reg,
-  gvn_gcm,
-  clean_hodgepodge,
 
-  clean_useless_cf,
-  // remove_zero_global_def,
-  loop_fusion,
-
-  gvn_gcm,
-  clean_hodgepodge,
-  duplicate_load_store_elimination,
-  array_ssa_destruction,
-
-  loop_unroll,
-
-  gvn_gcm,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
-
-  function_inline,
-
+  gvn_no_cfg,
 
   array_mem2reg,
-  gvn_gcm,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
-  duplicate_load_store_elimination,
+    gvn_no_cfg,
+    clean_useless_cf, // for loop fusion
+    loop_fusion,
+    gvn_no_cfg,
+    duplicate_load_store_elimination,
   array_ssa_destruction,
 
   operator_strength_promotion,
 
   loop_unroll,
 
+  gvn_cfg,
+
+  function_inline,
+
   array_mem2reg,
-  gvn_gcm,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
-  gvn_gcm,
-  duplicate_load_store_elimination,
+    gvn_cfg,
+    duplicate_load_store_elimination,
   array_ssa_destruction,
-
-
-  gvn_gcm,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
-
-  remove_uneffective_inst,
-  remove_useless_loop,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
 
   main_global_var_to_local,
   mem2reg,
 
+  gvn_cfg,
+  remove_useless_loop,
+  gvn_cfg,
+
+  
   gep_destruction,
-  gvn_gcm,
-  clean_hodgepodge,
+  gvn_no_cfg,
 
   operator_strength_reduction,
-  gvn_gcm,
-  clean_hodgepodge,
-  constant_propagation,
-  clean_useless_cf,
+  gvn_cfg,
 
   operator_strength_promotion,
+
   sort_basicblock,
 };
 
-void clean_hodgepodge(ir::Program *prog) {
+// without modify cfg
+void gvn_no_cfg(ir::Program *prog) {
+  gvn_gcm(prog);
   remove_uneffective_inst(prog);
   remove_unused_function(prog);
+}
+
+// modify cfg
+void gvn_cfg(ir::Program *prog) {
+  gvn_gcm(prog);
+  remove_uneffective_inst(prog);
+  remove_unused_function(prog);
+  constant_propagation(prog);
+  clean_useless_cf(prog);
 }
 
 void ir_validation(ir::Program *prog) {
