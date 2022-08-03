@@ -47,7 +47,7 @@ std::vector<funcptr> passes = {
   clean_hodgepodge,
 
   clean_useless_cf,
-  remove_zero_global_def,
+  // remove_zero_global_def,
   loop_fusion,
 
   gvn_gcm,
@@ -57,12 +57,17 @@ std::vector<funcptr> passes = {
 
   loop_unroll,
 
+  gvn_gcm,
+  clean_hodgepodge,
+  constant_propagation,
+  clean_useless_cf,
 
   function_inline,
 
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,
+  constant_propagation,
   clean_useless_cf,
   gvn_gcm,
   duplicate_load_store_elimination,

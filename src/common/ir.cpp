@@ -80,7 +80,10 @@ Function::~Function() {
 }
 
 void Function::do_liveness_analysis() {
-  for (auto &bb : bbs) {
+  cfg->compute_rpo();
+  auto po = cfg->rpo;
+  std::reverse(po.begin(), po.end());
+  for (auto &bb : po) {
     bb->live_use.clear();
     bb->def.clear();
 
@@ -104,7 +107,7 @@ void Function::do_liveness_analysis() {
   bool changed = true;
   while (changed) {
     changed = false;
-    for (auto &bb : bbs) {
+    for (auto &bb : po) {
       unordered_set<Reg> new_out;
       for (auto succ : bb->succ)
         new_out.insert(succ->live_in.begin(), succ->live_in.end());
