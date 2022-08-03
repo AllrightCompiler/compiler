@@ -192,7 +192,8 @@ Reg vn_get(Instruction *inst) {
       hashTable_gep[make_tuple(gep->type, gep->base, gep->indices)] = gep->dst;
     }
   } else TypeCase(call, ir::insns::Call *, inst) {
-    if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
+    if (program->functions.count(call->func) && 
+        (program->functions.at(call->func).is_pure() || (in_array_ssa() && program->functions.at(call->func).is_array_ssa_pure()))) {
       if (hashTable_call.count(std::make_tuple(call->func, call->args))) {
         hashTable[inst] = hashTable_call[make_tuple(call->func, call->args)];
       } else {
