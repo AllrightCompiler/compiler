@@ -239,6 +239,8 @@ void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *ne
       if (info.loop_type == 0 || (info.loop_type == 2 && last_turn)) {
         new_bb->succ.insert(succ_bb);
         succ_bb->prev.insert(new_bb);
+      } else if (info.loop_type == 3) {
+        new_bb->succ.insert(bb_map[map_curid].at(succ_bb));
       }
     } else if (succ_bb == exit) {
       if (info.loop_type == 0 || (info.loop_type == 3 && last_turn)) {
@@ -352,7 +354,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
               br->false_target = new_entry;
           } else {
             bb_map[!map_curid][entry_prev_bb]->insns.back()->remove_use_def();
-            bb_map[!map_curid][entry_prev_bb]->insns.back().reset(new ir::insns::Jump(new_entry));
+            auto jmp = new ir::insns::Jump(new_entry);
+            jmp->bb = bb_map[!map_curid][entry_prev_bb];
+            bb_map[!map_curid][entry_prev_bb]->insns.back().reset(jmp);
             bb_map[!map_curid][entry_prev_bb]->insns.back()->add_use_def();
           }
         } else assert(false);
@@ -524,9 +528,11 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     for (auto bb : exit_paths) { // only one exit_prev
       exit_bb->prev.erase(bb);
     }
+    loop->header->succ.erase(exit_bb); // delete entry's succ to exit
     if (info.loop_type == 1) {
       for (auto bb : exit_paths) { // only one exit_prev
         exit_bb->prev.insert(bb_map[map_curid].at(bb));
+        bb_map[map_curid].at(bb)->succ.insert(exit_bb);
       }
     }
     if (info.loop_type == 2) {
@@ -552,7 +558,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
   if (info.loop_type == 1) {
     // delete last bb's Br
     bb_map[map_curid].at(info.exit_prev)->insns.back()->remove_use_def();
-    bb_map[map_curid].at(info.exit_prev)->insns.back().reset(new ir::insns::Jump(exit_bb));
+    auto jmp = new ir::insns::Jump(exit_bb);
+    jmp->bb = bb_map[map_curid].at(info.exit_prev);
+    bb_map[map_curid].at(info.exit_prev)->insns.back().reset(jmp);
     bb_map[map_curid].at(info.exit_prev)->insns.back()->add_use_def();
     for (auto &insn : loop->header->insns) {
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
@@ -606,7 +614,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
           br->false_target = loop1_entry;
       } else {
         bb->insns.back()->remove_use_def();
-        bb->insns.back().reset(new ir::insns::Jump(loop1_entry));
+        auto jmp = new ir::insns::Jump(loop1_entry);
+        jmp->bb = bb;
+        bb->insns.back().reset(jmp);
         bb->insns.back()->add_use_def();
       }
     } else assert(false);
@@ -633,7 +643,6 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
 }
 
 void loop_unroll(ir::Function *func) {
-  // if (func->name == "main") return;
   func->cfg->build();
   func->loop_analysis();
   for (auto &loop_ptr : func->loops) {
@@ -725,6 +734,7 @@ void loop_unroll(ir::Program *prog) {
   for(auto &func : prog->functions) {
     loop_unroll(&func.second);
   }
+  ir_validation(prog);
 }
 
 }

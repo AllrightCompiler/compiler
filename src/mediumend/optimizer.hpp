@@ -42,6 +42,7 @@ void gep_destruction(ir::Program *prog);
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &op1, const ConstValue &op2);
+void ir_validation(ir::Program *prog);
 bool in_array_ssa();
 
 inline void run_medium(ir::Program *prog, bool disable_gep_des) {

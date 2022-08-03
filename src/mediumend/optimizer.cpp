@@ -102,4 +102,33 @@ void clean_hodgepodge(ir::Program *prog) {
   remove_unused_function(prog);
 }
 
+void ir_validation(ir::Program *prog) {
+  auto validate = [=](bool v) {
+    if (!v) std::cerr << (*prog) << std::endl;
+    assert(v);
+  };
+  for (auto &[_, func] : prog->functions) {
+    for (auto &bb : func.bbs) {
+      validate(bb->func != nullptr && bb->func == &func);
+      for (auto &insn : bb->insns) {
+        validate(insn->bb != nullptr && insn->bb == bb.get());
+      }
+      for (auto succ : bb->succ) {
+        validate(succ->prev.count(bb.get()));
+      }
+      for (auto prev : bb->prev) {
+        validate(prev->succ.count(bb.get()));
+      }
+      for (auto &insn : bb->insns) {
+        TypeCase(phi, ir::insns::Phi *, insn.get()) {
+          validate(phi->incoming.size() == bb->prev.size());
+          for (auto pair : phi->incoming) {
+            validate(bb->prev.count(pair.first));
+          }
+        } else break;
+      }
+    }
+  }
+}
+
 }
