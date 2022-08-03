@@ -139,6 +139,16 @@ struct Operand2 {
   static Operand2 from(float imm) { return Operand2{.opd = imm}; }
 };
 
+// TODO: throughput?
+struct FUInfo {
+  int latency;
+  std::vector<FU> units;
+
+  FUInfo() {}
+  FUInfo(int latency, std::vector<FU> units)
+      : latency{latency}, units{std::move(units)} {}
+};
+
 struct Instruction {
   ExCond cond;
 
@@ -146,6 +156,7 @@ struct Instruction {
   virtual ~Instruction() = default;
 
   virtual void emit(std::ostream &os) const {}
+  virtual FUInfo info() const { return {1, {FU::Integer}}; }
   virtual std::set<Reg> def() const { return {}; }
   virtual std::set<Reg> use() const { return {}; }
   virtual std::vector<Reg *> reg_ptrs() { return {}; }
@@ -175,6 +186,7 @@ struct RType : Instruction {
   RType(Op op, Reg dst, Reg s1, Reg s2) : op{op}, dst{dst}, s1{s1}, s2{s2} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {s1, s2}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &s1, &s2}; }
@@ -193,6 +205,7 @@ struct IType : Instruction {
   IType(Op op, Reg dst, Reg s1, int imm) : op{op}, dst{dst}, s1{s1}, imm{imm} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {s1}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &s1}; }
@@ -208,6 +221,7 @@ struct FullRType : Instruction {
       : op{op}, dst{dst}, s1{s1}, s2{std::move(s2)} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override {
     auto u = s2.get_use();
@@ -235,6 +249,7 @@ struct Move : Instruction {
       : dst{dst}, src{std::move(src)}, flip{flip} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return src.get_use(); }
   std::vector<Reg *> reg_ptrs() override {
@@ -270,6 +285,7 @@ struct MovW : Instruction {
   MovW(Reg dst, int imm) : dst{dst}, imm{imm} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst}; }
@@ -283,6 +299,7 @@ struct MovT : Instruction {
   MovT(Reg dst, int imm) : dst{dst}, imm{imm} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {dst}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst}; }
@@ -298,6 +315,7 @@ struct LoadAddr : Instruction {
   LoadAddr(Reg dst, std::string sym) : dst{dst}, symbol{std::move(sym)} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst}; }
@@ -315,6 +333,7 @@ struct Compare : Instruction {
       : s1{s1}, s2{std::move(s2)}, neg{neg} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override {
     auto u = s2.get_use();
@@ -336,6 +355,7 @@ struct Load : Instruction {
   Load(Reg dst, Reg base, int offset) : dst{dst}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {base}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &base}; }
@@ -349,6 +369,7 @@ struct Store : Instruction {
   Store(Reg src, Reg base, int offset) : src{src}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {src, base}; }
   std::vector<Reg *> reg_ptrs() override { return {&src, &base}; }
@@ -366,6 +387,7 @@ struct FusedMul : Instruction {
       : dst{dst}, s1{s1}, s2{s2}, s3{s3}, sub{sub} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {s1, s2, s3}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &s1, &s2, &s3}; }
@@ -380,6 +402,7 @@ struct Branch : Instruction {
   Branch(BasicBlock *target) : target{target} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
 };
 
 // CBZ/CBNZ
@@ -392,6 +415,7 @@ struct RegBranch : Instruction {
       : type{type}, target{target}, src{src} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {src}; }
   std::vector<Reg *> reg_ptrs() override { return {&src}; }
@@ -413,6 +437,7 @@ struct LoadStackAddr : SpRelative {
       : dst{dst}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst}; }
@@ -428,6 +453,7 @@ struct LoadStack : SpRelative {
       : dst{dst}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst}; }
@@ -442,6 +468,7 @@ struct StoreStack : SpRelative {
       : src{src}, base{base}, offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {src}; }
   std::vector<Reg *> reg_ptrs() override { return {&src}; }
@@ -457,6 +484,7 @@ struct AdjustSp : SpRelative {
   AdjustSp(int offset) : offset{offset} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {}; }
   std::vector<Reg *> reg_ptrs() override { return {}; }
@@ -468,6 +496,7 @@ struct Push : SpRelative {
   Push(std::vector<Reg> srcs) : srcs{std::move(srcs)} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override {
     return std::set<Reg>(srcs.begin(), srcs.end());
@@ -486,6 +515,7 @@ struct Pop : SpRelative {
   Pop(std::vector<Reg> dsts) : dsts{std::move(dsts)} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override {
     return std::set<Reg>(dsts.begin(), dsts.end());
   }
@@ -504,6 +534,7 @@ struct Call : Instruction {
         variadic_at{variadic_at} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override {
     // lr和所有caller-saved (volatile)寄存器
     std::set<Reg> d{Reg{General, lr}};
@@ -529,6 +560,7 @@ struct Call : Instruction {
 
 struct Return : Instruction {
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {Reg{General, r0}, Reg{Fp, s0}}; }
   std::vector<Reg *> reg_ptrs() override { return {}; }
@@ -540,6 +572,7 @@ struct CountLeadingZero : Instruction {
   CountLeadingZero(Reg dst, Reg src) : dst{dst}, src{src} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {src}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
@@ -554,6 +587,7 @@ struct PseudoCompare : Instruction {
   PseudoCompare(Compare *real_cmp, Reg dst) : cmp{real_cmp}, dst{dst} {}
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return cmp->use(); }
   std::vector<Reg *> reg_ptrs() override {
@@ -578,6 +612,7 @@ struct Convert : Instruction {
   }
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {this->dst}; }
   std::set<Reg> use() const override { return {this->src}; }
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
@@ -614,6 +649,7 @@ struct Vneg : Instruction {
   }
 
   void emit(std::ostream &os) const override;
+  FUInfo info() const override;
   std::set<Reg> def() const override { return {this->dst}; }
   std::set<Reg> use() const override { return {this->src}; }
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }

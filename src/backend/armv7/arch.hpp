@@ -104,4 +104,18 @@ inline bool is_vmov_f32_imm(float x) {
 // load和store的偏移量
 inline bool is_valid_ldst_offset(int x) { return -4095 <= x && x <= 4095; }
 
+// 针对Cortex-A72的参数
+// 详见Cortex A72 software optimization guide
+
+// NOTE: FP/ASIMD-0 (F0) 和 FP/ASIMD-1 (F1) 是两个不相同的功能部件
+// 但为了简单起见，这里认为 F0 和 F1 功能一致
+enum class FU {
+  Branch,     // B
+  Integer,    // I
+  MultiCycle, // M
+  Load,       // L
+  Store,      // S
+  FpAsimd,    // F0/F1
+};
+
 } // namespace armv7

@@ -15,4 +15,6 @@ void remove_unused(Function &f);
 // 移除无实际效果的指令，如mov r0, r0
 void remove_useless(Function &f);
 
+void do_list_scheduling(Function &f);
+
 } // namespace armv7
