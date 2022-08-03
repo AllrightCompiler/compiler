@@ -64,6 +64,19 @@ std::vector<funcptr> passes = {
 
   function_inline,
 
+
+  array_mem2reg,
+  gvn_gcm,
+  clean_hodgepodge,
+  constant_propagation,
+  clean_useless_cf,
+  duplicate_load_store_elimination,
+  array_ssa_destruction,
+
+  operator_strength_promotion,
+
+  loop_unroll,
+
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,

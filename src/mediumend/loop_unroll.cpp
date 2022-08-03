@@ -537,6 +537,7 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
       for (auto bb : exit_paths) { // only one exit_prev
         exit_bb->prev.insert(bb_map[map_curid].at(bb));
         bb_map[map_curid].at(bb)->succ.insert(exit_bb);
+        bb->succ.erase(exit_bb); // delete loop0 to exit
       }
     }
     if (info.loop_type == 2) {
@@ -702,7 +703,7 @@ void loop_unroll(ir::Function *func) {
       } else assert(false);
       assert(full_cnt >= 0);
       if (full_cnt == 0 || full_cnt == 1) continue;
-      if (full_cnt < 100 && full_cnt * loop_info.inst_cnt <= 500) {
+      if (full_cnt < 100 && full_cnt * loop_info.inst_cnt <= 1000) {
         unroll_cnt = full_cnt; // fully unroll
       } else continue; // TODO: temporarily disabled
       // } else loop_info.loop_type = 2;
