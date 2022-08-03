@@ -26,6 +26,7 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"remove_zero_global_def", remove_zero_global_def},
   {"sort_basicblock", sort_basicblock},
   {"gep_destruction", gep_destruction},
+  {"remove_recursive_tail_call", remove_recursive_tail_call},
 };
 
 // define default passes here
@@ -40,7 +41,7 @@ std::vector<funcptr> passes = {
   gvn_gcm,
   clean_hodgepodge,
   
-
+  
   
   array_mem2reg,
   gvn_gcm,

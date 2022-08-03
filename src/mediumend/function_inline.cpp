@@ -184,7 +184,6 @@ void function_inline(ir::Program *prog) {
       use_cnt[func.first] = 0;
     }
     int length = 0;
-    unordered_set<string> calls_func_name;
     for(auto &bb : func.second.bbs){
       length += bb->insns.size();
       for(auto &insn : bb->insns){
@@ -197,10 +196,6 @@ void function_inline(ir::Program *prog) {
           if(call->func == func.first){
             cursive_or_long_calls.insert(call->func);
           } else {
-            if(calls_func_name.count(call->func)){
-              continue;
-            }
-            calls_func_name.insert(call->func);
             if(!use_cnt[func.first]){
               use_cnt[func.first] = 1;
             } else {
