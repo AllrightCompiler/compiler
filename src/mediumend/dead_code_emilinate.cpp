@@ -323,7 +323,6 @@ void clean_useless_cf(ir::Program *prog){
 
 bool remove_useless_loop(ir::Function *func) {
   func->loop_analysis();
-  func->do_liveness_analysis();
   bool changed = false;
   unordered_set<BasicBlock *> remove_bbs;
   for (auto &loop_ptr : func->loops) {
