@@ -366,7 +366,13 @@ bool remove_useless_loop(ir::Function *func) {
       }
       for(auto &inst : bb->insns){
         TypeCase(output, ir::insns::Output *, inst.get()){
-          defs.insert(output->dst);
+          auto uses = func->use_list[output->dst];
+          for(auto each : uses){
+            if(!loop_bbs.count(each->bb)){
+              check = false;
+              break;
+            }
+          }
         }
         TypeCase(call, ir::insns::Call *, inst.get()){
           if(!cur_prog->functions.count(call->func) || !cur_prog->functions.at(call->func).is_pure()){
@@ -393,17 +399,6 @@ bool remove_useless_loop(ir::Function *func) {
       }
     }
     if(!out || !check){
-      continue;
-    }
-    int raw_size = out->live_in.size() + defs.size();
-    defs.merge(out->live_in);
-    if(raw_size != defs.size()){
-      check = false;
-    }
-    if (!out) {
-      check = false;  
-    }
-    if(!check){
       continue;
     }
     changed = true;
