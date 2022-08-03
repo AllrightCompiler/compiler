@@ -154,6 +154,11 @@ list<unique_ptr<Instruction>>::iterator BasicBlock::remove_at(list<unique_ptr<In
   return insns.erase(it);
 }
 
+void BasicBlock::pop_back() {
+  insns.back()->remove_use_def();
+  insns.pop_back(); // auto release
+}
+
 void BasicBlock::insert_at_pos(int pos, Instruction *insn) {
   auto it = insns.begin();
   while (pos--) {
