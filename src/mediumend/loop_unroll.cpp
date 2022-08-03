@@ -53,7 +53,11 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
   info.loop_type = 0;
   info.inst_cnt = 0;
   for (auto bb : loop_bbs) {
-    info.inst_cnt += bb->insns.size();
+    for (auto &insn : bb->insns) {
+      TypeCase(call, ir::insns::Call *, insn.get()) {
+        info.inst_cnt += 50;
+      } else info.inst_cnt++;
+    }
   }
   BasicBlock *entry = loop->header;
   BasicBlock *exit_prev = nullptr;
