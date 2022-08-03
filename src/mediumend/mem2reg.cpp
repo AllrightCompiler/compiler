@@ -65,7 +65,24 @@ void main_global_var_to_local(ir::Program *prog){
   mark_global_addr_reg(prog);
   unordered_set<string> used_vars; // 变量被除了main函数以外的函数使用过
   unordered_set<string> main_used_vars; // 变量被除了main函数以外的函数使用过
+  unordered_map<string, ConstValue> global_const; // 全局常量
+  for(auto &[name, val] : prog->global_vars){
+    if(val->val.has_value()){
+      global_const[name] = val->val.value();
+    } else {
+      if(val->type.is_array()){
+        continue;
+      }
+      if(val->type.base_type == ScalarType::Float){
+        global_const[name] = ConstValue(0);
+      }
+      if(val->type.base_type == ScalarType::Int){
+        global_const[name] = ConstValue(0.0f);
+      }
+    }
+  }
   for (auto &[name, func] : prog->functions) {
+    unordered_map<Reg, string> reg2name;
     if (name == "main") {
       for (auto &bb : func.bbs) {
         for (auto &insn : bb->insns) {
@@ -74,6 +91,12 @@ void main_global_var_to_local(ir::Program *prog){
             if (var->type.is_array()) // 只改写非数组的全局变量
               continue;
             main_used_vars.insert(loadaddr->var_name);
+            reg2name[loadaddr->dst] = loadaddr->var_name;
+          }
+          TypeCase(store, ir::insns::Store *, insn.get()){
+            if(reg2name.count(store->addr)){
+              global_const.erase(reg2name[store->addr]);
+            }
           }
         }
       }
@@ -82,6 +105,12 @@ void main_global_var_to_local(ir::Program *prog){
         for (auto &insn : bb->insns) {
           TypeCase(loadaddr, ir::insns::LoadAddr *, insn.get()) {
             used_vars.insert(loadaddr->var_name);
+            reg2name[loadaddr->dst] = loadaddr->var_name;
+          }
+          TypeCase(store, ir::insns::Store *, insn.get()){
+            if(reg2name.count(store->addr)){
+              global_const.erase(reg2name[store->addr]);
+            }
           }
         }
       }
@@ -125,6 +154,31 @@ void main_global_var_to_local(ir::Program *prog){
         }
       }
       ++iter;
+    }
+  }
+  for (auto &[name, func] : prog->functions) {
+    unordered_map<string, Reg> name2reg;
+    unordered_map<Reg, Reg> reg2base;
+    for (auto &bb : func.bbs) {
+      for (auto &insn : bb->insns) {
+        TypeCase(loadaddr, ir::insns::LoadAddr *, insn.get()) {
+          if (global_const.count(loadaddr->var_name)) {
+            if(!name2reg.count(loadaddr->var_name)){
+              Reg reg = func.new_reg(global_const.at(loadaddr->var_name).type);
+              name2reg[loadaddr->var_name] = reg;
+              func.bbs.front()->push_front(
+                  new ir::insns::LoadImm(reg, global_const.at(loadaddr->var_name)));
+            }
+            reg2base[loadaddr->dst] = name2reg.at(loadaddr->var_name);
+          }
+        }
+        TypeCase(load, ir::insns::Load *, insn.get()){
+          if(reg2base.count(load->addr)){
+            copy_propagation(func.use_list, load->dst,
+                             reg2base.at(load->addr));
+          }
+        }
+      }
     }
   }
 }

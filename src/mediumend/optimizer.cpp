@@ -3,7 +3,7 @@
 namespace mediumend {
 
 // add pass here
-const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
+const std::map<std::string, funcptr> PASS_MAP = {
   {"remove_unused_function", remove_unused_function},
   {"mem2reg", mem2reg},
   {"constant_propagation", constant_propagation},
@@ -20,50 +20,73 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"array_ssa_destruction", array_ssa_destruction},
   {"remove_useless_loop", remove_useless_loop},
   {"clean_hodgepodge", clean_hodgepodge},
+  {"loop_fusion", loop_fusion},
+  {"loop_unroll", loop_unroll},
+  {"duplicate_load_store_elimination", duplicate_load_store_elimination},
+  {"remove_zero_global_def", remove_zero_global_def},
+  {"sort_basicblock", sort_basicblock},
+  {"gep_destruction", gep_destruction},
+  {"remove_recursive_tail_call", remove_recursive_tail_call},
 };
 
 // define default passes here
-std::vector<std::function<void(ir::Program *)> > passes = {
+std::vector<funcptr> passes = {
   main_global_var_to_local,
   mem2reg,
   remove_unused_function,
   main_global_var_to_local,
-  mark_pure_func, // 纯函数可以用来做GVN和无用代码移除
-
-  // array_mem2reg,
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // array_ssa_destruction,
-
+  remove_uneffective_inst, // important! must done before mark_pure_func
+  mark_pure_func,
+  
+  gvn_gcm,
+  clean_hodgepodge,
+  
   function_inline,
+
+  // remove_recursive_tail_call,
   
   array_mem2reg,
   gvn_gcm,
   clean_hodgepodge,
+  clean_useless_cf,
+  remove_zero_global_def,
+  loop_fusion,
+  gvn_gcm,
+  duplicate_load_store_elimination,
   array_ssa_destruction,
+
+  // loop_unroll,
 
   gvn_gcm,
   clean_hodgepodge,
+  constant_propagation,
   clean_useless_cf,
 
   remove_uneffective_inst,
   remove_useless_loop,
   clean_hodgepodge,
+  constant_propagation,
+  clean_useless_cf,
 
   main_global_var_to_local,
   mem2reg,
 
+  gep_destruction,
+  gvn_gcm,
+  clean_hodgepodge,
+
   operator_strength_reduction,
   gvn_gcm,
   clean_hodgepodge,
+  constant_propagation,
   clean_useless_cf,
 
   operator_strength_promotion,
+  sort_basicblock,
 };
 
 void clean_hodgepodge(ir::Program *prog) {
   remove_uneffective_inst(prog);
-  constant_propagation(prog);
   remove_unused_function(prog);
 }
 
