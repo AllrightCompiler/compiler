@@ -9,21 +9,26 @@ using ir::Loop;
 using ir::BasicBlock;
 using ir::Instruction;
 
+static const int THREAD_NUM = 4;
+
 // Parallel loop:
 // - one exit
 // - one into edge to entry (into_entry)
 // - one back edge to entry (exit_prev)
 // - cond_var appear twice (phi, update), updated value only used by phi & cmp (array index only contain simple i)
-// - i = c0, i </<= n, i += c1
+// - only one phi at entry (cond_var)
+// - i = x, i < n, i += c
 struct ParallelLoopInfo {
   bool valid;
-  int start; // const start
+  Reg start_reg; // reg start
   int step; // const step
   Reg end_reg; // reg end
   BasicBlock *into_entry;
   BasicBlock *entry;
   BasicBlock *exit_prev;
   BasicBlock *exit;
+  Instruction *entry_ind_phi;
+  Instruction *cond_cmp;
 };
 
 ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *> &loop_bbs, BasicBlock *exit) {
@@ -54,11 +59,19 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
       else return info; // multiple into edge
     }
   }
+  int cnt_phi = 0;
+  for (auto &insn : info.entry->insns) {
+    TypeCase(dummy, ir::insns::Phi *, insn.get()) {
+      cnt_phi++;
+    } else break;
+  }
+  if (cnt_phi > 1) return info; // multiple phi at entry
   TypeCase(br_cond, ir::insns::Branch *, info.exit_prev->insns.back().get()) { // br entry, exit
-    TypeCase(binary_cond, ir::insns::Binary *, br_cond->bb->func->def_list.at(br_cond->val)) { // i </<= n
+    TypeCase(binary_cond, ir::insns::Binary *, br_cond->bb->func->def_list.at(br_cond->val)) { // i < n
       if (binary_cond->dst.type != Int) return info;
-      if (binary_cond->op != BinaryOp::Lt && binary_cond->op != BinaryOp::Leq) return info; // TODO: only consider i < n or i <= n now
+      if (binary_cond->op != BinaryOp::Lt) return info; // TODO: only consider i < n now
       info.end_reg = binary_cond->src2;
+      info.cond_cmp = binary_cond;
       if (binary_cond->bb->func->has_param(binary_cond->src1)) return info;
       TypeCase(binary_update, ir::insns::Binary *, binary_cond->bb->func->def_list.at(binary_cond->src1)) { // i = i + c
         if (binary_update->dst.type != Int) return info;
@@ -71,6 +84,7 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
         }
         TypeCase(update_imm, ir::insns::LoadImm *, binary_update->bb->func->def_list.at(reg_c)) { // c
           assert(update_imm->imm.type == Int);
+          if (update_imm->imm.iv != 1) return info; // TODO: only consider c = 1 now
           info.step = update_imm->imm.iv;
         } else return info; // step not const
         TypeCase(inst_phi, ir::insns::Phi *, binary_update->bb->func->def_list.at(reg_i)) {
@@ -83,10 +97,8 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
               assert(!in_loop(pair.first));
             }
           }
-          if (inst_phi->bb->func->has_param(reg_i_init)) return info;
-          TypeCase(init_imm, ir::insns::LoadImm *, inst_phi->bb->func->def_list.at(reg_i_init)) {
-            info.start = init_imm->imm.iv;
-          } else return info; // init not const
+          info.start_reg = reg_i_init;
+          info.entry_ind_phi = inst_phi;
         } else return info; // no phi inst
       } else return info; // update not binary
     } else return info; // cond not binary
@@ -193,8 +205,10 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     new_into_entry->prev.insert(into_entry);
     new_into_entry->succ.insert(parallel_entry);
     new_into_entry->succ.insert(entry);
-    auto jmp = new ir::insns::Jump(parallel_entry); // TODO: check condition for parallel
-    new_into_entry->push_back(jmp);
+    Reg parallel_cond = func->new_reg(Int);
+    new_into_entry->push_back(new ir::insns::LoadImm(parallel_cond, ConstValue(1))); // TODO: check condition for parallel
+    auto br = new ir::insns::Branch(parallel_cond, parallel_entry, entry);
+    new_into_entry->push_back(br);
   }
   unordered_map<BasicBlock *, BasicBlock *> bb_map;
   unordered_map<Reg, Reg> reg_map;
@@ -212,10 +226,41 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     }
   }
   // setup parallel_entry
+  Reg tid = func->new_reg(Int);
   {
     parallel_entry->prev.insert(new_into_entry);
     parallel_entry->succ.insert(bb_map.at(entry));
-    // TODO: add parallel system call
+    auto syscall = new ir::insns::Call(tid, "__create_threads", {});
+    parallel_entry->push_back(syscall);
+    Reg range_len = func->new_reg(Int);
+    auto range_sub = new ir::insns::Binary(range_len, BinaryOp::Sub, info.end_reg, info.start_reg);
+    parallel_entry->push_back(range_sub);
+    Reg imm_1 = func->new_reg(Int);
+    auto loadimm_1 = new ir::insns::LoadImm(imm_1, ConstValue(1));
+    parallel_entry->push_back(loadimm_1);
+    Reg tid_plus_one = func->new_reg(Int);
+    auto tid_inc = new ir::insns::Binary(tid_plus_one, BinaryOp::Add, tid, imm_1);
+    parallel_entry->push_back(tid_inc);
+    Reg imm_TN = func->new_reg(Int);
+    auto loadimm_TN = new ir::insns::LoadImm(imm_TN, ConstValue(THREAD_NUM));
+    parallel_entry->push_back(loadimm_TN);
+    Reg mul_l = func->new_reg(Int), mul_r = func->new_reg(Int);
+    auto l_mul = new ir::insns::Binary(mul_l, BinaryOp::Mul, range_len, tid);
+    auto r_mul = new ir::insns::Binary(mul_r, BinaryOp::Mul, range_len, tid_plus_one);
+    parallel_entry->push_back(l_mul);
+    parallel_entry->push_back(r_mul);
+    Reg l = func->new_reg(Int), r = func->new_reg(Int);
+    auto l_div = new ir::insns::Binary(l, BinaryOp::Div, mul_l, imm_TN); // l = [(end - start) * tid] / THREAD_NUM
+    auto r_div = new ir::insns::Binary(r, BinaryOp::Div, mul_r, imm_TN); // r = [(end - start) * (tid + 1)] / THREAD_NUM
+    parallel_entry->push_back(l_div);
+    parallel_entry->push_back(r_div);
+    Reg new_start = func->new_reg(Int), new_end = func->new_reg(Int);
+    auto new_start_add = new ir::insns::Binary(new_start, BinaryOp::Add, info.start_reg, l);
+    auto new_end_add = new ir::insns::Binary(new_end, BinaryOp::Add, info.start_reg, r);
+    parallel_entry->push_back(new_start_add);
+    parallel_entry->push_back(new_end_add);
+    info.entry_ind_phi->change_use(info.start_reg, new_start);
+    info.cond_cmp->change_use(info.end_reg, new_end);
     auto jmp = new ir::insns::Jump(bb_map.at(entry));
     parallel_entry->push_back(jmp);
   }
@@ -223,8 +268,9 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
   {
     parallel_exit->prev.insert(bb_map.at(exit_prev));
     parallel_exit->succ.insert(exit);
-    // TODO: add parallel system call
+    auto syscall = new ir::insns::Call(func->new_reg(Int), "__join_threads", {tid});
     auto jmp = new ir::insns::Jump(exit);
+    parallel_exit->push_back(syscall);
     parallel_exit->push_back(jmp);
   }
   bb_map[into_entry] = parallel_entry;
