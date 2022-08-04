@@ -40,6 +40,7 @@ void remove_zero_global_def(ir::Program *prog);
 void sort_basicblock(ir::Program *prog);
 void gep_destruction(ir::Program *prog);
 void remove_recursive_tail_call(ir::Program *prog);
+void loop_parallel(ir::Program *prog);
 
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);

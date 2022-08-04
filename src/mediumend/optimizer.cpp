@@ -28,6 +28,7 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"sort_basicblock", sort_basicblock},
   {"gep_destruction", gep_destruction},
   {"remove_recursive_tail_call", remove_recursive_tail_call},
+  {"loop_parallel", loop_parallel},
 };
 
 // define default passes here
