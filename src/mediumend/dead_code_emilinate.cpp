@@ -103,8 +103,18 @@ void remove_uneffective_inst(ir::Program *prog){
       auto &insns = bb->insns;
       for (auto &inst : insns) {
         TypeCase(call, ir::insns::Call *, inst.get()){
-          if(prog->functions.find(call->func) == prog->functions.end() || !prog->functions.at(call->func).is_pure()){
+          if(prog->functions.find(call->func) == prog->functions.end()){
             stack.insert(call);
+          } else {
+            if(in_array_ssa()){
+              if(!prog->functions.at(call->func).is_array_ssa_pure()){
+                stack.insert(call);
+              }
+            } else {
+              if(!prog->functions.at(call->func).is_pure()){
+                stack.insert(call);
+              }
+            }
           }
         } else TypeCase(term, ir::insns::Terminator *, inst.get()){
           stack.insert(term);
