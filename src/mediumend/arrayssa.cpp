@@ -38,38 +38,55 @@ unordered_map<Reg, Reg> find_base(Function *func) {
   return reg2base;
 }
 
-void array_mem2reg(ir::Program *prog) {
-  unordered_map<std::string, unordered_set<std::string>> used_gvar;
-  unordered_map<std::string, unordered_set<int>> modified_param;
-  for (auto &each : prog->functions) {
-    Function *func = &each.second;
-    unordered_map<Reg, Reg> reg2base;
-    for (int i = 0; i < func->sig.param_types.size(); i++) {
-      auto &param = func->sig.param_types[i];
-      if (param.is_array()) {
-        auto reg = Reg(param.base_type, i + 1);
-        reg2base[reg] = reg;
-      }
+static unordered_map<std::string, unordered_set<std::string>> used_gvar;
+static unordered_map<std::string, unordered_set<int>> modified_param;
+static ir::Program *cur_prog = nullptr;
+
+void find_use_def_array(Function * func){
+  unordered_map<Reg, Reg> reg2base;
+  for (int i = 0; i < func->sig.param_types.size(); i++) {
+    auto &param = func->sig.param_types[i];
+    if (param.is_array()) {
+      auto reg = Reg(param.base_type, i + 1);
+      reg2base[reg] = reg;
     }
-    modified_param[each.first] = {};
-    for (auto &bb : func->bbs) {
-      for (auto &inst : bb->insns) {
-        TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
-          used_gvar[each.first].insert(loadaddr->var_name);
+  }
+  used_gvar[func->name] = {};
+  modified_param[func->name] = {};
+  for (auto &bb : func->bbs) {
+    for (auto &inst : bb->insns) {
+      TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
+        used_gvar[func->name].insert(loadaddr->var_name);
+      }
+      TypeCase(gep, ir::insns::GetElementPtr *, inst.get()) {
+        if(reg2base.count(gep->base)){
+          reg2base[gep->dst] = reg2base.at(gep->base);
         }
-        TypeCase(gep, ir::insns::GetElementPtr *, inst.get()) {
-          if(reg2base.count(gep->base)){
-            reg2base[gep->dst] = reg2base.at(gep->base);
-          }
+      }
+      TypeCase(store, ir::insns::Store *, inst.get()){
+        if(reg2base.count(store->addr)){
+          modified_param[func->name].insert(reg2base.at(store->addr).id);
         }
-        TypeCase(store, ir::insns::Store *, inst.get()){
-          if(reg2base.count(store->addr)){
-            modified_param[each.first].insert(reg2base.at(store->addr).id);
-          }
+      }
+      TypeCase(call, ir::insns::Call *, inst.get()){
+        if(!cur_prog->functions.count(call->func)){
+          continue;
         }
+        if(!used_gvar.count(call->func)){
+          find_use_def_array(&cur_prog->functions.at(call->func));
+        }
+        used_gvar[func->name].insert(used_gvar[call->func].begin(), used_gvar[call->func].end());
+        modified_param[func->name].insert(modified_param[call->func].begin(), modified_param[call->func].end());
       }
     }
   }
+}
+
+void array_mem2reg(ir::Program *prog) {
+  cur_prog = prog;
+  used_gvar.clear();
+  modified_param.clear();
+  find_use_def_array(&prog->functions.at("main"));
   for (auto &each : prog->functions) {
     Function *func = &each.second;
     CFG *cfg = func->cfg;
