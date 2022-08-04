@@ -916,28 +916,15 @@ void Function::replace_pseudo_insns() {
 void Function::resolve_phi() {
   // de-SSA (phi resolution)
   // 假定当前是Conventional SSA，如为T-SSA需要额外转换
-  // 稳妥的实现:
+  // 保守的实现:
   // 每个move被拆成两步，引入新的临时变量以消除顺序依赖，达到phi函数的并行求值效果
-  // TODO: 实现ParallelCopy减少插入的mov数量
-  std::vector<std::tuple<BasicBlock *, Reg, Reg>> pending_moves; // bb, dst, src
+  std::unordered_map<BasicBlock *, std::vector<std::pair<Reg, Reg>>> par_copies;
   for (auto &bb : bbs) {
     auto &insns = bb->insns;
     for (auto it = insns.begin(); it != insns.end();) {
       TypeCase(phi, Phi *, it->get()) {
-        for (auto &[bb, src] : phi->srcs) {
-          // 在跳转前插入mov
-          Reg dst = phi->dst;
-          Reg mid = new_reg(dst.type);
-          auto mov = new Move{mid, Operand2::from(src)};
-          bb->insert_before_branch(mov);
-
-          pending_moves.push_back({bb, dst, mid});
-          phi_moves.insert(mov);
-
-          // auto mov = new Move{phi->dst, Operand2::from(src)};
-          // bb->insert_before_branch(mov);
-          // phi_moves.insert(mov);
-        }
+        for (auto &[bb, src] : phi->srcs)
+          par_copies[bb].push_back({phi->dst, src});
         it = insns.erase(it);
       }
       else {
@@ -945,10 +932,34 @@ void Function::resolve_phi() {
       }
     }
   }
-  for (auto &[bb, dst, src] : pending_moves) {
-    auto mov = new Move{dst, Operand2::from(src)};
-    bb->insert_before_branch(mov);
-    phi_moves.insert(mov);
+
+  for (auto &[bb, pcopy] : par_copies) {
+    while (!std::all_of(pcopy.begin(), pcopy.end(),
+                        [](const auto &p) { return p.first == p.second; })) {
+      std::set<Reg> live_in;
+      for (auto [_, src] : pcopy)
+        live_in.insert(src);
+
+      Move *mov = nullptr;
+      auto it = std::find_if(pcopy.begin(), pcopy.end(), [&](const auto &p) {
+        return !live_in.count(p.first);
+      });
+      if (it != pcopy.end()) {
+        auto [dst, src] = *it;
+        mov = new Move{dst, Operand2::from(src)};
+        pcopy.erase(it);
+      } else {
+        auto it = std::find_if(pcopy.begin(), pcopy.end(), [](const auto &p) {
+          return p.first != p.second;
+        });
+        Reg tmp = new_reg(it->first.type);
+        mov = new Move{tmp, Operand2::from(it->second)};
+        it->second = tmp;
+      }
+
+      bb->insert_before_branch(mov);
+      phi_moves.insert(mov);
+    }
   }
 }
 
