@@ -31,7 +31,7 @@ unordered_map<Reg, Reg> find_base(Function *func) {
         reg2base[alloca->dst] = alloca->dst;
       }
       else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
-        reg2base[gep->base] = reg2base.at(gep->base);
+        reg2base[gep->dst] = reg2base.at(gep->base);
       }
     }
   }
@@ -40,12 +40,32 @@ unordered_map<Reg, Reg> find_base(Function *func) {
 
 void array_mem2reg(ir::Program *prog) {
   unordered_map<std::string, unordered_set<std::string>> used_gvar;
+  unordered_map<std::string, unordered_set<int>> modified_param;
   for (auto &each : prog->functions) {
     Function *func = &each.second;
+    unordered_map<Reg, Reg> reg2base;
+    for (int i = 0; i < func->sig.param_types.size(); i++) {
+      auto &param = func->sig.param_types[i];
+      if (param.is_array()) {
+        auto reg = Reg(param.base_type, i + 1);
+        reg2base[reg] = reg;
+      }
+    }
+    modified_param[each.first] = {};
     for (auto &bb : func->bbs) {
       for (auto &inst : bb->insns) {
         TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
           used_gvar[each.first].insert(loadaddr->var_name);
+        }
+        TypeCase(gep, ir::insns::GetElementPtr *, inst.get()) {
+          if(reg2base.count(gep->base)){
+            reg2base[gep->dst] = reg2base.at(gep->base);
+          }
+        }
+        TypeCase(store, ir::insns::Store *, inst.get()){
+          if(reg2base.count(store->addr)){
+            modified_param[each.first].insert(reg2base.at(store->addr).id);
+          }
         }
       }
     }
@@ -291,8 +311,12 @@ void array_mem2reg(ir::Program *prog) {
             alloc_map[bb][base] = dst;
             use_before_def[bb][base].clear();
           }
+          int cnt = use.size();
           for (auto reg : use) {
             if (reg2base.find(reg) != reg2base.end()) {
+              if(prog->functions.count(inst->func) && !modified_param.at(inst->func).count(cnt)){
+                continue;
+              }
               auto base = reg2base[reg];
               Reg dst = func->new_reg(ScalarType::String);
               BasicBlock *pos = bb;
@@ -314,6 +338,7 @@ void array_mem2reg(ir::Program *prog) {
               alloc_map[bb][base] = dst;
               use_before_def[bb][base].clear();
             }
+            cnt--;
           }
           continue;
         }
