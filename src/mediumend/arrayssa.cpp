@@ -231,6 +231,10 @@ void array_mem2reg(ir::Program *prog) {
         }
         TypeCase(inst, ir::insns::Call *, iter->get()) {
           auto use = inst->use();
+          unordered_map<Reg, int> use2num;
+          for(int i = 0; i < inst->args.size(); i++){
+            use2num[inst->args[i]] = i + 1;
+          }
           unordered_map<Reg, Reg> use2def;
           unordered_map<std::string, Reg> name2def;
           for (auto reg : use) {
@@ -311,8 +315,8 @@ void array_mem2reg(ir::Program *prog) {
             alloc_map[bb][base] = dst;
             use_before_def[bb][base].clear();
           }
-          int cnt = use.size();
           for (auto reg : use) {
+            int cnt = use2num[reg];
             if (reg2base.find(reg) != reg2base.end()) {
               if(prog->functions.count(inst->func) && !modified_param.at(inst->func).count(cnt)){
                 continue;
@@ -338,7 +342,6 @@ void array_mem2reg(ir::Program *prog) {
               alloc_map[bb][base] = dst;
               use_before_def[bb][base].clear();
             }
-            cnt--;
           }
           continue;
         }
