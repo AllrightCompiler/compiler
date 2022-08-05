@@ -12,7 +12,8 @@ using std::unordered_set;
 using std::unordered_map;
 using std::vector;
 
-const int LONG_CALL_LEN = 64000;
+const int LONG_CALL_LEN = 256;
+const int TOO_LONG_CALL_LEN = 1000;
 
 void inline_single_func(Function *caller, Program *prog, unordered_set<string> &cursive_or_long_calls){
   vector<ir::insns::Call *> calls;
@@ -142,8 +143,9 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
         } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()){
           inst_copy = new ir::insns::LoadAddr(reg2reg.at(loadaddr->dst), loadaddr->var_name);
         } else TypeCase(alloc, ir::insns::Alloca *, inst.get()){
-          allocas.push_back(new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type));
-          continue;
+          inst_copy = new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type);
+          // allocas.push_back(new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type));
+          // continue;
         } else TypeCase(getptr, ir::insns::GetElementPtr *, inst.get()){
           vector<Reg> indexs_copy;
           for(auto &index : getptr->indices){
@@ -160,13 +162,13 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     }
     // 找一个合适的位置插入，或者就等后面指令调度
     caller->cfg->build();
-    auto insert_bb = caller->bbs.front().get();
-    auto jmp = insert_bb->insns.back().release();
-    insert_bb->insns.pop_back();
-    for(int i = 0; i < allocas.size(); i++){
-      insert_bb->push_back(allocas[i]);
-    }
-    insert_bb->insns.emplace_back(jmp);
+    // auto insert_bb = caller->bbs.front().get();
+    // auto jmp = insert_bb->insns.back().release();
+    // insert_bb->insns.pop_back();
+    // for(int i = 0; i < allocas.size(); i++){
+    //   insert_bb->push_back(allocas[i]);
+    // }
+    // insert_bb->insns.emplace_back(jmp);
     if(ret_phi){
       ret_phi->add_use_def();
     }
@@ -182,7 +184,6 @@ void function_inline(ir::Program *prog) {
       use_cnt[func.first] = 0;
     }
     int length = 0;
-    unordered_set<string> calls_func_name;
     for(auto &bb : func.second.bbs){
       length += bb->insns.size();
       for(auto &insn : bb->insns){
@@ -195,10 +196,6 @@ void function_inline(ir::Program *prog) {
           if(call->func == func.first){
             cursive_or_long_calls.insert(call->func);
           } else {
-            if(calls_func_name.count(call->func)){
-              continue;
-            }
-            calls_func_name.insert(call->func);
             if(!use_cnt[func.first]){
               use_cnt[func.first] = 1;
             } else {
@@ -208,7 +205,7 @@ void function_inline(ir::Program *prog) {
         }
       }
     }
-    if(length > LONG_CALL_LEN){
+    if(length > LONG_CALL_LEN && length < TOO_LONG_CALL_LEN){
       cursive_or_long_calls.insert(func.first);
     }
   }

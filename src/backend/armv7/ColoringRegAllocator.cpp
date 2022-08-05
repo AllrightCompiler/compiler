@@ -369,7 +369,18 @@ void ColoringRegAllocator::select_spill() {
     auto cost = basic_cost / degree.at(r);
     spill_costs.push_back({cost, r});
   }
-  auto [_, u] = *std::min_element(spill_costs.begin(), spill_costs.end());
+  // auto [_, u] = *std::min_element(spill_costs.begin(), spill_costs.end());
+  auto [_, u] = *std::min_element(spill_costs.begin(), spill_costs.end(),
+                                  [](const auto &p1, const auto &p2) {
+                                    auto [c1, r1] = p1;
+                                    auto [c2, r2] = p2;
+                                    if (c1 != c2)
+                                      return c1 < c2;
+                                    // NOTE: cost相同时优先选择编号较小的虚拟寄存器
+                                    // 以避免spill最近新生成的虚拟寄存器
+                                    // 由于编号实际是负数，这里反过来写
+                                    return r2 < r1;
+                                  });
 
   // if (spilling_regs.count(u)) {
   //   std::cerr << "bad choice from " << spill_worklist.size() << " regs\n";
@@ -489,10 +500,12 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
                   f->emit_imm(insns, it, tmp, std::get<Imm>(*val));
                 break;
               case RegValueType::GlobalName:
-                insns.emplace(it, new LoadAddr{tmp, std::get<GlobalName>(*val)});
+                insns.emplace(it,
+                              new LoadAddr{tmp, std::get<GlobalName>(*val)});
                 break;
               case RegValueType::StackAddr:
-                insns.emplace(it, new LoadStackAddr{tmp, std::get<StackAddr>(*val), 0});
+                insns.emplace(
+                    it, new LoadStackAddr{tmp, std::get<StackAddr>(*val), 0});
                 break;
               }
             }

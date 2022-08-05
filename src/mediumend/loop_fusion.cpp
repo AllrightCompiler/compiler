@@ -184,11 +184,13 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2) {
       }
       auto raw = phi_map.at(phi->incoming.at(mid_bb));
       auto dst = phi->dst;
-      for(auto each : cur_func->use_list[dst]){
+      auto use_list = cur_func->use_list[dst];
+      for(auto each : use_list){
         if(each->bb == b2){
           each->change_use(dst, raw);
         }
       }
+      // check here
       reorder_map[raw] = phi->incoming.at(b2);
     }
   }
@@ -346,23 +348,16 @@ bool check_common_var(BasicBlock *b1, BasicBlock *b2, BasicBlock *mid_bb) {
     }
   }
   for(auto &inst : mid_bb->insns){
-    bool is_phi = false;
-    bool is_const = false;
     TypeCase(phi, ir::insns::Phi *, inst.get()){
       // 使用、改变，不能同时满足
       common_map[phi->dst] = common_map.at(phi->incoming.at(b1));
       for(auto each : cur_func->use_list[phi->dst]){
         TypeCase(use_phi, ir::insns::Phi *, each){
-          is_phi = true;
         } else {
-          is_const = true;
+          return false;
         }
       }
-      if(is_const && is_phi){
-        return false;
-      }
     }
-
     TypeCase(call, ir::insns::Call *, inst.get()){
       return false;
     }
@@ -461,7 +456,8 @@ bool check_common_var(BasicBlock *b1, BasicBlock *b2, BasicBlock *mid_bb) {
         }
       }
       if(is_const){
-        for(auto each : cur_func->use_list[phi->dst]){
+        auto use_list = cur_func->use_list[phi->dst];
+        for(auto each : use_list){
           if(each->bb == b2){
             each->change_use(phi->dst, phi->incoming.at(b1));
           }

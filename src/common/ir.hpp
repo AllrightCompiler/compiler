@@ -61,8 +61,31 @@ struct Storage {
 struct BasicBlock;
 struct Function;
 
+enum InstType{
+  ALLOCA,
+  LOAD,
+  LOADADDR,
+  LOADIMM,
+  STORE,
+  GEP,
+  CONVERT,
+  CALL,
+  UNARY,
+  BINARY,
+  PHI,
+  MEMUSE,
+  MEMDEF,
+  RETURN,
+  JUMP,
+  BRANCH,
+  OUTPUT,
+  TERMINATOR,
+};
+
 struct Instruction {
   BasicBlock *bb;
+  InstType type;
+  Instruction(InstType type) : type(type) {}
 
   template <typename T> bool is() const {
     return dynamic_cast<const T *>(this) != nullptr;
@@ -114,6 +137,11 @@ struct BasicBlock {
   void push_front(Instruction *insn);
   // modify use-def
   void pop_front();
+  // modify use-def
+  void insert_at(list<unique_ptr<Instruction>>::iterator it, Instruction *insn);
+  // modify use-def
+  list<unique_ptr<Instruction>>::iterator remove_at(list<unique_ptr<Instruction>>::iterator it);
+  void pop_back();
   // not modify use-def
   void insert_at_pos(int pos, Instruction *insn);
   // not modify use-def
@@ -156,6 +184,7 @@ struct Function {
 
   mediumend::CFG *cfg = nullptr;
   int pure = -1;
+  int array_ssa_pure = -1;
 
   unordered_map<Reg, unordered_set<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
@@ -167,6 +196,7 @@ struct Function {
   ~Function();
   bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
   bool is_pure() const { return pure == 1; }
+  bool is_array_ssa_pure() const { return array_ssa_pure == 1; }
   void clear_visit();
   void clear_graph();
   void clear_dom();
@@ -247,14 +277,16 @@ inline std::string type_string(const Type &t) {
 
 namespace insns {
 
-struct Terminator : Instruction {};
+struct Terminator : Instruction {
+  Terminator(InstType type = TERMINATOR) : Instruction(type) {}
+};
 
 // 写目的寄存器的指令
 struct Output : Instruction {
   Reg dst;
 
-  Output() {}
-  Output(Reg r) : dst{r} {}
+  Output(InstType type = OUTPUT) : Instruction(type) {}
+  Output(Reg r, InstType type = TERMINATOR) : dst{r}, Instruction(type) {}
 
   std::ostream &write_reg(std::ostream &os) const;
 
@@ -268,7 +300,7 @@ struct Output : Instruction {
 struct Alloca : Output {
   Type type;
 
-  Alloca(Reg dst, Type tp) : type{std::move(tp)}, Output{dst} {}
+  Alloca(Reg dst, Type tp) : type{std::move(tp)}, Output{dst, ALLOCA} {}
 
   virtual void emit(std::ostream &os) const override;
 };
@@ -277,7 +309,7 @@ struct Alloca : Output {
 struct Load : Output {
   Reg addr;
 
-  Load(Reg dst, Reg addr) : addr{addr}, Output{dst} {}
+  Load(Reg dst, Reg addr) : addr{addr}, Output{dst, LOAD} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -291,7 +323,7 @@ struct Load : Output {
 struct LoadAddr : Output {
   string var_name;
 
-  LoadAddr(Reg dst, string name) : var_name{std::move(name)}, Output{dst} {}
+  LoadAddr(Reg dst, string name) : var_name{std::move(name)}, Output{dst, LOADADDR} {}
 
   virtual void emit(std::ostream &os) const override;
 };
@@ -299,7 +331,7 @@ struct LoadAddr : Output {
 struct LoadImm : Output {
   ConstValue imm;
 
-  LoadImm(Reg dst, ConstValue immediate) : imm{immediate}, Output{dst} {}
+  LoadImm(Reg dst, ConstValue immediate) : imm{immediate}, Output{dst, LOADIMM} {}
 
   virtual void emit(std::ostream &os) const override;
 };
@@ -307,7 +339,7 @@ struct LoadImm : Output {
 struct Store : Instruction {
   Reg addr, val;
 
-  Store(Reg addr, Reg val) : addr{addr}, val{val} {}
+  Store(Reg addr, Reg val) : Instruction(STORE), addr{addr}, val{val} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -327,7 +359,7 @@ struct GetElementPtr : Output {
 
   GetElementPtr(Reg dst, Type tp, Reg base, vector<Reg> indexes)
       : type{std::move(tp)}, indices{std::move(indexes)}, base{base},
-        Output{dst}, omit_first_index(false) {}
+        Output{dst, GEP}, omit_first_index(false) {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -351,7 +383,7 @@ struct GetElementPtr : Output {
 struct Convert : Output {
   Reg src;
 
-  Convert(Reg to, Reg from) : src{from}, Output{to} {}
+  Convert(Reg to, Reg from) : src{from}, Output{to, CONVERT} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -369,7 +401,7 @@ struct Call : Output {
 
   Call(Reg dst, string callee, vector<Reg> arg_regs, int variadic_at = -1)
       : func{std::move(callee)}, args{std::move(arg_regs)},
-        variadic_at{variadic_at}, Output{dst} {}
+        variadic_at{variadic_at}, Output{dst, CALL} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -397,7 +429,7 @@ struct Unary : Output {
   UnaryOp op;
   Reg src;
 
-  Unary(Reg dst, UnaryOp op, Reg src) : op{op}, src{src}, Output{dst} {}
+  Unary(Reg dst, UnaryOp op, Reg src) : op{op}, src{src}, Output{dst, UNARY} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -412,7 +444,7 @@ struct Binary : Output {
   Reg src1, src2;
 
   Binary(Reg dst, BinaryOp op, Reg src1, Reg src2)
-      : op{op}, src1{src1}, src2{src2}, Output{dst} {}
+      : op{op}, src1{src1}, src2{src2}, Output{dst, BINARY} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -429,9 +461,9 @@ struct Phi : Output {
   std::unordered_set<Reg> use_before_def;
   bool array_ssa;
 
-  Phi(Reg dst, bool array_ssa = false) : Output{dst}, array_ssa(array_ssa) {}
+  Phi(Reg dst, bool array_ssa = false) : Output{dst, PHI}, array_ssa(array_ssa) {}
 
-  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst}, array_ssa(false) {
+  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst, PHI}, array_ssa(false) {
     for (size_t i = 0; i < bbs.size(); i++) {
       incoming[bbs[i]] = regs[i];
     }
@@ -466,7 +498,7 @@ struct MemUse : Output {
   Reg load_src;
   bool call_use;
   MemUse(Reg dst, Reg dep, Reg load_src, bool call_use)
-      : dep{dep}, load_src{load_src}, call_use(call_use), Output{dst} {}
+      : dep{dep}, load_src{load_src}, call_use(call_use), Output{dst, MEMUSE} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
@@ -486,7 +518,7 @@ struct MemDef : Output {
   MemDef(Reg dst, Reg dep, Reg store_dst, Reg store_val, bool call_def,
          unordered_set<Reg> uses_before_def)
       : dep(dep), store_dst{store_dst}, store_val{store_val},
-        call_def(call_def), uses_before_def(uses_before_def), Output{dst} {}
+        call_def(call_def), uses_before_def(uses_before_def), Output{dst, MEMDEF} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
@@ -506,7 +538,7 @@ struct MemDef : Output {
 struct Return : Terminator {
   std::optional<Reg> val;
 
-  Return(std::optional<Reg> ret_val) : val{ret_val} {}
+  Return(std::optional<Reg> ret_val) : Terminator(RETURN), val{ret_val} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -528,7 +560,7 @@ struct Return : Terminator {
 struct Jump : Terminator {
   BasicBlock *target;
 
-  Jump(BasicBlock *dest) : target{dest} {}
+  Jump(BasicBlock *dest) : Terminator(JUMP), target{dest} {}
 
   virtual void emit(std::ostream &os) const override;
 };
@@ -538,7 +570,7 @@ struct Branch : Terminator {
   Reg val;
 
   Branch(Reg src, BasicBlock *true_dst, BasicBlock *false_dst)
-      : val{src}, true_target{true_dst}, false_target{false_dst} {}
+      : Terminator(BRANCH), val{src}, true_target{true_dst}, false_target{false_dst} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;

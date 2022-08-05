@@ -53,7 +53,11 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
   info.loop_type = 0;
   info.inst_cnt = 0;
   for (auto bb : loop_bbs) {
-    info.inst_cnt += bb->insns.size();
+    for (auto &insn : bb->insns) {
+      TypeCase(call, ir::insns::Call *, insn.get()) {
+        info.inst_cnt += 50;
+      } else info.inst_cnt++;
+    }
   }
   BasicBlock *entry = loop->header;
   BasicBlock *exit_prev = nullptr;
@@ -121,15 +125,17 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
       } else return info; // update not binary inst
     } else return info; // cond not binary
   } else assert(false);
-  TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
-    TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
-      assert(is_cmp(into_binary_cond));
-      // assert(into_binary_cond->src1 == info.end_reg || into_binary_cond->src2 == info.end_reg);
-      if (into_binary_cond->src1 != info.end_reg && into_binary_cond->src2 != info.end_reg) return info; // not loop invariant
-      info.into_cond = into_binary_cond;
-    } else return info;
-    info.into_br = into_br_cond;
-  } else assert(false);
+  if (type != 1) { // if type 1: should not have br after gvn_gcm and clean_cf
+    TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
+      TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
+        assert(is_cmp(into_binary_cond));
+        // assert(into_binary_cond->src1 == info.end_reg || into_binary_cond->src2 == info.end_reg);
+        if (into_binary_cond->src1 != info.end_reg && into_binary_cond->src2 != info.end_reg) return info; // not loop invariant
+        info.into_cond = into_binary_cond;
+      } else return info;
+      info.into_br = into_br_cond;
+    } else assert(false);
+  }
   info.loop_type = type;
   return info;
 }
@@ -237,6 +243,8 @@ void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *ne
       if (info.loop_type == 0 || (info.loop_type == 2 && last_turn)) {
         new_bb->succ.insert(succ_bb);
         succ_bb->prev.insert(new_bb);
+      } else if (info.loop_type == 3) {
+        new_bb->succ.insert(bb_map[map_curid].at(succ_bb));
       }
     } else if (succ_bb == exit) {
       if (info.loop_type == 0 || (info.loop_type == 3 && last_turn)) {
@@ -350,7 +358,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
               br->false_target = new_entry;
           } else {
             bb_map[!map_curid][entry_prev_bb]->insns.back()->remove_use_def();
-            bb_map[!map_curid][entry_prev_bb]->insns.back().reset(new ir::insns::Jump(new_entry));
+            auto jmp = new ir::insns::Jump(new_entry);
+            jmp->bb = bb_map[!map_curid][entry_prev_bb];
+            bb_map[!map_curid][entry_prev_bb]->insns.back().reset(jmp);
             bb_map[!map_curid][entry_prev_bb]->insns.back()->add_use_def();
           }
         } else assert(false);
@@ -522,6 +532,14 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     for (auto bb : exit_paths) { // only one exit_prev
       exit_bb->prev.erase(bb);
     }
+    loop->header->succ.erase(exit_bb); // delete entry's succ to exit
+    if (info.loop_type == 1) {
+      for (auto bb : exit_paths) { // only one exit_prev
+        exit_bb->prev.insert(bb_map[map_curid].at(bb));
+        bb_map[map_curid].at(bb)->succ.insert(exit_bb);
+        bb->succ.erase(exit_bb); // delete loop0 to exit
+      }
+    }
     if (info.loop_type == 2) {
       exit_bb->prev.erase(info.into_entry); // because into_entry now points to new_into_entry
     }
@@ -530,6 +548,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         phi->remove_use_def();
         for (auto bb : exit_paths) {
+          if (info.loop_type == 1) {
+            phi->incoming[bb_map[map_curid].at(bb)] = reg_map[map_curid].at(phi->incoming.at(bb));
+          }
           phi->incoming.erase(bb);
         }
         if (info.loop_type == 2) {
@@ -542,7 +563,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
   if (info.loop_type == 1) {
     // delete last bb's Br
     bb_map[map_curid].at(info.exit_prev)->insns.back()->remove_use_def();
-    bb_map[map_curid].at(info.exit_prev)->insns.back().reset(new ir::insns::Jump(exit_bb));
+    auto jmp = new ir::insns::Jump(exit_bb);
+    jmp->bb = bb_map[map_curid].at(info.exit_prev);
+    bb_map[map_curid].at(info.exit_prev)->insns.back().reset(jmp);
     bb_map[map_curid].at(info.exit_prev)->insns.back()->add_use_def();
     for (auto &insn : loop->header->insns) {
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
@@ -596,7 +619,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
           br->false_target = loop1_entry;
       } else {
         bb->insns.back()->remove_use_def();
-        bb->insns.back().reset(new ir::insns::Jump(loop1_entry));
+        auto jmp = new ir::insns::Jump(loop1_entry);
+        jmp->bb = bb;
+        bb->insns.back().reset(jmp);
         bb->insns.back()->add_use_def();
       }
     } else assert(false);
@@ -623,7 +648,6 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
 }
 
 void loop_unroll(ir::Function *func) {
-  // if (func->name == "main") return;
   func->cfg->build();
   func->loop_analysis();
   for (auto &loop_ptr : func->loops) {
@@ -665,6 +689,7 @@ void loop_unroll(ir::Function *func) {
     // Unroll this loop
     auto loop_info = get_loop_info(loop, loop_bbs, exit_bb);
     if (loop_info.inst_cnt > 100) continue;
+    if (loop_info.loop_type == 0) continue;
     loop_info.exit = exit_bb;
     int unroll_cnt = UNROLL_CNT;
     if (loop_info.loop_type == 1) {
@@ -678,9 +703,10 @@ void loop_unroll(ir::Function *func) {
       } else assert(false);
       assert(full_cnt >= 0);
       if (full_cnt == 0 || full_cnt == 1) continue;
-      if (full_cnt < 100 && full_cnt * loop_info.inst_cnt <= 500) {
+      if (full_cnt < 100 && full_cnt * loop_info.inst_cnt <= 1000) {
         unroll_cnt = full_cnt; // fully unroll
-      } else loop_info.loop_type = 2;
+      } else continue; // TODO: temporarily disabled
+      // } else loop_info.loop_type = 2;
     }
     if (loop_info.loop_type == 2) { // Decrease end by unroll * step, therefore erase branches jump out in middle
       Instruction *binary_cond = func->def_list.at(loop_info.cond_reg);
@@ -713,6 +739,7 @@ void loop_unroll(ir::Program *prog) {
   for(auto &func : prog->functions) {
     loop_unroll(&func.second);
   }
+  ir_validation(prog);
 }
 
 }

@@ -192,7 +192,8 @@ Reg vn_get(Instruction *inst) {
       hashTable_gep[make_tuple(gep->type, gep->base, gep->indices)] = gep->dst;
     }
   } else TypeCase(call, ir::insns::Call *, inst) {
-    if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
+    if (program->functions.count(call->func) && 
+        (program->functions.at(call->func).is_pure() || (in_array_ssa() && program->functions.at(call->func).is_array_ssa_pure()))) {
       if (hashTable_call.count(std::make_tuple(call->func, call->args))) {
         hashTable[inst] = hashTable_call[make_tuple(call->func, call->args)];
       } else {
@@ -450,13 +451,26 @@ bool is_pinned(Instruction *inst) {
   TypeCase(phi, ir::insns::Phi *, inst) return true;
   // TypeCase(alloca, ir::insns::Alloca *, inst) return true; // TODO: Alloca should be able to move
   TypeCase(call, ir::insns::Call *, inst) {
-    if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
-      return false;
+    if (!in_array_ssa()) {
+      if (program->functions.count(call->func) && program->functions.at(call->func).is_pure()) {
+        return false;
+      } else {
+        return true;
+      }
     } else {
-      return true;
+      if (!program->functions.count(call->func)) { // lib function
+        if (call->func == "__builtin_array_init") return false;
+        else return true;
+      } else {
+        if (program->functions.at(call->func).is_array_ssa_pure()) {
+          return false;
+        } else {
+          return true;
+        }
+      }
     }
   }
-  TypeCase(call, ir::insns::MemDef *, inst) {
+  TypeCase(memdef, ir::insns::MemDef *, inst) {
     if (inst->bb->func->name != "main") return true;
   }
   return false;
@@ -502,6 +516,8 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     placement[loadimm] = root_bb;
   } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
     placement[loadaddr] = root_bb;
+  } else TypeCase(allo, ir::insns::Alloca *, inst) {
+    placement[allo] = root_bb;
   } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
     placement[gep] = root_bb;
     BasicBlock *place;
@@ -526,7 +542,7 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
       }
     }
   } else TypeCase(call, ir::insns::Call *, inst) {
-    if (program->functions.count(call->func) && program->functions[call->func].is_pure()) {
+    if (!is_pinned(call)) {
       placement[call] = root_bb;
       BasicBlock *place;
       for (auto arg : call->args) {
@@ -566,6 +582,25 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     if (place2->domlevel > placement[memuse]->domlevel) {
       placement[memuse] = place2;
     }
+  } else TypeCase(memdef, ir::insns::MemDef *, inst) {
+    if (!is_pinned(memdef)) {
+      placement[memdef] = root_bb;
+      auto use = memdef->use();
+      BasicBlock *place = nullptr;
+      for (auto use_reg : use) {
+        if (inst->bb->func->has_param(use_reg)) {
+          place = inst->bb->func->bbs.front().get();
+        } else {
+          schedule_early(visited, placement, bbs, def_list, root_bb, def_list.at(use_reg));
+          place = placement[def_list.at(use_reg)];
+        }
+        if (place->domlevel > placement[memdef]->domlevel) {
+          placement[memdef] = place;
+        }
+      }
+    } else {
+      placement[memdef] = inst->bb;
+    }
   } else {
     placement[inst] = inst->bb;
   }
@@ -598,9 +633,6 @@ void schedule_late(unordered_set<ir::Instruction *> &visited,
     if(use_list.count(output->dst)) {
       for (auto i : use_list.at(output->dst)) {
         use = nullptr;
-        if(output->dst.id == 166){
-          int a = 1;
-        }
         schedule_late(visited, placement, cfg, bbs, use_list, i);
         TypeCase(phi, ir::insns::Phi *, i) {
           for (auto pair : phi->incoming) {
