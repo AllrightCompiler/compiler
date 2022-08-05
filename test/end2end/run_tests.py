@@ -127,7 +127,7 @@ def run_test(args):
         command = f'ssh compile "cd tmp/tmp; timeout {TIMEOUT} ./main 2> tmp.err"'
     proc = subprocess.Popen(command, stdout=open(output_path, "w"), shell=True)
     proc.wait()
-    if proc.returncode:
+    if proc.returncode == 124:
         print('\033[0;31mTLE\033[0m')
         return ret_err(test_name, timeStarted, "TLE")
     else:

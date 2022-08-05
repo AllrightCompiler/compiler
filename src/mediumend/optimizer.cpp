@@ -3,7 +3,7 @@
 namespace mediumend {
 
 // add pass here
-const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
+const std::map<std::string, funcptr> PASS_MAP = {
   {"remove_unused_function", remove_unused_function},
   {"mem2reg", mem2reg},
   {"constant_propagation", constant_propagation},
@@ -19,55 +19,113 @@ const std::map<std::string, std::function<void(ir::Program *)> > PASS_MAP = {
   {"array_mem2reg", array_mem2reg},  // 在array ssa之前必须进行一次gvn_gcm
   {"array_ssa_destruction", array_ssa_destruction},
   {"remove_useless_loop", remove_useless_loop},
-  {"clean_hodgepodge", clean_hodgepodge},
+  {"gvn_no_cfg", gvn_no_cfg},
+  {"gvn_cfg", gvn_cfg},
+  {"loop_fusion", loop_fusion},
   {"loop_unroll", loop_unroll},
+  {"duplicate_load_store_elimination", duplicate_load_store_elimination},
+  {"remove_zero_global_def", remove_zero_global_def},
+  {"sort_basicblock", sort_basicblock},
+  {"gep_destruction", gep_destruction},
+  {"remove_recursive_tail_call", remove_recursive_tail_call},
 };
 
 // define default passes here
-std::vector<std::function<void(ir::Program *)> > passes = {
+std::vector<funcptr> passes = {
   main_global_var_to_local,
   mem2reg,
-  // remove_unused_function,
-  // main_global_var_to_local,
-  // mark_pure_func, // 纯函数可以用来做GVN和无用代码移除
+  remove_uneffective_inst,
+  remove_unused_function,
+  main_global_var_to_local,
+  remove_uneffective_inst, // important! must done before mark_pure_func
+  mark_pure_func,
 
-  // // array_mem2reg,
-  // // gvn_gcm,
-  // // clean_hodgepodge,
-  // // array_ssa_destruction,
+  gvn_no_cfg,
+  // remove_recursive_tail_call,
+
+  // array_mem2reg,
+  //   gvn_no_cfg,
+  //   clean_useless_cf, // for loop fusion
+  //   loop_fusion,
+  //   gvn_no_cfg,
+  //   duplicate_load_store_elimination,
+  // array_ssa_destruction,
+
+  // operator_strength_promotion,
 
   // loop_unroll,
 
+  // gvn_cfg,
+
   // function_inline,
-  
+
   // array_mem2reg,
-  // gvn_gcm,
-  // clean_hodgepodge,
+  //   gvn_cfg,
+  //   duplicate_load_store_elimination,
   // array_ssa_destruction,
-
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // clean_useless_cf,
-
-  // remove_uneffective_inst,
-  // remove_useless_loop,
-  // clean_hodgepodge,
 
   // main_global_var_to_local,
   // mem2reg,
 
+  // gvn_cfg,
+  // remove_useless_loop,
+  // gvn_cfg,
+
+  
+  // gep_destruction,
+  // gvn_no_cfg,
+
   // operator_strength_reduction,
-  // gvn_gcm,
-  // clean_hodgepodge,
-  // clean_useless_cf,
+  // gvn_cfg,
 
   // operator_strength_promotion,
+
+  // sort_basicblock,
 };
 
-void clean_hodgepodge(ir::Program *prog) {
+// without modify cfg
+void gvn_no_cfg(ir::Program *prog) {
+  gvn_gcm(prog);
   remove_uneffective_inst(prog);
-  constant_propagation(prog);
   remove_unused_function(prog);
+}
+
+// modify cfg
+void gvn_cfg(ir::Program *prog) {
+  gvn_gcm(prog);
+  remove_uneffective_inst(prog);
+  remove_unused_function(prog);
+  constant_propagation(prog);
+  clean_useless_cf(prog);
+}
+
+void ir_validation(ir::Program *prog) {
+  auto validate = [=](bool v) {
+    if (!v) std::cerr << (*prog) << std::endl;
+    assert(v);
+  };
+  for (auto &[_, func] : prog->functions) {
+    for (auto &bb : func.bbs) {
+      validate(bb->func != nullptr && bb->func == &func);
+      for (auto &insn : bb->insns) {
+        validate(insn->bb != nullptr && insn->bb == bb.get());
+      }
+      for (auto succ : bb->succ) {
+        validate(succ->prev.count(bb.get()));
+      }
+      for (auto prev : bb->prev) {
+        validate(prev->succ.count(bb.get()));
+      }
+      for (auto &insn : bb->insns) {
+        TypeCase(phi, ir::insns::Phi *, insn.get()) {
+          validate(phi->incoming.size() == bb->prev.size());
+          for (auto pair : phi->incoming) {
+            validate(bb->prev.count(pair.first));
+          }
+        } else break;
+      }
+    }
+  }
 }
 
 }

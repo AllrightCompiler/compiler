@@ -80,7 +80,10 @@ Function::~Function() {
 }
 
 void Function::do_liveness_analysis() {
-  for (auto &bb : bbs) {
+  cfg->compute_rpo();
+  auto po = cfg->rpo;
+  std::reverse(po.begin(), po.end());
+  for (auto &bb : po) {
     bb->live_use.clear();
     bb->def.clear();
 
@@ -104,7 +107,7 @@ void Function::do_liveness_analysis() {
   bool changed = true;
   while (changed) {
     changed = false;
-    for (auto &bb : bbs) {
+    for (auto &bb : po) {
       unordered_set<Reg> new_out;
       for (auto succ : bb->succ)
         new_out.insert(succ->live_in.begin(), succ->live_in.end());
@@ -139,6 +142,24 @@ void BasicBlock::push_front(Instruction *insn) {
 void BasicBlock::pop_front() {
   insns.front()->remove_use_def();
   insns.pop_front(); // auto release
+}
+
+void BasicBlock::insert_at(list<unique_ptr<Instruction>>::iterator it, Instruction *insn) {
+  insns.emplace(it, insn);
+  insn->bb = this;
+  insn->add_use_def();
+}
+
+list<unique_ptr<Instruction>>::iterator BasicBlock::remove_at(list<unique_ptr<Instruction>>::iterator it) {
+  auto insn = it->release(); // important! otherwise inst will be auto deleted
+  insn->remove_use_def();
+  insn->bb = nullptr;
+  return insns.erase(it);
+}
+
+void BasicBlock::pop_back() {
+  insns.back()->remove_use_def();
+  insns.pop_back(); // auto release
 }
 
 void BasicBlock::insert_at_pos(int pos, Instruction *insn) {
@@ -710,9 +731,13 @@ void MemDef::change_use(Reg old_reg, Reg new_reg) {
   }
   if(uses_before_def.count(old_reg)){
     uses_before_def.erase(old_reg);
-    uses_before_def.insert(new_reg);
-    bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
+    if(bb->func->def_list.count(new_reg)){
+      TypeCase(memuse, ir::insns::MemUse *, bb->func->def_list.at(new_reg)){
+        uses_before_def.insert(new_reg);
+        bb->func->use_list[new_reg].insert(this);
+      }
+    }
   }
 }
 
