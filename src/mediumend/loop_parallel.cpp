@@ -71,6 +71,14 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
     for (auto &insn : bb->insns) {
       TypeCase(call, ir::insns::Call *, insn.get()) {
         return info; // call in loop
+      } else TypeCase(output, ir::insns::Output *, insn.get()) {
+        bool flag = true; // all use in loop
+        if (output->bb->func->use_list.count(output->dst)) {
+          for (auto use : output->bb->func->use_list.at(output->dst)) {
+            flag &= in_loop(use->bb);
+          }
+        }
+        if (!flag) return info;
       }
     }
   }
@@ -78,6 +86,7 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
     TypeCase(binary_cond, ir::insns::Binary *, br_cond->bb->func->def_list.at(br_cond->val)) { // i < n
       if (binary_cond->dst.type != Int) return info;
       if (binary_cond->op != BinaryOp::Lt) return info; // TODO: only consider i < n now
+      if (!binary_cond->bb->func->has_param(binary_cond->src2) && in_loop(binary_cond->bb->func->def_list.at(binary_cond->src2)->bb)) return info; // end_reg should be region constant
       info.end_reg = binary_cond->src2;
       info.cond_cmp = binary_cond;
       if (binary_cond->bb->func->has_param(binary_cond->src1)) return info;
