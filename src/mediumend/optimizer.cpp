@@ -57,7 +57,7 @@ std::vector<funcptr> passes = {
   gvn_cfg,
 
   function_inline,
-
+  remove_recursive_tail_call,
   gvn_cfg,
 
   loop_unroll,
