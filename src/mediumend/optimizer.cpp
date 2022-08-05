@@ -32,7 +32,6 @@ const std::map<std::string, funcptr> PASS_MAP = {
 
 // define default passes here
 std::vector<funcptr> passes = {
-  clean_useless_cf,
   main_global_var_to_local,
   mem2reg,
   remove_uneffective_inst,
