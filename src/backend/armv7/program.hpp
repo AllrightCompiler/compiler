@@ -80,6 +80,11 @@ struct Function {
   void defer_stack_param_load(Reg r, StackObject *obj);
   void resolve_phi();
 
+  template <typename RegAllocator>
+  void do_reg_alloc(RegAllocator &allocator, bool is_gp_pass = true) {
+    allocator.do_reg_alloc(*this, is_gp_pass);
+  }
+
   std::vector<BasicBlock *> compute_post_order() const;
 
   // post-register allocation passes

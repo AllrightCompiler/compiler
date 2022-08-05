@@ -785,7 +785,6 @@ void Function::emit_prologue_epilogue() {
   if (!save_lr)
     epilogue.emplace(epilogue.end(), new Return);
 
-  auto last_bb = std::prev(bbs.end())->get();
   bool trivial_return =
       !stack_obj_size && saved_fprs.empty() && saved_gprs.empty();
   for (auto &bb_ptr : bbs) {
@@ -796,10 +795,7 @@ void Function::emit_prologue_epilogue() {
       TypeCase(ret, Return *, it->get()) {
         if (!trivial_return) {
           BasicBlock::add_edge(bb, exit);
-          if (bb == last_bb)
-            insns.erase(it);
-          else
-            it->reset(new Branch{exit});
+          it->reset(new Branch{exit});
         }
       }
     }
