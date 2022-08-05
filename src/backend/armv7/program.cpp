@@ -133,6 +133,7 @@ class ProgramTranslator {
 
     auto prev_entry = bb_map[src_fn.bbs.begin()->get()];
     BasicBlock::add_edge(entry_bb, prev_entry);
+    entry_bb->push(new Branch{prev_entry});
 
     int i = 1;
     auto dst_it = std::next(dst_fn.bbs.begin()); // skip entry
@@ -403,8 +404,7 @@ class ProgramTranslator {
     else TypeCase(jump, ii::Jump *, ins) {
       auto target = bb_map[jump->target];
       BasicBlock::add_edge(bb, target);
-      if (target != next_bb)
-        bb->push(new Branch{target});
+      bb->push(new Branch{target});
     }
     else TypeCase(br, ii::Branch *, ins) {
       Reg val = Reg::from(br->val);
@@ -913,7 +913,8 @@ void Function::replace_pseudo_insns() {
     ++bb_iter;
     auto next_bb = (bb_iter == bbs.end()) ? nullptr : bb_iter->get();
 
-    for (auto it = insns.begin(); it != insns.end(); ++it) {
+    for (auto it = insns.begin(); it != insns.end();) {
+      bool remove = false;
       TypeCase(pcmp, PseudoCompare *, it->get()) {
         auto cond = pcmp->cond;
         auto dst = pcmp->dst;
@@ -948,6 +949,15 @@ void Function::replace_pseudo_insns() {
           it->reset(new Branch{false_target});
         }
       }
+      else TypeCase(br, Branch *, it->get()) {
+        if (br->target == next_bb && br->cond == ExCond::Always)
+          remove = true;
+      }
+
+      if (remove)
+        it = insns.erase(it);
+      else
+        ++it;
     }
   }
 }
