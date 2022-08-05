@@ -79,6 +79,9 @@ enum ShiftType {
   ROR, // ROtate Right
 };
 
+std::optional<std::pair<ShiftType, int>>
+combine_shift(std::pair<ShiftType, int> lhs, std::pair<ShiftType, int> rhs);
+
 struct RegImmShift {
   ShiftType type;
   Reg r;

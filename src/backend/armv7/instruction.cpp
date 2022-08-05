@@ -48,6 +48,23 @@ ExCond from(BinaryOp op) {
   }
 }
 
+std::optional<std::pair<ShiftType, int>>
+combine_shift(std::pair<ShiftType, int> lhs, std::pair<ShiftType, int> rhs) {
+  if (lhs.second == 0) {
+    return rhs;
+  }
+  if (rhs.second == 0) {
+    return lhs;
+  }
+  if (lhs.first == rhs.first) {
+    auto shift = lhs.second + rhs.second;
+    if (0 <= shift && shift < 32) {
+      return {{lhs.first, shift}};
+    }
+  }
+  return {};
+}
+
 RType::Op RType::from(BinaryOp op) {
   switch (op) {
   case BinaryOp::Add:

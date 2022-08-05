@@ -17,6 +17,7 @@ void backend_passes(Program &p) {
   for (auto &[_, f] : p.functions) {
     fold_constants(f);
 
+    merge_shift_with_binary_op(f);
     merge_add_with_load_or_store(f);
 
     remove_unused(f);
