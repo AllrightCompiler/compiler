@@ -60,7 +60,6 @@ static void merge_instr(
 }
 
 void merge_shift_binary_op(Function &func) {
-  // TODO mul/div 2^x -> shift
   auto const check_def_instr = [](Instruction const &def) -> bool {};
   auto const transform_use_instr =
       [](Reg r, Instruction const &def,

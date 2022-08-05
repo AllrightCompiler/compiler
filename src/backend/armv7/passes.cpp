@@ -156,7 +156,28 @@ void fold_constants(Function &f) {
           auto new_insn = new IType{new_op, r_ins->dst, other, imm};
           insn.reset(new_insn);
         } else if (op == RType::Mul) {
-          // TODO: 乘2的幂 -> 移位
+          int imm;
+          Reg other;
+          if (auto const iter = constants.find(r_ins->s1);
+              iter != constants.end() && is_power_of_2(iter->second.iv)) {
+            imm = iter->second.iv;
+            other = r_ins->s2;
+          } else if (auto const iter = constants.find(r_ins->s2);
+                     iter != constants.end() &&
+                     is_power_of_2(iter->second.iv)) {
+            imm = iter->second.iv;
+            other = r_ins->s1;
+          } else {
+            continue;
+          }
+          if (imm == 0) {
+            insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
+          } else {
+            insn = std::make_unique<Move>(
+                r_ins->dst,
+                Operand2::from(ShiftType::LSL, other,
+                               static_cast<int>(std::log2<unsigned>(imm))));
+          }
         } else if (op == RType::Div) {
           // TODO: 除2的幂 -> 移位
         }
