@@ -12,8 +12,6 @@
 
 namespace armv7 {
 
-inline bool is_power_of_2(int x) { return (x & (x - 1)) == 0; }
-
 template <typename Container = std::list<std::unique_ptr<Instruction>>>
 void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
                    int imm) {

@@ -48,6 +48,23 @@ ExCond from(BinaryOp op) {
   }
 }
 
+std::optional<std::pair<ShiftType, int>>
+combine_shift(std::pair<ShiftType, int> lhs, std::pair<ShiftType, int> rhs) {
+  if (lhs.second == 0) {
+    return rhs;
+  }
+  if (rhs.second == 0) {
+    return lhs;
+  }
+  if (lhs.first == rhs.first) {
+    auto shift = lhs.second + rhs.second;
+    if (0 <= shift && shift < 32) {
+      return {{lhs.first, shift}};
+    }
+  }
+  return {};
+}
+
 RType::Op RType::from(BinaryOp op) {
   switch (op) {
   case BinaryOp::Add:
@@ -333,6 +350,24 @@ void Phi::emit(std::ostream &os) const {
 
 void Vneg::emit(std::ostream &os) const {
   write_op(os, "vneg.f32") << this->dst << ", " << this->src;
+}
+
+void ComplexLoad::emit(std::ostream &os) const {
+  write_op(os, "ldr") << this->dst << ", [" << this->base << ", "
+                      << this->offset;
+  if (this->shift != 0) {
+    os << ", " << this->shift_type << " #" << this->shift;
+  }
+  os << ']';
+}
+
+void ComplexStore::emit(std::ostream &os) const {
+  write_op(os, "str") << this->src << ", [" << this->base << ", "
+                      << this->offset;
+  if (this->shift != 0) {
+    os << ", " << this->shift_type << " #" << this->shift;
+  }
+  os << ']';
 }
 
 } // namespace armv7

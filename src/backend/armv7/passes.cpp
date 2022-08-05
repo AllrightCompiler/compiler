@@ -2,6 +2,7 @@
 #include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
 #include "backend/armv7/instruction.hpp"
+#include "backend/armv7/merge_instr.hpp"
 
 #include "common/common.hpp"
 
@@ -15,14 +16,15 @@ void backend_passes(Program &p) {
 
   for (auto &[_, f] : p.functions) {
     fold_constants(f);
+
+    merge_shift_with_binary_op(f);
+    merge_add_with_load_or_store(f);
+
     remove_unused(f);
 
     f.resolve_phi();
 
     reg_allocator.do_reg_alloc(f, false); // fp reg
-
-    // f.emit(std::cerr);
-
     reg_allocator.do_reg_alloc(f);
 
     remove_useless(f);
@@ -155,7 +157,28 @@ void fold_constants(Function &f) {
           auto new_insn = new IType{new_op, r_ins->dst, other, imm};
           insn.reset(new_insn);
         } else if (op == RType::Mul) {
-          // TODO: 乘2的幂 -> 移位
+          int imm;
+          Reg other;
+          if (auto const iter = constants.find(r_ins->s1);
+              iter != constants.end() && is_power_of_2(iter->second.iv)) {
+            imm = iter->second.iv;
+            other = r_ins->s2;
+          } else if (auto const iter = constants.find(r_ins->s2);
+                     iter != constants.end() &&
+                     is_power_of_2(iter->second.iv)) {
+            imm = iter->second.iv;
+            other = r_ins->s1;
+          } else {
+            continue;
+          }
+          if (imm == 0) {
+            insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
+          } else {
+            insn = std::make_unique<Move>(
+                r_ins->dst,
+                Operand2::from(ShiftType::LSL, other,
+                               static_cast<int>(std::log2<unsigned>(imm))));
+          }
         } else if (op == RType::Div) {
           // TODO: 除2的幂 -> 移位
         }
@@ -203,7 +226,7 @@ void remove_unused(Function &f) {
 
       if (ins->is<SpRelative>() || ins->is<Compare>() || ins->is<Store>() ||
           ins->is<Branch>() || ins->is<RegBranch>() || ins->is<Call>() ||
-          ins->is<Return>())
+          ins->is<Return>() || ins->is<ComplexStore>())
         no_effect = false;
       else {
         for (Reg d : ins->def())
