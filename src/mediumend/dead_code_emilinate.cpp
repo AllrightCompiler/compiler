@@ -14,9 +14,6 @@ using ir::BasicBlock;
 static ir::Program* cur_prog = nullptr;
 
 void detect_pure_function(ir::Program *prog, ir::Function *func) {
-  if(func->pure != -1){
-    return;
-  }
   for(auto &type : func->sig.param_types){
     if(type.is_array()){
       func->pure = 0;
@@ -31,14 +28,24 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
       }
       // 此处为了便于处理递归函数，因此这么做
       TypeCase(call, ir::insns::Call *, inst.get()) {
+        if(call->func == func->name){
+          continue;
+        }
         auto call_func = prog->functions.find(call->func);
         if(call_func != prog->functions.end()){
-          if(call_func->second.pure == 1){
-            continue;
+          if(call_func->second.pure == -1){
+            detect_pure_function(prog, &call_func->second);
           }
+          if(!call_func->second.is_pure()){
+            func->pure = 0;
+          }
+          if(!call_func->second.is_array_ssa_pure()){
+            func->array_ssa_pure = 0;
+          }
+        } else {
+          func->pure = 0;
+          func->array_ssa_pure = 0;
         }
-        func->pure = 0;
-        func->array_ssa_pure = 0;
       }
     }
   }
@@ -51,10 +58,13 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
 }
 
 void mark_pure_func(ir::Program *prog){
-  prog->functions.at("main").pure = 0;
-  for(auto &func : prog->functions){
-    detect_pure_function(prog, &func.second);
+  for(auto &each : prog->functions){
+    each.second.array_ssa_pure = -1;
+    each.second.pure = -1;
   }
+  detect_pure_function(prog, &prog->functions.at("main"));
+  prog->functions.at("main").pure = 0;
+  prog->functions.at("main").array_ssa_pure = 0;
 }
 
 void remove_unused_function(ir::Program *prog){
