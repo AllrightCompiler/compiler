@@ -28,6 +28,7 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"sort_basicblock", sort_basicblock},
   {"gep_destruction", gep_destruction},
   {"remove_recursive_tail_call", remove_recursive_tail_call},
+  {"br2switch", br2switch},
 };
 
 // define default passes here
@@ -40,6 +41,8 @@ std::vector<funcptr> passes = {
   main_global_var_to_local,
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
+  
+  br2switch,
 
   gvn_no_cfg,
 

@@ -59,6 +59,7 @@ void CFG::build(){
     ir::insns::Jump *jmp = dynamic_cast<ir::insns::Jump *>(ins.get());
     ir::insns::Branch *brh = dynamic_cast<ir::insns::Branch *>(ins.get());
     ir::insns::Return *ret = dynamic_cast<ir::insns::Return *>(ins.get());
+    ir::insns::Switch *swi = dynamic_cast<ir::insns::Switch *>(ins.get());
     auto &next = bb->succ;
     if (jmp) {
       next.insert(jmp->target);
@@ -69,6 +70,13 @@ void CFG::build(){
       brh->true_target->prev.insert(bb.get());
       brh->false_target->prev.insert(bb.get());
     } else if (ret) {
+    } else if (swi) {
+      for(auto each : swi->targets){
+      next.insert(each.second);
+      each.second->prev.insert(bb.get());
+      }
+      next.insert(swi->default_target);
+      swi->default_target->prev.insert(bb.get());
     } else {
       assert(false);
     }
@@ -170,7 +178,7 @@ void CFG::compute_dom() {
   }
 
   entry->idom = nullptr;
-  for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
+  for (auto iter = std::next(func->bbs.begin()); iter != func->bbs.end(); iter++) {
     auto bb = iter->get();
     auto &domby_bb = bb->domby;
     for (BasicBlock *d : domby_bb) {
