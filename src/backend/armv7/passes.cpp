@@ -189,6 +189,9 @@ void fold_constants(Function &f) {
       else TypeCase(pcmp, PseudoCompare *, ins) {
         inline_compare_constant(pcmp->cmp.get());
       }
+      else TypeCase(br, CmpBranch *, ins) {
+        inline_compare_constant(br->cmp.get());
+      }
     }
   }
 }
@@ -201,9 +204,8 @@ void remove_unused(Function &f) {
       bool no_effect = true;
       auto ins = it->get();
 
-      if (ins->is<SpRelative>() || ins->is<Compare>() || ins->is<Store>() ||
-          ins->is<Branch>() || ins->is<RegBranch>() || ins->is<Call>() ||
-          ins->is<Return>())
+      if (ins->is<SpRelative>() || ins->is<Store>() || ins->is<Call>() ||
+          ins->is<Terminator>())
         no_effect = false;
       else {
         for (Reg d : ins->def())
@@ -235,6 +237,12 @@ void remove_useless(Function &f) {
         if (mov->is_reg_mov() && mov->use().count(mov->dst))
           remove = true;
       }
+      TypeCase(i_type, IType *, it->get()) {
+        if (i_type->op == IType::Add || i_type->op == IType::Sub) {
+          if (i_type->dst == i_type->s1 && i_type->imm == 0)
+            remove = true;
+        }
+      }
 
       if (remove)
         it = insns.erase(it);
@@ -242,6 +250,26 @@ void remove_useless(Function &f) {
         ++it;
     }
   }
+}
+
+void post_order_dfs(BasicBlock *bb, std::unordered_set<BasicBlock *> &visited,
+                    std::vector<BasicBlock *> &order) {
+  if (visited.count(bb))
+    return;
+  visited.insert(bb);
+  for (auto next : bb->succ)
+    post_order_dfs(next, visited, order);
+  order.push_back(bb);
+}
+
+std::vector<BasicBlock *> Function::compute_post_order() const {
+  std::vector<BasicBlock *> order;
+  if (bbs.empty())
+    return order;
+
+  std::unordered_set<BasicBlock *> visited;
+  post_order_dfs(bbs.front().get(), visited, order);
+  return order;
 }
 
 } // namespace armv7
