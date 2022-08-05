@@ -40,7 +40,7 @@ std::vector<funcptr> passes = {
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
 
-  gvn_no_cfg,
+  // gvn_no_cfg,
   // remove_recursive_tail_call,
 
   // array_mem2reg,
@@ -55,9 +55,9 @@ std::vector<funcptr> passes = {
 
   // loop_unroll,
 
-  // gvn_cfg,
+  gvn_cfg,
 
-  // function_inline,
+  function_inline,
 
   // array_mem2reg,
   //   gvn_cfg,
@@ -67,7 +67,7 @@ std::vector<funcptr> passes = {
   // main_global_var_to_local,
   // mem2reg,
 
-  // gvn_cfg,
+  gvn_cfg,
   // remove_useless_loop,
   // gvn_cfg,
 
