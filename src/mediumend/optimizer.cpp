@@ -57,6 +57,8 @@ std::vector<funcptr> passes = {
 
   gvn_cfg,
 
+  loop_parallel,
+
   function_inline,
 
   array_mem2reg,

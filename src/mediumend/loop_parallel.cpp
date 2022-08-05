@@ -17,6 +17,7 @@ static const int THREAD_NUM = 4;
 // - one back edge to entry (exit_prev)
 // - cond_var appear twice (phi, update), updated value only used by phi & cmp (array index only contain simple i)
 // - only one phi at entry (cond_var)
+// - no call (stack changed)
 // - i = x, i < n, i += c
 struct ParallelLoopInfo {
   bool valid;
@@ -66,6 +67,13 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
     } else break;
   }
   if (cnt_phi > 1) return info; // multiple phi at entry
+  for (auto &bb : loop_bbs) {
+    for (auto &insn : bb->insns) {
+      TypeCase(call, ir::insns::Call *, insn.get()) {
+        return info; // call in loop
+      }
+    }
+  }
   TypeCase(br_cond, ir::insns::Branch *, info.exit_prev->insns.back().get()) { // br entry, exit
     TypeCase(binary_cond, ir::insns::Binary *, br_cond->bb->func->def_list.at(br_cond->val)) { // i < n
       if (binary_cond->dst.type != Int) return info;
@@ -185,6 +193,7 @@ static void copy_bb(ParallelLoopInfo info, BasicBlock *bb, BasicBlock *new_bb,
 }
 
 void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const unordered_set<BasicBlock *> &loop_bbs) {
+  debug(std::cerr) << "loop parallel " << func->name << ":" << loop->header->label << std::endl;
   BasicBlock *entry = info.entry;
   BasicBlock *exit = info.exit;
   BasicBlock *into_entry = info.into_entry;
@@ -227,6 +236,7 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
   }
   // setup parallel_entry
   Reg tid = func->new_reg(Int);
+  Reg new_start = func->new_reg(Int), new_end = func->new_reg(Int);
   {
     parallel_entry->prev.insert(new_into_entry);
     parallel_entry->succ.insert(bb_map.at(entry));
@@ -254,7 +264,6 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     auto r_div = new ir::insns::Binary(r, BinaryOp::Div, mul_r, imm_TN); // r = [(end - start) * (tid + 1)] / THREAD_NUM
     parallel_entry->push_back(l_div);
     parallel_entry->push_back(r_div);
-    Reg new_start = func->new_reg(Int), new_end = func->new_reg(Int);
     auto new_start_add = new ir::insns::Binary(new_start, BinaryOp::Add, info.start_reg, l);
     auto new_end_add = new ir::insns::Binary(new_end, BinaryOp::Add, info.start_reg, r);
     parallel_entry->push_back(new_start_add);
@@ -278,6 +287,9 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
   for (auto bb : loop_bbs) {
     copy_bb(info, bb, bb_map.at(bb), bb_map, reg_map);
   }
+  // change back original loop's start & end
+  info.entry_ind_phi->change_use(new_start, info.start_reg);
+  info.cond_cmp->change_use(new_end, info.end_reg);
   // into_entry -> entry  ==>  into_entry -> new_into_entry -> entry
   {
     // modify into_entry's succ & terinst from entry to new_into_entry
