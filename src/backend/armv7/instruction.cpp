@@ -335,4 +335,22 @@ void Vneg::emit(std::ostream &os) const {
   write_op(os, "vneg.f32") << this->dst << ", " << this->src;
 }
 
+void ComplexLoad::emit(std::ostream &os) const {
+  write_op(os, "ldr") << this->dst << ", [" << this->base << ", "
+                      << this->offset;
+  if (this->shift != 0) {
+    os << ", " << this->shift_type << " #" << this->shift;
+  }
+  os << ']';
+}
+
+void ComplexStore::emit(std::ostream &os) const {
+  write_op(os, "str") << this->src << ", [" << this->base << ", "
+                      << this->offset;
+  if (this->shift != 0) {
+    os << ", " << this->shift_type << " #" << this->shift;
+  }
+  os << ']';
+}
+
 } // namespace armv7

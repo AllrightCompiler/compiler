@@ -2,6 +2,7 @@
 #include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
 #include "backend/armv7/instruction.hpp"
+#include "backend/armv7/merge_instr.hpp"
 
 #include "common/common.hpp"
 
@@ -15,14 +16,14 @@ void backend_passes(Program &p) {
 
   for (auto &[_, f] : p.functions) {
     fold_constants(f);
+
+    merge_add_with_load_or_store(f);
+
     remove_unused(f);
 
     f.resolve_phi();
 
     reg_allocator.do_reg_alloc(f, false); // fp reg
-
-    // f.emit(std::cerr);
-
     reg_allocator.do_reg_alloc(f);
 
     remove_useless(f);
@@ -203,7 +204,7 @@ void remove_unused(Function &f) {
 
       if (ins->is<SpRelative>() || ins->is<Compare>() || ins->is<Store>() ||
           ins->is<Branch>() || ins->is<RegBranch>() || ins->is<Call>() ||
-          ins->is<Return>())
+          ins->is<Return>() || ins->is<ComplexStore>())
         no_effect = false;
       else {
         for (Reg d : ins->def())

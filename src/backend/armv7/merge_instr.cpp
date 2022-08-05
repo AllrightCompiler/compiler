@@ -1,5 +1,7 @@
 #include "backend/armv7/merge_instr.hpp"
 
+#include "common/common.hpp"
+
 #include <functional>
 
 namespace armv7 {
@@ -24,7 +26,6 @@ static void merge_instr(
     if (!check_def_instr(**def.instr)) {
       continue;
     }
-    bool do_transform = true;
     int max_use_instr_index = -1;
     std::vector<std::pair<OccurPoint const *, std::unique_ptr<Instruction>>>
         new_instrs;
@@ -56,6 +57,112 @@ static void merge_instr(
   continue_:
     continue;
   }
+}
+
+void merge_shift_binary_op(Function &func) {
+  // TODO mul/div 2^x -> shift
+  auto const check_def_instr = [](Instruction const &def) -> bool {};
+  auto const transform_use_instr =
+      [](Reg r, Instruction const &def,
+         Instruction const &use) -> std::unique_ptr<Instruction> {
+
+  };
+  merge_instr(func, check_def_instr, transform_use_instr);
+}
+void merge_add_with_load_or_store(Function &func) {
+  auto const check_def_instr = [](Instruction const &def) -> bool {
+    TypeCase(instr, RType const *, &def) { return instr->op == RType::Add; }
+    TypeCase(instr, IType const *, &def) {
+      return instr->op == IType::Add || instr->op == IType::Sub;
+    }
+    TypeCase(instr, FullRType const *, &def) {
+      if (instr->s2.is_imm8m()) {
+        return instr->op == FullRType::Add || instr->op == FullRType::Sub;
+      } else if (instr->s2.is_imm_shift()) {
+        return instr->op == FullRType::Add;
+      }
+    }
+    return false;
+  };
+  auto const transform_use_instr =
+      [](Reg r, Instruction const &def,
+         Instruction const &use) -> std::unique_ptr<Instruction> {
+    TypeCase(instr, RType const *, &def) {
+      assert(instr->dst == r);
+      TypeCase(load, Load const *, &use) {
+        if (!load->dst.is_float() && load->offset == 0 && load->base == r) {
+          return std::make_unique<ComplexLoad>(load->dst, instr->s1, instr->s2);
+        }
+      }
+      TypeCase(store, Store const *, &use) {
+        if (!store->src.is_float() && store->offset == 0 && store->base == r) {
+          return std::make_unique<ComplexStore>(store->src, instr->s1,
+                                                instr->s2);
+        }
+      }
+    }
+    TypeCase(instr, IType const *, &def) {
+      assert(instr->dst == r);
+      int offset = instr->imm;
+      if (instr->op == IType::Sub) {
+        offset = -offset;
+      }
+      TypeCase(load, Load const *, &use) {
+        if (!load->dst.is_float() && load->base == r &&
+            is_valid_ldst_offset(offset + load->offset)) {
+          return std::make_unique<Load>(load->dst, instr->s1,
+                                        offset + load->offset);
+        }
+      }
+      TypeCase(store, Store const *, &use) {
+        if (!store->src.is_float() && store->base == r &&
+            is_valid_ldst_offset(offset + store->offset)) {
+          return std::make_unique<Store>(store->src, instr->s1,
+                                         offset + store->offset);
+        }
+      }
+    }
+    TypeCase(instr, FullRType const *, &def) {
+      assert(instr->dst == r);
+      if (instr->s2.is_imm8m()) {
+        int offset = instr->s2.get<int>();
+        if (instr->op == FullRType::Sub) {
+          offset = -offset;
+        }
+        TypeCase(load, Load const *, &use) {
+          if (!load->dst.is_float() && load->base == r &&
+              is_valid_ldst_offset(offset + load->offset)) {
+            return std::make_unique<Load>(load->dst, instr->s1,
+                                          offset + load->offset);
+          }
+        }
+        TypeCase(store, Store const *, &use) {
+          if (!store->src.is_float() && store->base == r &&
+              is_valid_ldst_offset(offset + store->offset)) {
+            return std::make_unique<Store>(store->src, instr->s1,
+                                           offset + store->offset);
+          }
+        }
+      } else if (instr->s2.is_imm_shift()) {
+        auto &s2 = instr->s2.get<RegImmShift>();
+        TypeCase(load, Load const *, &use) {
+          if (!load->dst.is_float() && load->offset == 0 && load->base == r) {
+            return std::make_unique<ComplexLoad>(load->dst, instr->s1, s2.r,
+                                                 s2.type, s2.s);
+          }
+        }
+        TypeCase(store, Store const *, &use) {
+          if (!store->src.is_float() && store->offset == 0 &&
+              store->base == r) {
+            return std::make_unique<ComplexStore>(store->src, instr->s1, s2.r,
+                                                  s2.type, s2.s);
+          }
+        }
+      }
+    }
+    return {};
+  };
+  merge_instr(func, check_def_instr, transform_use_instr);
 }
 
 } // namespace armv7

@@ -618,6 +618,44 @@ struct Vneg : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
 };
 
+struct ComplexLoad : Instruction {
+  Reg dst, base, offset;
+  ShiftType shift_type;
+  int shift;
+  ComplexLoad(Reg dst, Reg base, Reg offset)
+      : ComplexLoad(dst, base, offset, ShiftType::LSL, 0) {}
+  ComplexLoad(Reg dst, Reg base, Reg offset, ShiftType shift_type, int shift)
+      : dst{dst}, base{base}, offset{offset},
+        shift_type{shift_type}, shift{shift} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->base, this->offset}; }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->dst, &this->base, &this->offset};
+  }
+};
+
+struct ComplexStore : Instruction {
+  Reg src, base, offset;
+  ShiftType shift_type;
+  int shift;
+  ComplexStore(Reg src, Reg base, Reg offset)
+      : ComplexStore(src, base, offset, ShiftType::LSL, 0) {}
+  ComplexStore(Reg src, Reg base, Reg offset, ShiftType shift_type, int shift)
+      : src{src}, base{base}, offset{offset},
+        shift_type{shift_type}, shift{shift} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override {
+    return {this->src, this->base, this->offset};
+  }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->src, &this->base, &this->offset};
+  }
+};
+
 } // namespace armv7
 
 namespace std {
