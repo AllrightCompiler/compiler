@@ -50,13 +50,16 @@ std::vector<funcptr> passes = {
     duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  operator_strength_promotion,
-
   loop_unroll,
 
   gvn_cfg,
+  gvn_cfg,
 
   function_inline,
+
+  gvn_cfg,
+
+  loop_unroll,
 
   array_mem2reg,
     gvn_cfg,
@@ -77,8 +80,6 @@ std::vector<funcptr> passes = {
   operator_strength_reduction,
   gvn_cfg,
 
-  operator_strength_promotion,
-
   sort_basicblock,
 };
 
@@ -87,6 +88,7 @@ void gvn_no_cfg(ir::Program *prog) {
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
   remove_unused_function(prog);
+  operator_strength_promotion(prog);
 }
 
 // modify cfg
@@ -94,6 +96,7 @@ void gvn_cfg(ir::Program *prog) {
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
   remove_unused_function(prog);
+  operator_strength_promotion(prog);
   constant_propagation(prog);
   clean_useless_cf(prog);
 }
