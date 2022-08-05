@@ -20,22 +20,14 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
   for(auto &type : func->sig.param_types){
     if(type.is_array()){
       func->pure = 0;
-      return;
     }
   }
   for (auto &bb : func->bbs) {
     for (auto &inst : bb->insns) {
-      // 修改了全局变量，不是纯函数
-      TypeCase(store, ir::insns::Store *, inst.get()){
-        if(func->global_addr.count(store->addr)){
-          func->pure = 0;
-          return;
-        }
-      }
       // 使用了全局变量，不能当作纯函数
       if(auto x = dynamic_cast<ir::insns::LoadAddr *>(inst.get())){
         func->pure = 0;
-        return;
+        func->array_ssa_pure = 0;
       }
       // 此处为了便于处理递归函数，因此这么做
       TypeCase(call, ir::insns::Call *, inst.get()) {
@@ -46,11 +38,16 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
           }
         }
         func->pure = 0;
-        return;
+        func->array_ssa_pure = 0;
       }
     }
   }
-  func->pure = 1;
+  if(func->pure == -1){
+    func->pure = 1;
+  }
+  if(func->array_ssa_pure == -1){
+    func->array_ssa_pure = 1;
+  }
 }
 
 void mark_pure_func(ir::Program *prog){
@@ -106,7 +103,7 @@ void remove_uneffective_inst(ir::Program *prog){
       auto &insns = bb->insns;
       for (auto &inst : insns) {
         TypeCase(call, ir::insns::Call *, inst.get()){
-          if(prog->functions.find(call->func) == prog->functions.end() || prog->functions.at(call->func).pure == 0){
+          if(prog->functions.find(call->func) == prog->functions.end() || !prog->functions.at(call->func).is_pure()){
             stack.insert(call);
           }
         } else TypeCase(term, ir::insns::Terminator *, inst.get()){
@@ -114,7 +111,9 @@ void remove_uneffective_inst(ir::Program *prog){
         } else TypeCase(store, ir::insns::Store *, inst.get()){
           stack.insert(store);
         } else TypeCase(memdef, ir::insns::MemDef *, inst.get()){
-          stack.insert(memdef);
+          if(func->name != "main"){
+            stack.insert(memdef);
+          }
         }
       }
     }
@@ -178,6 +177,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
       if(branch->true_target == branch->false_target){
         branch->remove_use_def();
         inst.reset(new ir::insns::Jump(branch->true_target));
+        inst->bb = bb;
         ret = true;
       }
     }
@@ -323,7 +323,6 @@ void clean_useless_cf(ir::Program *prog){
 
 bool remove_useless_loop(ir::Function *func) {
   func->loop_analysis();
-  func->do_liveness_analysis();
   bool changed = false;
   unordered_set<BasicBlock *> remove_bbs;
   for (auto &loop_ptr : func->loops) {
@@ -366,7 +365,13 @@ bool remove_useless_loop(ir::Function *func) {
       }
       for(auto &inst : bb->insns){
         TypeCase(output, ir::insns::Output *, inst.get()){
-          defs.insert(output->dst);
+          auto uses = func->use_list[output->dst];
+          for(auto each : uses){
+            if(!loop_bbs.count(each->bb)){
+              check = false;
+              break;
+            }
+          }
         }
         TypeCase(call, ir::insns::Call *, inst.get()){
           if(!cur_prog->functions.count(call->func) || !cur_prog->functions.at(call->func).is_pure()){
@@ -393,17 +398,6 @@ bool remove_useless_loop(ir::Function *func) {
       }
     }
     if(!out || !check){
-      continue;
-    }
-    int raw_size = out->live_in.size() + defs.size();
-    defs.merge(out->live_in);
-    if(raw_size != defs.size()){
-      check = false;
-    }
-    if (!out) {
-      check = false;  
-    }
-    if(!check){
       continue;
     }
     changed = true;
