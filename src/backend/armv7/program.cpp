@@ -49,23 +49,27 @@ void Function::emit_imm(BasicBlock *bb, Reg dst, int imm) {
     reg_val[dst] = imm;
 }
 
-std::list<std::unique_ptr<Instruction>>::iterator BasicBlock::seq_end() {
-  auto it = insns.begin();
-  for (; it != insns.end(); ++it) {
-    if ((*it)->is<Branch>()) {
-      // 如果这是一个典型条件跳转 (e.g. cmp r0, #0; bne Lx)
-      // 将指令插入到cmp之前
-      if ((*it)->cond != ExCond::Always && it != insns.begin() &&
-          (*std::prev(it))->is<Compare>())
-        --it;
-      break;
-    }
-  }
-  return it;
+std::list<std::unique_ptr<Instruction>>::iterator BasicBlock::sequence_end() {
+  // auto it = insns.begin();
+  // for (; it != insns.end(); ++it) {
+  //   if ((*it)->is<Branch>()) {
+  //     // 如果这是一个典型条件跳转 (e.g. cmp r0, #0; bne Lx)
+  //     // 将指令插入到cmp之前
+  //     if ((*it)->cond != ExCond::Always && it != insns.begin() &&
+  //         (*std::prev(it))->is<Compare>())
+  //       --it;
+  //     break;
+  //   }
+  // }
+  // return it;
+  if (insns.empty())
+    return insns.end();
+  auto it = std::prev(insns.end());
+  return (*it)->is<Terminator>() ? it : insns.end();
 }
 
-void BasicBlock::insert_before_branch(Instruction *insn) {
-  insns.emplace(seq_end(), insn);
+void BasicBlock::insert_at_end(Instruction *insn) {
+  insns.emplace(sequence_end(), insn);
 }
 
 class ProgramTranslator {
@@ -354,7 +358,8 @@ class ProgramTranslator {
         }
       }
 
-      int sp_adjustment = 4 * stack_args.size(); // NOTE: 目前所有标量类型都是4字节
+      int sp_adjustment =
+          4 * stack_args.size(); // NOTE: 目前所有标量类型都是4字节
       // NOTE: 调用约定要求函数边界的sp按照8字节对齐
       if ((sp_adjustment & 7) != 0) {
         sp_adjustment += 4;
@@ -408,22 +413,24 @@ class ProgramTranslator {
       BasicBlock::add_edge(bb, true_target);
       BasicBlock::add_edge(bb, false_target);
 
-      auto emit_branch = [bb, next_bb, true_target, false_target](ExCond cond) {
-        if (next_bb == false_target)
-          bb->push(cond, new Branch{true_target});
-        else if (next_bb == true_target)
-          bb->push(logical_not(cond), new Branch{false_target});
-        else {
-          // TODO: 根据距离决定条件跳转目标
-          bb->push(cond, new Branch{true_target});
-          bb->push(new Branch{false_target});
-        }
-      };
+      // auto emit_branch = [bb, next_bb, true_target, false_target](ExCond
+      // cond) {
+      //   if (next_bb == false_target)
+      //     bb->push(cond, new Branch{true_target});
+      //   else if (next_bb == true_target)
+      //     bb->push(logical_not(cond), new Branch{false_target});
+      //   else {
+      //     bb->push(cond, new Branch{true_target});
+      //     bb->push(new Branch{false_target});
+      //   }
+      // };
 
       if (cmp_info.count(val)) { // 显式二元比较
         auto &cmp = cmp_info[val];
-        bb->push(new Compare{cmp.lhs, Operand2::from(cmp.rhs)});
-        emit_branch(cmp.cond);
+        // bb->push(new Compare{cmp.lhs, Operand2::from(cmp.rhs)});
+        // emit_branch(cmp.cond);
+        auto inner_cmp = new Compare{cmp.lhs, Operand2::from(cmp.rhs)};
+        bb->push(cmp.cond, new CmpBranch{inner_cmp, true_target, false_target});
       } else { // 隐式与0比较
         bool flip_cond = false;
         if (lnot_info.count(val)) {
@@ -431,6 +438,7 @@ class ProgramTranslator {
           val = lnot_info[val].src;
         }
 
+        // 不启用Thumb-2的CBZ/CBNZ，限制较多
         bool use_cbz_cbnz = false;
         if (!val.is_float() && use_cbz_cbnz) {
           // emit cbz/cbnz
@@ -453,8 +461,12 @@ class ProgramTranslator {
         } else {
           // cmp rd, #0 / vcmp.f32 sd, #0
           auto cond = flip_cond ? ExCond::Eq : ExCond::Ne;
-          bb->push(new Compare{val, Operand2::from(0)});
-          emit_branch(cond);
+          // bb->push(new Compare{val, Operand2::from(0)});
+          // emit_branch(cond);
+
+          // TODO: 区分vcmp.f32
+          auto inner_cmp = new Compare{val, Operand2::from(0)};
+          bb->push(cond, new CmpBranch{inner_cmp, true_target, false_target});
         }
       }
     }
@@ -773,21 +785,22 @@ void Function::emit_prologue_epilogue() {
   if (!save_lr)
     epilogue.emplace(epilogue.end(), new Return);
 
-  auto last = std::prev(bbs.end())->get();
+  auto last_bb = std::prev(bbs.end())->get();
   bool trivial_return =
       !stack_obj_size && saved_fprs.empty() && saved_gprs.empty();
-  for (auto &bb : bbs) {
+  for (auto &bb_ptr : bbs) {
+    auto bb = bb_ptr.get();
     auto &insns = bb->insns;
-    for (auto it = insns.begin(); it != insns.end(); ++it) {
-      auto ins = it->get();
-      TypeCase(ret, Return *, ins) {
-        if (bb.get() == last && std::next(it) == insns.end()) {
-          it = insns.erase(it);
-          break;
+    if (!insns.empty()) {
+      auto it = std::prev(insns.end());
+      TypeCase(ret, Return *, it->get()) {
+        if (!trivial_return) {
+          BasicBlock::add_edge(bb, exit);
+          if (bb == last_bb)
+            insns.erase(it);
+          else
+            it->reset(new Branch{exit});
         }
-
-        if (!trivial_return)
-          it->reset(new Branch{exit});
       }
     }
   }
@@ -893,8 +906,13 @@ void Function::resolve_stack_ops(int frame_size) {
 }
 
 void Function::replace_pseudo_insns() {
-  for (auto &bb : bbs) {
+  for (auto bb_iter = bbs.begin(); bb_iter != bbs.end();) {
+    auto bb = bb_iter->get();
     auto &insns = bb->insns;
+    
+    ++bb_iter;
+    auto next_bb = (bb_iter == bbs.end()) ? nullptr : bb_iter->get();
+
     for (auto it = insns.begin(); it != insns.end(); ++it) {
       TypeCase(pcmp, PseudoCompare *, it->get()) {
         auto cond = pcmp->cond;
@@ -908,6 +926,27 @@ void Function::replace_pseudo_insns() {
         insns.emplace(it, pcmp->cmp.release());
         insns.emplace(it, cmov_false);
         it->reset(cmov_true);
+      }
+      else TypeCase(br, CmpBranch *, it->get()) {
+        auto cond = br->cond;
+        auto true_target = br->true_target;
+        auto false_target = br->false_target;
+
+        insns.emplace(it, br->cmp.release());
+        if (next_bb == false_target) {
+          auto b_true = new Branch{true_target};
+          b_true->cond = cond;
+          it->reset(b_true);
+        } else if (next_bb == true_target) {
+          auto b_false = new Branch{false_target};
+          b_false->cond = logical_not(cond);
+          it->reset(b_false);
+        } else {
+          auto b_true = new Branch{true_target};
+          b_true->cond = cond;
+          insns.emplace(it, b_true);
+          it->reset(new Branch{false_target});
+        }
       }
     }
   }
@@ -957,7 +996,7 @@ void Function::resolve_phi() {
         it->second = tmp;
       }
 
-      bb->insert_before_branch(mov);
+      bb->insert_at_end(mov);
       phi_moves.insert(mov);
     }
   }

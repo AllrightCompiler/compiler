@@ -260,6 +260,12 @@ void RegBranch::emit(std::ostream &os) const {
   write_op(os, op) << src << ", " << target->label;
 }
 
+void CmpBranch::emit(std::ostream &os) const {
+  cmp->emit(os);
+  next_instruction(os);
+  write_op(os, "*b") << true_target->label << ", " << false_target->label;
+}
+
 void LoadStack::emit(std::ostream &os) const {
   os << "*load-stack " << dst << ", obj[" << base->size << ", " << base->offset
      << "]+" << offset;
