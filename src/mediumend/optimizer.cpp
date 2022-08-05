@@ -41,6 +41,7 @@ std::vector<funcptr> passes = {
   mark_pure_func,
 
   gvn_no_cfg,
+  remove_recursive_tail_call,
 
   array_mem2reg,
     gvn_no_cfg,
