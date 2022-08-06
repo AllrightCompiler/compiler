@@ -172,8 +172,7 @@ struct Var {
 };
 
 namespace std {
-template <class T>
-struct hash<vector<T>> {
+template <class T> struct hash<vector<T>> {
   size_t operator()(const vector<T> &r) const {
     size_t res = 0;
     for (auto t : r) {
@@ -185,7 +184,9 @@ struct hash<vector<T>> {
 template <> class hash<Type> {
 public:
   size_t operator()(const Type &r) const {
-    return hash<int>()(r.base_type) * 17 + hash<std::vector<int> >()(r.dims);
+    return hash<int>()(r.base_type) * 17 + hash<std::vector<int>>()(r.dims);
   }
 };
 } // namespace std
+
+inline bool is_power_of_2(int x) { return (x & (x - 1)) == 0; }

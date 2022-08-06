@@ -34,7 +34,7 @@ void Function::do_liveness_analysis(RegFilter filter) {
       std::set<Reg> new_out;
       for (auto succ : bb->succ)
         new_out.insert(succ->live_in.begin(), succ->live_in.end());
-      
+
       if (bb->live_out != new_out) {
         bb->live_out = std::move(new_out);
         changed = true;
@@ -43,9 +43,37 @@ void Function::do_liveness_analysis(RegFilter filter) {
         for (auto &e : bb->live_out)
           if (!bb->def.count(e))
             new_in.insert(e);
-        
+
         bb->live_in = std::move(new_in);
       }
+    }
+  }
+}
+
+void Function::insert_def_use(OccurPoint const &pos, Instruction &instr) {
+  for (auto r : instr.def()) {
+    this->reg_def[r].insert(pos);
+  }
+  for (auto r : instr.use()) {
+    this->reg_use[r].insert(pos);
+  }
+}
+void Function::erase_def_use(OccurPoint const &pos, Instruction &instr) {
+  for (auto r : instr.def()) {
+    this->reg_def[r].erase(pos);
+  }
+  for (auto r : instr.use()) {
+    this->reg_use[r].erase(pos);
+  }
+}
+void Function::build_def_use() {
+  this->reg_def.clear();
+  this->reg_use.clear();
+  for (auto const &bb : this->bbs) {
+    for (auto [instr, index] = std::pair{bb->insns.begin(), 0};
+         instr != bb->insns.end(); ++instr, ++index) {
+      this->insert_def_use(
+          OccurPoint{.bb = bb.get(), .instr = instr, .index = index}, **instr);
     }
   }
 }
