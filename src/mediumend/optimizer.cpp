@@ -50,6 +50,8 @@ std::vector<funcptr> passes = {
     gvn_no_cfg,
     duplicate_load_store_elimination,
   array_ssa_destruction,
+  
+  remove_recursive_tail_call,
 
   function_inline,
   remove_unused_function,
