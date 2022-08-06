@@ -66,6 +66,7 @@ std::vector<funcptr> passes = {
   array_ssa_destruction,
 
   gvn_cfg,
+  gvn_cfg,
   loop_unroll,
 
   gvn_cfg,
