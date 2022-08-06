@@ -552,4 +552,94 @@ void loop_fusion(ir::Program *prog) {
   }
 }
 
+bool is_moveable(Instruction *inst){
+  TypeCase(binary, ir::insns::Binary *, inst){
+    if(binary->op == BinaryOp::Mod){
+      return true;
+    }
+  }
+  return false;
+}
+
+void loop_simplification(Function *func){
+  cur_func = func;
+  func->loop_analysis();
+  unordered_map<Loop *, unordered_set<BasicBlock *>> loop_bbs;
+  unordered_map<Loop *, LoopCond> loop_conds;
+  for (auto &loop : func->loops) {
+    vector<BasicBlock *> stack;
+    stack.push_back(loop->header);
+    while (stack.size()) {
+      auto bb = stack.back();
+      stack.pop_back();
+      if (loop_bbs[loop.get()].count(bb)) {
+        continue;
+      }
+      loop_bbs[loop.get()].insert(bb);
+      for (auto &succ : bb->succ) {
+        if (succ->loop == loop.get()) {
+          stack.push_back(succ);
+        }
+      }
+    }
+  }
+  for (auto &loop : func->loops) {
+    unordered_set<Instruction *> effective_uses;
+    unordered_set<Instruction *> live_out;
+    unordered_set<Instruction *> movealbe_inst;
+    if(loop_bbs.at(loop.get()).size() == 1){
+      auto bb = *loop_bbs.at(loop.get()).begin();
+      for(auto &inst : bb->insns){
+        TypeCase(output, ir::insns::Output *, inst.get()){
+          auto uses_list = bb->func->use_list[output->dst];
+          for(auto each : uses_list){
+            if(each->bb != bb){
+              live_out.insert(inst.get());
+            }
+          }
+        }
+      }
+      for(auto inst : live_out){
+        if(is_moveable(inst)){
+          auto effective_use = get_effective_use(inst, bb);
+          if(effective_use.size() == 0){
+            movealbe_inst.insert(inst);
+          }
+        }
+      }
+      if(movealbe_inst.size()){
+        BasicBlock *out;
+        auto br = dynamic_cast<ir::insns::Branch *>(bb->insns.back().get());
+        assert(br);
+        if(br->true_target == bb){
+          out = br->false_target;
+        } else {
+          out = br->true_target;
+        }
+        BasicBlock *new_bb = new BasicBlock();
+        new_bb->label = bb->label + "_const";
+        new_bb->func = bb->func;
+        bb->change_succ(out, new_bb);
+        out->change_prev(bb, new_bb);
+        for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
+          if(movealbe_inst.count(iter->get())){
+            new_bb->push_back(iter->release());
+            iter = bb->insns.erase(iter);
+          } else {
+            iter++;
+          }
+        }
+        new_bb->push_back(new ir::insns::Jump(out));
+        func->bbs.emplace_back(new_bb);
+      }
+    }
+  }
+}
+
+void loop_simplification(ir::Program *prog){
+  for(auto &each : prog->functions){
+    loop_simplification(&each.second);
+  }
+}
+
 } // namespace mediumend
