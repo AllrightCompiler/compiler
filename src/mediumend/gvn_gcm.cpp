@@ -66,12 +66,12 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(const unordered_ma
         case BinaryOp::Neq:
         case BinaryOp::Lt:
         case BinaryOp::Gt:
-          return ConstValue(0);
+          return (binary->dst.type == Int ? ConstValue(0) : ConstValue(0.0f));
         case BinaryOp::Div:
         case BinaryOp::Eq:
         case BinaryOp::Leq:
         case BinaryOp::Geq:
-          return ConstValue(1);
+          return (binary->dst.type == Int ? ConstValue(1) : ConstValue(1.0f));
         default:
           break;
       }
@@ -89,7 +89,7 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(const unordered_ma
       break;
     case BinaryOp::Mul:
       assert(!constMap.count(src1) && constMap.count(src2));
-      if (constMap.at(src2).isValue(0)) return ConstValue(0);
+      if (constMap.at(src2).isValue(0)) return (binary->dst.type == Int ? ConstValue(0) : ConstValue(0.0f));
       if (constMap.at(src2).isValue(1)) return src1;
       break;
     case BinaryOp::Div:
@@ -99,7 +99,7 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(const unordered_ma
       break;
     case BinaryOp::Mod:
       if (constMap.count(src2)) {
-        if (constMap.at(src2).isValue(1)) return ConstValue(0);
+        if (constMap.at(src2).isValue(1)) return (binary->dst.type == Int ? ConstValue(0) : ConstValue(0.0f));
       }
       break;
     default:

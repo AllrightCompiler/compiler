@@ -2,6 +2,7 @@
 #include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
 #include "backend/armv7/instruction.hpp"
+#include "backend/armv7/merge_instr.hpp"
 
 #include "common/common.hpp"
 
@@ -13,22 +14,26 @@ namespace armv7 {
 void backend_passes(Program &p) {
   ColoringRegAllocator reg_allocator;
 
+  // 具有f.some_pass()形式的步骤必须进行
   for (auto &[_, f] : p.functions) {
     fold_constants(f);
+
+    merge_shift_with_binary_op(f);
+    merge_add_with_load_or_store(f);
+
     remove_unused(f);
 
     f.resolve_phi();
 
-    reg_allocator.do_reg_alloc(f, false); // fp reg
-
-    // f.emit(std::cerr);
-
-    reg_allocator.do_reg_alloc(f);
+    f.do_reg_alloc(reg_allocator, false); // fp reg
+    f.do_reg_alloc(reg_allocator);
 
     remove_useless(f);
 
-    // 以下步骤必须进行
     f.emit_prologue_epilogue();
+
+    sanitize_cfg(f);
+
     f.replace_pseudo_insns();
   }
 }
@@ -155,7 +160,28 @@ void fold_constants(Function &f) {
           auto new_insn = new IType{new_op, r_ins->dst, other, imm};
           insn.reset(new_insn);
         } else if (op == RType::Mul) {
-          // TODO: 乘2的幂 -> 移位
+          int imm;
+          Reg other;
+          if (auto const iter = constants.find(r_ins->s1);
+              iter != constants.end() && is_power_of_2(iter->second.iv)) {
+            imm = iter->second.iv;
+            other = r_ins->s2;
+          } else if (auto const iter = constants.find(r_ins->s2);
+                     iter != constants.end() &&
+                     is_power_of_2(iter->second.iv)) {
+            imm = iter->second.iv;
+            other = r_ins->s1;
+          } else {
+            continue;
+          }
+          if (imm == 0) {
+            insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
+          } else {
+            insn = std::make_unique<Move>(
+                r_ins->dst,
+                Operand2::from(ShiftType::LSL, other,
+                               static_cast<int>(std::log2<unsigned>(imm))));
+          }
         } else if (op == RType::Div) {
           // TODO: 除2的幂 -> 移位
         }
@@ -189,6 +215,9 @@ void fold_constants(Function &f) {
       else TypeCase(pcmp, PseudoCompare *, ins) {
         inline_compare_constant(pcmp->cmp.get());
       }
+      else TypeCase(br, CmpBranch *, ins) {
+        inline_compare_constant(br->cmp.get());
+      }
     }
   }
 }
@@ -201,9 +230,8 @@ void remove_unused(Function &f) {
       bool no_effect = true;
       auto ins = it->get();
 
-      if (ins->is<SpRelative>() || ins->is<Compare>() || ins->is<Store>() ||
-          ins->is<Branch>() || ins->is<RegBranch>() || ins->is<Call>() ||
-          ins->is<Return>())
+      if (ins->is<SpRelative>() || ins->is<Store>() ||
+          ins->is<ComplexStore>() || ins->is<Call>() || ins->is<Terminator>())
         no_effect = false;
       else {
         for (Reg d : ins->def())
@@ -235,6 +263,12 @@ void remove_useless(Function &f) {
         if (mov->is_reg_mov() && mov->use().count(mov->dst))
           remove = true;
       }
+      TypeCase(i_type, IType *, it->get()) {
+        if (i_type->op == IType::Add || i_type->op == IType::Sub) {
+          if (i_type->dst == i_type->s1 && i_type->imm == 0)
+            remove = true;
+        }
+      }
 
       if (remove)
         it = insns.erase(it);
@@ -242,6 +276,145 @@ void remove_useless(Function &f) {
         ++it;
     }
   }
+}
+
+void post_order_dfs(BasicBlock *bb, std::unordered_set<BasicBlock *> &visited,
+                    std::vector<BasicBlock *> &order) {
+  if (visited.count(bb))
+    return;
+  visited.insert(bb);
+  for (auto next : bb->succ)
+    post_order_dfs(next, visited, order);
+  order.push_back(bb);
+}
+
+std::vector<BasicBlock *> Function::compute_post_order() const {
+  std::vector<BasicBlock *> order;
+  if (bbs.empty())
+    return order;
+
+  std::unordered_set<BasicBlock *> visited;
+  post_order_dfs(bbs.front().get(), visited, order);
+  return order;
+}
+
+// inline std::unique_ptr<Instruction> &get_terminator(BasicBlock *bb) {
+//   assert(!bb->insns.empty());
+//   auto &insn = bb->insns.back();
+//   assert(insn->is<Terminator>());
+//   return insn;
+// }
+
+bool clean_control_flow(Function &f) {
+  if (f.bbs.empty())
+    return false;
+
+  std::unordered_set<BasicBlock *> visited;
+  std::vector<BasicBlock *> order;
+  auto entry = f.bbs.front().get();
+  post_order_dfs(entry, visited, order);
+
+  bool changed = false;
+  auto get_terminator = [](BasicBlock *bb) -> std::unique_ptr<Instruction> & {
+    assert(!bb->insns.empty());
+    auto &insn = bb->insns.back();
+    // assert(insn->is<Terminator>());
+    return insn;
+  };
+  for (auto bb_iter = order.rbegin(); bb_iter != order.rend(); ++bb_iter) {
+    auto bb = *bb_iter;
+    if (!visited.count(bb)) // skip newly produced unreachable basic blocks
+      continue;
+
+    auto &insn = get_terminator(bb);
+    TypeCase(br, CmpBranch *, insn.get()) {
+      if (br->true_target == br->false_target) { // case 1
+        insn.reset(new Branch{br->true_target});
+        changed = true;
+      }
+    }
+    TypeCase(br, Branch *, insn.get()) {
+      auto target = br->target;
+      if (bb->insns.size() == 1 && bb != entry) { // case 2: remove empty `bb`
+        // replace transfers to `bb` with transfers to `target`
+        for (auto pred : bb->pred) {
+          auto transfer = get_terminator(pred).get();
+          TypeCase(cmp_br, CmpBranch *, transfer) {
+            if (cmp_br->true_target == bb)
+              cmp_br->true_target = target;
+            if (cmp_br->false_target == bb)
+              cmp_br->false_target = target;
+          }
+          else TypeCase(jump, Branch *, transfer) {
+            assert(jump->target == bb);
+            jump->target = target;
+          }
+          pred->succ.erase(bb);
+          pred->succ.insert(target);
+        }
+        target->pred.erase(bb);
+        target->pred.merge(bb->pred);
+        bb->pred.clear();
+        bb->succ.clear();
+
+        visited.erase(bb);
+        changed = true;
+        continue;
+      }
+      if (target->pred.size() == 1) { // case 3
+        // merge `target` into `bb`
+        for (auto next : target->succ) {
+          next->pred.erase(target);
+          next->pred.insert(bb);
+        }
+        bb->succ.erase(target);
+        bb->succ.merge(target->succ);
+        target->succ.clear();
+        target->pred.clear();
+
+        bb->insns.pop_back();
+        bb->insns.splice(bb->insns.end(), target->insns);
+
+        visited.erase(target);
+        changed = true;
+        continue;
+      }
+      if (target->insns.size() == 1) {
+        auto &last = get_terminator(target);
+        TypeCase(cmp_br, CmpBranch *, last.get()) { // case 4
+                                                    // hoist a branch
+          auto true_target = cmp_br->true_target;
+          auto false_target = cmp_br->false_target;
+          BasicBlock::add_edge(bb, true_target);
+          BasicBlock::add_edge(bb, false_target);
+          BasicBlock::remove_edge(bb, target);
+
+          auto cmp_cloned = new Compare{*cmp_br->cmp};
+          auto cmp_br_cloned =
+              new CmpBranch{cmp_cloned, true_target, false_target};
+          cmp_br_cloned->cond = cmp_br->cond;
+          insn.reset(cmp_br_cloned);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  // remove unreachable basic blocks
+  for (auto it = f.bbs.begin(); it != f.bbs.end();) {
+    if (!visited.count(it->get()))
+      it = f.bbs.erase(it);
+    else
+      ++it;
+  }
+  return changed;
+}
+
+void sanitize_cfg(Function &f) {
+  bool changed;
+  do {
+    changed = clean_control_flow(f);
+  } while (changed);
 }
 
 } // namespace armv7

@@ -3,6 +3,7 @@
 #include "backend/armv7/arch.hpp"
 
 #include "common/ir.hpp"
+#include "common/utils.hpp"
 
 #include <set>
 #include <variant>
@@ -50,9 +51,7 @@ struct Reg {
   static Reg from(ir::Reg ir_reg) {
     return Reg{ir_to_machine_reg_type(ir_reg.type), -ir_reg.id};
   }
-  static Reg from(int t, int id) {
-    return Reg{ir_to_machine_reg_type(t), id};
-  }
+  static Reg from(int t, int id) { return Reg{ir_to_machine_reg_type(t), id}; }
 };
 
 std::ostream &operator<<(std::ostream &os, const Reg &r);
@@ -79,6 +78,9 @@ enum ShiftType {
   ASR, // Arithmetic Shift Right
   ROR, // ROtate Right
 };
+
+std::optional<std::pair<ShiftType, int>>
+combine_shift(std::pair<ShiftType, int> lhs, std::pair<ShiftType, int> rhs);
 
 struct RegImmShift {
   ShiftType type;
@@ -372,9 +374,10 @@ struct FusedMul : Instruction {
 };
 
 struct BasicBlock;
+struct Terminator : Instruction {};
 
 // B.cond
-struct Branch : Instruction {
+struct Branch : Terminator {
   BasicBlock *target;
 
   Branch(BasicBlock *target) : target{target} {}
@@ -383,7 +386,7 @@ struct Branch : Instruction {
 };
 
 // CBZ/CBNZ
-struct RegBranch : Instruction {
+struct RegBranch : Terminator {
   enum Type { Cbnz, Cbz } type;
   BasicBlock *target;
   Reg src;
@@ -395,6 +398,23 @@ struct RegBranch : Instruction {
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {src}; }
   std::vector<Reg *> reg_ptrs() override { return {&src}; }
+};
+
+// 实际条件跳转的中间形式，保留了两个分支，需要在最后展开
+// 有些情况比较和分支指令应被视作一个整体，避免中间插入其它指令影响cpsr
+// NOTE: true_target的跳转条件即此伪指令的条件码
+struct CmpBranch : Terminator {
+  std::unique_ptr<Compare> cmp;
+  BasicBlock *true_target, *false_target;
+
+  CmpBranch(Compare *inner_cmp, BasicBlock *true_target,
+            BasicBlock *false_target)
+      : cmp{inner_cmp}, true_target{true_target}, false_target{false_target} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override { return cmp->use(); }
+  std::vector<Reg *> reg_ptrs() override { return cmp->reg_ptrs(); }
 };
 
 // 下面是与栈指针sp相关的指令
@@ -527,7 +547,7 @@ struct Call : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 
-struct Return : Instruction {
+struct Return : Terminator {
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {Reg{General, r0}, Reg{Fp, s0}}; }
@@ -619,4 +639,50 @@ struct Vneg : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
 };
 
+struct ComplexLoad : Instruction {
+  Reg dst, base, offset;
+  ShiftType shift_type;
+  int shift;
+  ComplexLoad(Reg dst, Reg base, Reg offset)
+      : ComplexLoad(dst, base, offset, ShiftType::LSL, 0) {}
+  ComplexLoad(Reg dst, Reg base, Reg offset, ShiftType shift_type, int shift)
+      : dst{dst}, base{base}, offset{offset},
+        shift_type{shift_type}, shift{shift} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->base, this->offset}; }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->dst, &this->base, &this->offset};
+  }
+};
+
+struct ComplexStore : Instruction {
+  Reg src, base, offset;
+  ShiftType shift_type;
+  int shift;
+  ComplexStore(Reg src, Reg base, Reg offset)
+      : ComplexStore(src, base, offset, ShiftType::LSL, 0) {}
+  ComplexStore(Reg src, Reg base, Reg offset, ShiftType shift_type, int shift)
+      : src{src}, base{base}, offset{offset},
+        shift_type{shift_type}, shift{shift} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override {
+    return {this->src, this->base, this->offset};
+  }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->src, &this->base, &this->offset};
+  }
+};
+
 } // namespace armv7
+
+namespace std {
+template <> struct hash<armv7::Reg> {
+  size_t operator()(armv7::Reg const r) const {
+    return hash<pair<armv7::RegType, int>>{}({r.type, r.id});
+  }
+};
+} // namespace std
