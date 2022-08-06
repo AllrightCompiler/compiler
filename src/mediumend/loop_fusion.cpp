@@ -623,6 +623,18 @@ void loop_simplification(Function *func){
         out->change_prev(bb, new_bb);
         for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
           if(movealbe_inst.count(iter->get())){
+            auto inst = iter->get();
+            TypeCase(output, ir::insns::Output *, inst){
+              auto mod = dynamic_cast<ir::insns::Binary *>(inst);
+              assert(mod);
+              assert(mod->op == BinaryOp::Mod);
+              auto uses = func->use_list[output->dst];
+              for(auto &each : uses){
+                if(each->bb == bb){
+                  each->change_use(output->dst, mod->src1);
+                }
+              }
+            }
             new_bb->push_back(iter->release());
             iter = bb->insns.erase(iter);
           } else {
