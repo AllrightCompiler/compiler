@@ -15,7 +15,7 @@ const static int MIN_BR_CNT = 7;
 
 static Function * cur_func = nullptr;
 
-bool check_bb_br(BasicBlock *bb, Reg reg, int &val, BasicBlock *&true_target, BasicBlock *&false_target, BinaryOp op) {
+bool check_bb_br(BasicBlock *bb, Reg reg, int &val, BasicBlock *&true_target, BasicBlock *&false_target) {
   auto term = bb->insns.back().get();
   if(bb->insns.size() == 3){
     TypeCase(br, ir::insns::Branch *, term){
@@ -23,7 +23,7 @@ bool check_bb_br(BasicBlock *bb, Reg reg, int &val, BasicBlock *&true_target, Ba
         auto val_def = cur_func->def_list.at(br->val);
         TypeCase(binary, ir::insns::Binary *, val_def){
           if(binary->src1 == reg || binary->src2 == reg){
-            if(binary->op == op){
+            if(binary->op == BinaryOp::Eq){
               Reg jmp_val = binary->src1;
               Reg imm_reg = binary->src2;
               if(binary->src2 == reg){
@@ -50,7 +50,7 @@ bool check_bb_br(BasicBlock *bb, Reg reg, int &val, BasicBlock *&true_target, Ba
   return false;
 }
 
-bool br2switch(Function *func) {
+void br2switch(Function *func) {
   cur_func = func;
   vector<BasicBlock *> stack;
   stack.push_back(func->bbs.front().get());
@@ -60,15 +60,10 @@ bool br2switch(Function *func) {
   unordered_set<BasicBlock *> internal_bbs;
   BasicBlock *bb;
   Reg jmp_val;
-  func->clear_visit();
   while(stack.size() && !found){
     bb = stack.back();
     stack.pop_back();
-    if(bb->visit){
-      continue;
-    }
-    bb->visit = true;
-    for(auto succ : bb->succ){
+    for(auto succ : bb->dom){
       stack.push_back(succ);
     }
     auto term = bb->insns.back().get();
@@ -89,34 +84,7 @@ bool br2switch(Function *func) {
                   int val;
                   BasicBlock *dst;
                   BasicBlock *next;
-                  if(check_bb_br(pos, jmp_val, val, dst, next, BinaryOp::Eq)){
-                    switch_map[val] = dst;
-                    internal_bbs.insert(pos);
-                    pos = next;
-                  }else{
-                    break;
-                  }
-                }
-                if(switch_map.size() > MIN_BR_CNT){
-                  found = true;
-                  default_target = pos;
-                }
-              }
-            }
-          } else if(binary->op == BinaryOp::Neq){
-            jmp_val = binary->src1;
-            auto imm = binary->src2;
-            if(func->def_list.count(imm)){
-              auto imm_def = func->def_list.at(imm);
-              TypeCase(imm, ir::insns::LoadImm *, imm_def){
-                switch_map.clear();
-                switch_map[imm->imm.iv] = br->false_target;
-                BasicBlock * pos = br->true_target;
-                while(true){
-                  int val;
-                  BasicBlock *dst;
-                  BasicBlock *next;
-                  if(check_bb_br(pos, jmp_val, val, next, dst, BinaryOp::Neq)){
+                  if(check_bb_br(pos, jmp_val, val, dst, next)){
                     switch_map[val] = dst;
                     internal_bbs.insert(pos);
                     pos = next;
@@ -164,14 +132,12 @@ bool br2switch(Function *func) {
       }
       ++iter;
     }
-    return true;
   }
-  return false;
 }
 
 void br2switch(ir::Program *prog) {
   for (auto &[name, func] : prog->functions) {
-    while(br2switch(&func)) {}
+    br2switch(&func);
   }
 }
 
