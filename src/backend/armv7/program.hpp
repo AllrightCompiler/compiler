@@ -26,8 +26,8 @@ struct BasicBlock {
     insns.emplace_back(insn);
   }
 
-  std::list<std::unique_ptr<Instruction>>::iterator seq_end();
-  void insert_before_branch(Instruction *insn);
+  std::list<std::unique_ptr<Instruction>>::iterator sequence_end();
+  void insert_at_end(Instruction *insn);
 
   static void add_edge(BasicBlock *from, BasicBlock *to) {
     from->succ.insert(to);
@@ -98,6 +98,13 @@ struct Function {
   bool check_and_resolve_stack_store();
   void defer_stack_param_load(Reg r, StackObject *obj);
   void resolve_phi();
+
+  template <typename RegAllocator>
+  void do_reg_alloc(RegAllocator &allocator, bool is_gp_pass = true) {
+    allocator.do_reg_alloc(*this, is_gp_pass);
+  }
+
+  std::vector<BasicBlock *> compute_post_order() const;
 
   // post-register allocation passes
   void emit_prologue_epilogue();

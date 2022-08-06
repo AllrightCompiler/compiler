@@ -25,10 +25,12 @@ void Function::do_liveness_analysis(RegFilter filter) {
     bb->live_out.clear();
   }
 
+  auto post_order = compute_post_order();
   bool changed = true;
   while (changed) {
     changed = false;
-    for (auto &bb : bbs) {
+    for (auto it = post_order.rbegin(); it != post_order.rend(); ++it) {
+      auto bb = *it;
       std::set<Reg> new_out;
       for (auto succ : bb->succ)
         new_out.insert(succ->live_in.begin(), succ->live_in.end());

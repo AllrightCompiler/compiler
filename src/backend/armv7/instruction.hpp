@@ -374,9 +374,10 @@ struct FusedMul : Instruction {
 };
 
 struct BasicBlock;
+struct Terminator : Instruction {};
 
 // B.cond
-struct Branch : Instruction {
+struct Branch : Terminator {
   BasicBlock *target;
 
   Branch(BasicBlock *target) : target{target} {}
@@ -385,7 +386,7 @@ struct Branch : Instruction {
 };
 
 // CBZ/CBNZ
-struct RegBranch : Instruction {
+struct RegBranch : Terminator {
   enum Type { Cbnz, Cbz } type;
   BasicBlock *target;
   Reg src;
@@ -397,6 +398,23 @@ struct RegBranch : Instruction {
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {src}; }
   std::vector<Reg *> reg_ptrs() override { return {&src}; }
+};
+
+// 实际条件跳转的中间形式，保留了两个分支，需要在最后展开
+// 有些情况比较和分支指令应被视作一个整体，避免中间插入其它指令影响cpsr
+// NOTE: true_target的跳转条件即此伪指令的条件码
+struct CmpBranch : Terminator {
+  std::unique_ptr<Compare> cmp;
+  BasicBlock *true_target, *false_target;
+
+  CmpBranch(Compare *inner_cmp, BasicBlock *true_target,
+            BasicBlock *false_target)
+      : cmp{inner_cmp}, true_target{true_target}, false_target{false_target} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override { return cmp->use(); }
+  std::vector<Reg *> reg_ptrs() override { return cmp->reg_ptrs(); }
 };
 
 // 下面是与栈指针sp相关的指令
@@ -529,7 +547,7 @@ struct Call : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 
-struct Return : Instruction {
+struct Return : Terminator {
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {Reg{General, r0}, Reg{Fp, s0}}; }
