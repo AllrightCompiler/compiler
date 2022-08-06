@@ -79,7 +79,7 @@ std::vector<funcptr> passes = {
 
   operator_strength_reduction,
   gvn_cfg,
-
+  loop_simplification,
   sort_basicblock,
 };
 
