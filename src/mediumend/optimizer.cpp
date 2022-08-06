@@ -51,24 +51,22 @@ std::vector<funcptr> passes = {
     gvn_no_cfg,
     duplicate_load_store_elimination,
   array_ssa_destruction,
-
-  loop_unroll,
-
-  gvn_cfg,
-  gvn_cfg,
+  
+  remove_recursive_tail_call,
 
   function_inline,
+  remove_unused_function,
+  main_global_var_to_local,
+  mem2reg,
+
+  loop_unroll,
 
   array_mem2reg,
     gvn_cfg,
     duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  main_global_var_to_local,
-  mem2reg,
-
-  loop_unroll,
-
+  gvn_cfg,
   gvn_cfg,
   loop_unroll,
 
@@ -76,7 +74,6 @@ std::vector<funcptr> passes = {
   remove_useless_loop,
   gvn_cfg,
 
-  
   gep_destruction,
   gvn_no_cfg,
 

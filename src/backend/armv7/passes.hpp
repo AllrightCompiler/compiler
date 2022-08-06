@@ -15,4 +15,7 @@ void remove_unused(Function &f);
 // 移除无实际效果的指令，如mov r0, r0
 void remove_useless(Function &f);
 
+// 清理控制流
+void sanitize_cfg(Function &f);
+
 } // namespace armv7

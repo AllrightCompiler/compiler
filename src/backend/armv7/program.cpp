@@ -12,8 +12,6 @@
 
 namespace armv7 {
 
-inline bool is_power_of_2(int x) { return (x & (x - 1)) == 0; }
-
 template <typename Container = std::list<std::unique_ptr<Instruction>>>
 void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
                    int imm) {
@@ -133,6 +131,7 @@ class ProgramTranslator {
 
     auto prev_entry = bb_map[src_fn.bbs.begin()->get()];
     BasicBlock::add_edge(entry_bb, prev_entry);
+    entry_bb->push(new Branch{prev_entry});
 
     int i = 1;
     auto dst_it = std::next(dst_fn.bbs.begin()); // skip entry
@@ -403,8 +402,7 @@ class ProgramTranslator {
     else TypeCase(jump, ii::Jump *, ins) {
       auto target = bb_map[jump->target];
       BasicBlock::add_edge(bb, target);
-      if (target != next_bb)
-        bb->push(new Branch{target});
+      bb->push(new Branch{target});
     }
     else TypeCase(br, ii::Branch *, ins) {
       Reg val = Reg::from(br->val);
@@ -785,7 +783,6 @@ void Function::emit_prologue_epilogue() {
   if (!save_lr)
     epilogue.emplace(epilogue.end(), new Return);
 
-  auto last_bb = std::prev(bbs.end())->get();
   bool trivial_return =
       !stack_obj_size && saved_fprs.empty() && saved_gprs.empty();
   for (auto &bb_ptr : bbs) {
@@ -796,10 +793,7 @@ void Function::emit_prologue_epilogue() {
       TypeCase(ret, Return *, it->get()) {
         if (!trivial_return) {
           BasicBlock::add_edge(bb, exit);
-          if (bb == last_bb)
-            insns.erase(it);
-          else
-            it->reset(new Branch{exit});
+          it->reset(new Branch{exit});
         }
       }
     }
@@ -860,15 +854,9 @@ void Function::resolve_stack_ops(int frame_size) {
             it->reset(new Load{dst, reg_sp, offset});
           } else {
             // Rd = loadimm #offset
-            // add Rd, sp, Rd
-            // ldr Rd, [Rd]
-
-            // TODO:
-            // Rd = loadimm #offset
             // ldr Rd, [sp, Rd]
             emit_load_imm(insns, it, dst, offset);
-            insns.emplace(it, new RType{RType::Add, dst, reg_sp, dst});
-            it->reset(new Load{dst, dst, 0});
+            it->reset(new ComplexLoad{dst, reg_sp, dst});
           }
         }
       }
@@ -913,7 +901,8 @@ void Function::replace_pseudo_insns() {
     ++bb_iter;
     auto next_bb = (bb_iter == bbs.end()) ? nullptr : bb_iter->get();
 
-    for (auto it = insns.begin(); it != insns.end(); ++it) {
+    for (auto it = insns.begin(); it != insns.end();) {
+      bool remove = false;
       TypeCase(pcmp, PseudoCompare *, it->get()) {
         auto cond = pcmp->cond;
         auto dst = pcmp->dst;
@@ -948,6 +937,15 @@ void Function::replace_pseudo_insns() {
           it->reset(new Branch{false_target});
         }
       }
+      else TypeCase(br, Branch *, it->get()) {
+        if (br->target == next_bb && br->cond == ExCond::Always)
+          remove = true;
+      }
+
+      if (remove)
+        it = insns.erase(it);
+      else
+        ++it;
     }
   }
 }

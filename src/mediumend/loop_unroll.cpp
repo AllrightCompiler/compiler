@@ -531,8 +531,8 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     assert(exit_paths.size() == 1);
     for (auto bb : exit_paths) { // only one exit_prev
       exit_bb->prev.erase(bb);
+      bb->succ.erase(exit_bb); // delete entry's succ to exit
     }
-    loop->header->succ.erase(exit_bb); // delete entry's succ to exit
     if (info.loop_type == 1) {
       for (auto bb : exit_paths) { // only one exit_prev
         exit_bb->prev.insert(bb_map[map_curid].at(bb));
@@ -736,6 +736,7 @@ void loop_unroll(ir::Function *func) {
 }
 
 void loop_unroll(ir::Program *prog) {
+  ir_validation(prog);
   for(auto &func : prog->functions) {
     loop_unroll(&func.second);
   }
