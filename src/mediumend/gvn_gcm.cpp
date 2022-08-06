@@ -371,7 +371,7 @@ void gvn(Function *f) {
             TypeCase(binary_i, ir::insns::Binary *, i) {
               if (binary_i->op == BinaryOp::Mul && binary->op == BinaryOp::Div) {
                 if (binary_i->src2 == binary->src2) {
-                  copy_propagation(f->use_list, binary->dst, binary_i->dst);
+                  copy_propagation(f->use_list, binary->dst, binary_i->src1);
                   flag2 = true;
                 }
               }
