@@ -11,7 +11,7 @@ using ir::BasicBlock;
 using std::vector;
 using std::map;
 
-const static int MIN_BR_CNT = 7;
+const static int BR_CNT = 6;
 
 static Function * cur_func = nullptr;
 
@@ -92,7 +92,7 @@ void br2switch(Function *func) {
                     break;
                   }
                 }
-                if(switch_map.size() > MIN_BR_CNT){
+                if(switch_map.size() == BR_CNT){
                   found = true;
                   default_target = pos;
                 }
@@ -110,6 +110,9 @@ void br2switch(Function *func) {
     bb->pop_back();
     bb->push_back(switch_insn);    
     for(auto each : internal_bbs){
+      if(each == bb){
+        continue;
+      }
       auto br = dynamic_cast<ir::insns::Branch *>(each->insns.back().get());
       assert(br);
       br->true_target->change_prev(each, bb);
@@ -123,7 +126,7 @@ void br2switch(Function *func) {
     }
     bb->succ.insert(switch_insn->default_target);
     for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-      if(internal_bbs.count(iter->get())){
+      if(internal_bbs.count(iter->get()) && iter->get() != bb){
         for(auto &inst : iter->get()->insns){
           inst->remove_use_def();
         }
