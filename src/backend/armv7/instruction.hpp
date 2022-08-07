@@ -3,6 +3,7 @@
 #include "backend/armv7/arch.hpp"
 
 #include "common/ir.hpp"
+#include "common/utils.hpp"
 
 #include <set>
 #include <variant>
@@ -50,9 +51,7 @@ struct Reg {
   static Reg from(ir::Reg ir_reg) {
     return Reg{ir_to_machine_reg_type(ir_reg.type), -ir_reg.id};
   }
-  static Reg from(int t, int id) {
-    return Reg{ir_to_machine_reg_type(t), id};
-  }
+  static Reg from(int t, int id) { return Reg{ir_to_machine_reg_type(t), id}; }
 };
 
 std::ostream &operator<<(std::ostream &os, const Reg &r);
@@ -79,6 +78,9 @@ enum ShiftType {
   ASR, // Arithmetic Shift Right
   ROR, // ROtate Right
 };
+
+std::optional<std::pair<ShiftType, int>>
+combine_shift(std::pair<ShiftType, int> lhs, std::pair<ShiftType, int> rhs);
 
 struct RegImmShift {
   ShiftType type;
@@ -637,4 +639,50 @@ struct Vneg : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
 };
 
+struct ComplexLoad : Instruction {
+  Reg dst, base, offset;
+  ShiftType shift_type;
+  int shift;
+  ComplexLoad(Reg dst, Reg base, Reg offset)
+      : ComplexLoad(dst, base, offset, ShiftType::LSL, 0) {}
+  ComplexLoad(Reg dst, Reg base, Reg offset, ShiftType shift_type, int shift)
+      : dst{dst}, base{base}, offset{offset},
+        shift_type{shift_type}, shift{shift} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->base, this->offset}; }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->dst, &this->base, &this->offset};
+  }
+};
+
+struct ComplexStore : Instruction {
+  Reg src, base, offset;
+  ShiftType shift_type;
+  int shift;
+  ComplexStore(Reg src, Reg base, Reg offset)
+      : ComplexStore(src, base, offset, ShiftType::LSL, 0) {}
+  ComplexStore(Reg src, Reg base, Reg offset, ShiftType shift_type, int shift)
+      : src{src}, base{base}, offset{offset},
+        shift_type{shift_type}, shift{shift} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override {
+    return {this->src, this->base, this->offset};
+  }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->src, &this->base, &this->offset};
+  }
+};
+
 } // namespace armv7
+
+namespace std {
+template <> struct hash<armv7::Reg> {
+  size_t operator()(armv7::Reg const r) const {
+    return hash<pair<armv7::RegType, int>>{}({r.type, r.id});
+  }
+};
+} // namespace std
