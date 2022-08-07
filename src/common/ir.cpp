@@ -253,6 +253,16 @@ void BasicBlock::change_succ(BasicBlock *old_bb, BasicBlock *new_bb) {
         jmp->target = new_bb;
       }
     }
+    TypeCase(swit, ir::insns::Switch *, inst) {
+      for(auto &each : swit->targets){
+        if(each.second == old_bb){
+          each.second = new_bb;
+        }
+      }
+      if(swit->default_target == old_bb){
+        swit->default_target = new_bb;
+      }
+    }
   }
 }
 

@@ -140,6 +140,7 @@ void br2switch(ir::Program *prog) {
   for (auto &[name, func] : prog->functions) {
     br2switch(&func);
   }
+  ir_validation(prog);
 }
 
 } // namespace mediumend

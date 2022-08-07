@@ -1,5 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+#include "mediumend/optimizer.hpp"
 
 namespace mediumend {
 
@@ -233,6 +234,7 @@ void function_inline(ir::Program *prog) {
       }
     }
   }
+  ir_validation(prog);
 }
 
 } // namespace mediumend
