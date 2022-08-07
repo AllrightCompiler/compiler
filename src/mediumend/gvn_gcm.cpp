@@ -364,6 +364,20 @@ void gvn(Function *f) {
               }
             }
           }
+          // check (x * y) / y
+          bool flag2 = false;
+          if (!binary->bb->func->has_param(binary->src1)) {
+            auto i = binary->bb->func->def_list.at(binary->src1);
+            TypeCase(binary_i, ir::insns::Binary *, i) {
+              if (binary_i->op == BinaryOp::Mul && binary->op == BinaryOp::Div) {
+                if (binary_i->src2 == binary->src2) {
+                  copy_propagation(f->use_list, binary->dst, binary_i->src1);
+                  flag2 = true;
+                }
+              }
+            }
+          }
+          if (flag2) continue;
           if (flag) {
             binary->op = new_op;
             if (rConstMap.count(new_imm)) {
