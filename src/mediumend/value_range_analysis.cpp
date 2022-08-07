@@ -25,12 +25,12 @@ struct ValueRange {
     }
   }
 
-  void intersect(const ValueRange &range) {
+  void intersect_l(const unordered_map<BinaryOp, unordered_set<Reg> > &_bds) {
     if (bounds.count(BinaryOp::Lt)) {
-      if (!range.bounds.count(BinaryOp::Lt)) bounds.erase(BinaryOp::Lt);
+      if (!_bds.count(BinaryOp::Lt)) bounds.erase(BinaryOp::Lt);
       else {
         auto &st = bounds.at(BinaryOp::Lt);
-        auto &st2 = range.bounds.at(BinaryOp::Lt);
+        auto &st2 = _bds.at(BinaryOp::Lt);
         for (auto it = st.begin(); it != st.end(); ) {
           if (!st2.count(*it)) it = st.erase(it);
           else it++;
@@ -38,28 +38,16 @@ struct ValueRange {
         if (st.size() == 0) bounds.erase(BinaryOp::Lt);
       }
     }
-    if (bounds.count(BinaryOp::Gt)) {
-      if (!range.bounds.count(BinaryOp::Gt)) bounds.erase(BinaryOp::Gt);
-      else {
-        auto &st = bounds.at(BinaryOp::Gt);
-        auto &st2 = range.bounds.at(BinaryOp::Gt);
-        for (auto it = st.begin(); it != st.end(); ) {
-          if (!st2.count(*it)) it = st.erase(it);
-          else it++;
-        }
-        if (st.size() == 0) bounds.erase(BinaryOp::Gt);
-      }
-    }
     if (bounds.count(BinaryOp::Leq)) {
-      if (!range.bounds.count(BinaryOp::Leq) && !range.bounds.count(BinaryOp::Lt)) bounds.erase(BinaryOp::Leq);
+      if (!_bds.count(BinaryOp::Leq) && !_bds.count(BinaryOp::Lt)) bounds.erase(BinaryOp::Leq);
       else {
         auto &st = bounds.at(BinaryOp::Leq);
         unordered_set<Reg> st2;
-        if (range.bounds.count(BinaryOp::Leq)) {
-          st2.insert(range.bounds.at(BinaryOp::Leq).begin(), range.bounds.at(BinaryOp::Leq).end());
+        if (_bds.count(BinaryOp::Leq)) {
+          st2.insert(_bds.at(BinaryOp::Leq).begin(), _bds.at(BinaryOp::Leq).end());
         }
-        if (range.bounds.count(BinaryOp::Lt)) {
-          st2.insert(range.bounds.at(BinaryOp::Lt).begin(), range.bounds.at(BinaryOp::Lt).end());
+        if (_bds.count(BinaryOp::Lt)) {
+          st2.insert(_bds.at(BinaryOp::Lt).begin(), _bds.at(BinaryOp::Lt).end());
         }
         for (auto it = st.begin(); it != st.end(); ) {
           if (!st2.count(*it)) it = st.erase(it);
@@ -68,16 +56,31 @@ struct ValueRange {
         if (st.size() == 0) bounds.erase(BinaryOp::Leq);
       }
     }
+  }
+
+  void intersect_g(const unordered_map<BinaryOp, unordered_set<Reg> > &_bds) {
+    if (bounds.count(BinaryOp::Gt)) {
+      if (!_bds.count(BinaryOp::Gt)) bounds.erase(BinaryOp::Gt);
+      else {
+        auto &st = bounds.at(BinaryOp::Gt);
+        auto &st2 = _bds.at(BinaryOp::Gt);
+        for (auto it = st.begin(); it != st.end(); ) {
+          if (!st2.count(*it)) it = st.erase(it);
+          else it++;
+        }
+        if (st.size() == 0) bounds.erase(BinaryOp::Gt);
+      }
+    }
     if (bounds.count(BinaryOp::Geq)) {
-      if (!range.bounds.count(BinaryOp::Geq) && !range.bounds.count(BinaryOp::Gt)) bounds.erase(BinaryOp::Geq);
+      if (!_bds.count(BinaryOp::Geq) && !_bds.count(BinaryOp::Gt)) bounds.erase(BinaryOp::Geq);
       else {
         auto &st = bounds.at(BinaryOp::Geq);
         unordered_set<Reg> st2;
-        if (range.bounds.count(BinaryOp::Geq)) {
-          st2.insert(range.bounds.at(BinaryOp::Geq).begin(), range.bounds.at(BinaryOp::Geq).end());
+        if (_bds.count(BinaryOp::Geq)) {
+          st2.insert(_bds.at(BinaryOp::Geq).begin(), _bds.at(BinaryOp::Geq).end());
         }
-        if (range.bounds.count(BinaryOp::Gt)) {
-          st2.insert(range.bounds.at(BinaryOp::Gt).begin(), range.bounds.at(BinaryOp::Gt).end());
+        if (_bds.count(BinaryOp::Gt)) {
+          st2.insert(_bds.at(BinaryOp::Gt).begin(), _bds.at(BinaryOp::Gt).end());
         }
         for (auto it = st.begin(); it != st.end(); ) {
           if (!st2.count(*it)) it = st.erase(it);
@@ -86,6 +89,62 @@ struct ValueRange {
         if (st.size() == 0) bounds.erase(BinaryOp::Geq);
       }
     }
+  }
+
+  void intersect_inc_indvar(const unordered_map<BinaryOp, unordered_set<Reg> > &_bds) {
+    if (bounds.count(BinaryOp::Gt)) bounds.erase(BinaryOp::Gt);
+    if (bounds.count(BinaryOp::Geq)) bounds.erase(BinaryOp::Geq);
+    if (_bds.count(BinaryOp::Gt)) bounds[BinaryOp::Gt] = _bds.at(BinaryOp::Gt);
+    if (_bds.count(BinaryOp::Geq) || _bds.count(BinaryOp::Gt)) {
+      bounds[BinaryOp::Geq] = unordered_set<Reg>();
+    }
+    if (_bds.count(BinaryOp::Geq)) {
+      bounds[BinaryOp::Geq].insert(_bds.at(BinaryOp::Geq).begin(), _bds.at(BinaryOp::Geq).end());
+    }
+    if (_bds.count(BinaryOp::Gt)) {
+      bounds[BinaryOp::Geq].insert(_bds.at(BinaryOp::Gt).begin(), _bds.at(BinaryOp::Gt).end());
+    }
+    intersect_l(_bds);
+  }
+
+  void intersect_dec_indvar(const unordered_map<BinaryOp, unordered_set<Reg> > &_bds) {
+    if (bounds.count(BinaryOp::Lt)) bounds.erase(BinaryOp::Lt);
+    if (bounds.count(BinaryOp::Leq)) bounds.erase(BinaryOp::Leq);
+    if (_bds.count(BinaryOp::Lt)) bounds[BinaryOp::Lt] = _bds.at(BinaryOp::Lt);
+    if (_bds.count(BinaryOp::Leq) || _bds.count(BinaryOp::Lt)) {
+      bounds[BinaryOp::Leq] = unordered_set<Reg>();
+    }
+    if (_bds.count(BinaryOp::Leq)) {
+      bounds[BinaryOp::Leq].insert(_bds.at(BinaryOp::Leq).begin(), _bds.at(BinaryOp::Leq).end());
+    }
+    if (_bds.count(BinaryOp::Lt)) {
+      bounds[BinaryOp::Leq].insert(_bds.at(BinaryOp::Lt).begin(), _bds.at(BinaryOp::Lt).end());
+    }
+    intersect_g(_bds);
+  }
+
+  void intersect(const ValueRange &range, Reg self) {
+    // dec loop inductive var
+    if (bounds.count(BinaryOp::Lt) && bounds.at(BinaryOp::Lt).count(self)) {
+      intersect_dec_indvar(range.bounds);
+      return;
+    } else if (range.bounds.count(BinaryOp::Lt) && range.bounds.at(BinaryOp::Lt).count(self)) {
+      unordered_map<BinaryOp, unordered_set<Reg> > bds = bounds;
+      intersect_dec_indvar(bds);
+      return;
+    }
+    // inc loop inductive var
+    if (bounds.count(BinaryOp::Gt) && bounds.at(BinaryOp::Gt).count(self)) {
+      intersect_inc_indvar(range.bounds);
+      return;
+    } else if (range.bounds.count(BinaryOp::Gt) && range.bounds.at(BinaryOp::Gt).count(self)) {
+      unordered_map<BinaryOp, unordered_set<Reg> > bds = bounds;
+      intersect_inc_indvar(bds);
+      return;
+    }
+    // intersect
+    intersect_l(range.bounds);
+    intersect_g(range.bounds);
   }
 
   void unite(const ValueRange &range) {
@@ -424,7 +483,7 @@ void value_range_analysis(ir::Function *func) {
               first = false;
               range = bound;
             } else {
-              range.intersect(bound);
+              range.intersect(bound, phi->dst);
             }
           }
           update_bound(bb.get(), phi->dst, range);
@@ -452,7 +511,7 @@ void value_range_analysis(ir::Function *func) {
             new_ins->bb = binary->bb;
             binary->remove_use_def();
             new_ins->add_use_def();
-            for (auto &insn : bb->insns) {
+            for (auto &insn : binary->bb->insns) {
               if (insn.get() == binary) {
                 insn.reset(new_ins);
                 break;
