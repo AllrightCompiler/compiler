@@ -422,8 +422,9 @@ void Branch::emit(std::ostream &os) const {
 void Switch::emit(std::ostream &os) const {
   os << "switch " << type_string(val.type) << " " << reg_name(val) << ", label "
      << label_name(default_target->label) << "[" << std::endl;
-  for(auto &[num, target] : this->targets){
-    os << "    i32 " << num << ", label " << label_name(target->label) << std::endl;
+  for (auto &[num, target] : this->targets) {
+    os << "    i32 " << num << ", label " << label_name(target->label)
+       << std::endl;
   }
   os << "  ]";
 }

@@ -474,6 +474,21 @@ class ProgramTranslator {
         srcs.emplace_back(bb_map.at(ir_bb), Reg::from(reg));
       bb->push(new Phi{Reg::from(phi->dst), std::move(srcs)});
     }
+    else TypeCase(sw, ii::Switch *, ins) {
+      Reg val = Reg::from(sw->val);
+      Reg tmp = fn.new_reg(General);
+      auto default_target = bb_map.at(sw->default_target);
+      BasicBlock::add_edge(bb, default_target);
+
+      std::vector<std::pair<int, BasicBlock *>> targets;
+      for (auto &[v, ir_bb] : sw->targets) {
+        auto target = bb_map.at(ir_bb);
+        targets.push_back({v, target});
+        BasicBlock::add_edge(bb, target);
+      }
+      assert(!targets.empty());
+      bb->push(new Switch{val, tmp, default_target, std::move(targets)});
+    }
   }
 
 public:
@@ -496,22 +511,44 @@ std::unique_ptr<Program> translate(const ir::Program &ir_program) {
 }
 
 void Function::emit(std::ostream &os) {
+  os << ".section .text\n";
+  os << ".align\n";
   os << name << ":\n";
   for (auto &bb : bbs) {
-    // if (bb->insns.empty())
-    //   continue;
-
     os << bb->label << ':';
-    if (bb->insns.empty()) {
-      next_instruction(os);
-      os << "nop";
-    }
+    // if (bb->insns.empty()) {
+    //   next_instruction(os);
+    //   os << "nop";
+    // }
 
     for (auto &insn : bb->insns) {
       next_instruction(os);
       insn->emit(os);
     }
     os << "\n\n";
+  }
+  emit_jump_tables(os);
+}
+
+void Function::emit_jump_tables(std::ostream &os) {
+  os << ".section .rodata\n";
+  for (size_t i = 0; i < jump_tables.size(); ++i) {
+    auto jt_name = "JT" + std::to_string(i) + "$" + name;
+    auto &sw = jump_tables[i];
+    // 这里为方便起见，进行了稠密化处理
+    int first = std::min(sw->targets.front().first, 0);
+    int last = std::max(sw->targets.back().first, 0);
+    int len = last - first + 1;
+    std::vector<BasicBlock *> dense_targets(len, sw->default_target);
+    for (auto [v, target] : sw->targets)
+      dense_targets[v - first] = target;
+
+    for (int j = first; j <= last; ++j) {
+      if (j == 0)
+        os << jt_name << ":\n";
+      os << "    .word " << dense_targets[j]->label << '\n';
+    }
+    os << '\n';
   }
 }
 
@@ -897,7 +934,7 @@ void Function::replace_pseudo_insns() {
   for (auto bb_iter = bbs.begin(); bb_iter != bbs.end();) {
     auto bb = bb_iter->get();
     auto &insns = bb->insns;
-    
+
     ++bb_iter;
     auto next_bb = (bb_iter == bbs.end()) ? nullptr : bb_iter->get();
 
@@ -940,6 +977,37 @@ void Function::replace_pseudo_insns() {
       else TypeCase(br, Branch *, it->get()) {
         if (br->target == next_bb && br->cond == ExCond::Always)
           remove = true;
+      }
+      else TypeCase(sw, Switch *, it->get()) {
+        int lb = sw->targets.front().first;
+        int ub = sw->targets.back().first;
+        Reg val = sw->val, tmp = sw->tmp;
+
+        if (is_imm8m(lb))
+          insns.emplace(it, new Compare{val, Operand2::from(lb)});
+        else {
+          emit_load_imm(insns, it, tmp, lb);
+          insns.emplace(it, new Compare{val, Operand2::from(tmp)});
+        }
+        auto lbr = new Branch{sw->default_target};
+        lbr->cond = ExCond::Lt;
+        insns.emplace(it, lbr);
+
+        if (is_imm8m(ub))
+          insns.emplace(it, new Compare{val, Operand2::from(ub)});
+        else {
+          emit_load_imm(insns, it, tmp, ub);
+          insns.emplace(it, new Compare{val, Operand2::from(tmp)});
+        }
+        auto ubr = new Branch{sw->default_target};
+        ubr->cond = ExCond::Gt;
+        insns.emplace(it, ubr);
+
+        auto jt_name = "JT" + std::to_string(jump_tables.size()) + "$" + name;
+        insns.emplace(it, new LoadAddr{tmp, jt_name});
+
+        jump_tables.emplace_back(dynamic_cast<Switch *>(it->release()));
+        it->reset(new ComplexLoad{Reg{General, pc}, tmp, val, LSL, 2});
       }
 
       if (remove)

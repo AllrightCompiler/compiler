@@ -417,6 +417,22 @@ struct CmpBranch : Terminator {
   std::vector<Reg *> reg_ptrs() override { return cmp->reg_ptrs(); }
 };
 
+struct Switch : Terminator {
+  Reg val, tmp;
+  std::vector<std::pair<int, BasicBlock *>> targets;
+  BasicBlock *default_target;
+
+  Switch(Reg val, Reg tmp, BasicBlock *default_target,
+         std::vector<std::pair<int, BasicBlock *>> targets)
+      : val{val}, tmp{tmp}, default_target{default_target}, targets{std::move(
+                                                                targets)} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {tmp}; }
+  std::set<Reg> use() const override { return {val, tmp}; }
+  std::vector<Reg *> reg_ptrs() override { return {&val, &tmp}; }
+};
+
 // 下面是与栈指针sp相关的指令
 // 为了拓展性，StackObject *与int offset配对，offset表示相对于stack object的偏移
 // 由于sp不被用于寄存器分配，此类指令的def和use都不显含sp

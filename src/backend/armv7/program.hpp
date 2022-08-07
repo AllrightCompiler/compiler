@@ -79,6 +79,7 @@ struct Function {
   int regs_used; // 分配的虚拟寄存器总数
 
   std::unordered_map<Reg, std::set<OccurPoint>> reg_def, reg_use;
+  std::vector<std::unique_ptr<Switch>> jump_tables;
 
   Reg new_reg(Reg::Type type) { return Reg{type, -(++regs_used)}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
@@ -112,6 +113,7 @@ struct Function {
   void replace_pseudo_insns();
 
   void emit(std::ostream &os);
+  void emit_jump_tables(std::ostream &os);
 };
 
 struct Program {

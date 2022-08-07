@@ -349,6 +349,13 @@ bool clean_control_flow(Function &f) {
             assert(jump->target == bb);
             jump->target = target;
           }
+          else TypeCase(sw, Switch *, transfer) {
+            if (sw->default_target == bb)
+              sw->default_target = target;
+            for (auto &pair : sw->targets)
+              if (pair.second == bb)
+                pair.second = target;
+          }
           pred->succ.erase(bb);
           pred->succ.insert(target);
         }
