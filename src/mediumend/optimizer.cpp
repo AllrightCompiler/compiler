@@ -28,6 +28,7 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"sort_basicblock", sort_basicblock},
   {"gep_destruction", gep_destruction},
   {"remove_recursive_tail_call", remove_recursive_tail_call},
+  {"value_range_analysis", value_range_analysis},
 };
 
 // define default passes here
@@ -62,6 +63,8 @@ std::vector<funcptr> passes = {
     gvn_cfg,
     duplicate_load_store_elimination,
   array_ssa_destruction,
+
+  value_range_analysis,
 
   gvn_cfg,
   loop_unroll,
