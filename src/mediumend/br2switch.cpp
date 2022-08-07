@@ -78,6 +78,7 @@ void br2switch(Function *func) {
               auto imm_def = func->def_list.at(imm);
               TypeCase(imm, ir::insns::LoadImm *, imm_def){
                 switch_map.clear();
+                internal_bbs.clear();
                 switch_map[imm->imm.iv] = br->true_target;
                 BasicBlock * pos = br->false_target;
                 while(true){
@@ -110,9 +111,6 @@ void br2switch(Function *func) {
     bb->pop_back();
     bb->push_back(switch_insn);    
     for(auto each : internal_bbs){
-      if(each == bb){
-        continue;
-      }
       auto br = dynamic_cast<ir::insns::Branch *>(each->insns.back().get());
       assert(br);
       br->true_target->change_prev(each, bb);
@@ -126,7 +124,7 @@ void br2switch(Function *func) {
     }
     bb->succ.insert(switch_insn->default_target);
     for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-      if(internal_bbs.count(iter->get()) && iter->get() != bb){
+      if(internal_bbs.count(iter->get())){
         for(auto &inst : iter->get()->insns){
           inst->remove_use_def();
         }
