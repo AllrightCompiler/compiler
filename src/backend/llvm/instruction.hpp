@@ -43,6 +43,18 @@ struct SimpleBranch : ir::insns::Terminator {
   std::vector<Reg *> reg_ptrs() override { return {&val}; }
 };
 
+struct SimpleSwitch : ir::insns::Terminator {
+  std::map<int, BasicBlock*> targets;
+  BasicBlock *default_target;
+  Reg val;
+
+  SimpleSwitch(Reg val, std::map<int, BasicBlock*> targets, BasicBlock *default_target)
+      : val{val}, targets(targets), default_target{default_target} {}
+
+  void emit(std::ostream &os) const override;
+  std::vector<Reg *> reg_ptrs() override { return {&val}; }
+};
+
 // llvm bitcast，用于指针转换
 struct PtrCast : Output {
   Reg src;

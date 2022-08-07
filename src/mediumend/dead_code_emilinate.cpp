@@ -212,21 +212,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
         }
         for(auto &pre : bb->prev){
           auto &last = pre->insns.back();
-          TypeCase(br, ir::insns::Branch *, last.get()){
-            if(br->true_target == bb){
-              br->true_target = target;
-            }
-            if(br->false_target == bb){
-              br->false_target = target;
-            }
-          }
-          TypeCase(j, ir::insns::Jump *, last.get()){
-            if(j->target == bb){
-              j->target = target;
-            }
-          }
-          pre->succ.erase(bb);
-          pre->succ.insert(target);
+          pre->change_succ(bb, target);
           target->prev.insert(pre);
           for(auto &ins : target->insns){
             TypeCase(phi, ir::insns::Phi *, ins.get()){
