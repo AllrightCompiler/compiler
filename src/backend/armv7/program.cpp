@@ -12,22 +12,6 @@
 
 namespace armv7 {
 
-template <typename Container = std::list<std::unique_ptr<Instruction>>>
-void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
-                   int imm) {
-  if (is_imm8m(imm))
-    cont.emplace(it, new Move{dst, Operand2::from(imm)});
-  else if (is_imm8m(~imm))
-    cont.emplace(it, new Move{dst, Operand2::from(~imm), true});
-  else {
-    uint32_t x = uint32_t(imm);
-    auto lo = x & 0xffff, hi = x >> 16;
-    cont.emplace(it, new MovW(dst, lo));
-    if (hi > 0)
-      cont.emplace(it, new MovT(dst, hi));
-  }
-}
-
 void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
   emit_load_imm(bb->insns, bb->insns.end(), dst, imm);
 }
