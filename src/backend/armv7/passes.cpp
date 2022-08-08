@@ -194,7 +194,7 @@ void fold_constants(Function &f) {
                                              r_ins->s1, 0);
             } else {
               assert(imm > 0);
-              emit_load_imm(bb.get(), r_ins->dst, imm - 1);
+              emit_load_imm(bb->insns, instr, r_ins->dst, imm - 1);
               bb->insns.insert(instr,
                                std::make_unique<RType>(RType::Add, r_ins->dst,
                                                        r_ins->dst, r_ins->s1));
