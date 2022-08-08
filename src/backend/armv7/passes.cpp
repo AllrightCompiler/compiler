@@ -59,7 +59,8 @@ void fold_constants(Function &f) {
   std::map<Reg, ConstValue> constants;
 
   for (auto &bb : f.bbs) {
-    for (auto &insn : bb->insns) {
+    for (auto instr = bb->insns.begin(); instr != bb->insns.end(); ++instr) {
+      auto &insn = *instr;
       auto ins = insn.get();
 
       // 匹配常数加载指令
@@ -183,7 +184,36 @@ void fold_constants(Function &f) {
                                static_cast<int>(std::log2<unsigned>(imm))));
           }
         } else if (op == RType::Div) {
-          // TODO: 除2的幂 -> 移位
+          // TODO 一般的立即数
+          if (auto const iter = constants.find(r_ins->s2);
+              iter != constants.end() && is_power_of_2(iter->second.iv)) {
+            int imm = iter->second.iv;
+            assert(imm != 0);
+            if (imm == -1) { // 0x8000'0000
+              insn = std::make_unique<IType>(IType::RevSub, r_ins->dst,
+                                             r_ins->s1, 0);
+            } else {
+              assert(imm > 0);
+              emit_load_imm(bb.get(), r_ins->dst, imm - 1);
+              bb->insns.insert(instr,
+                               std::make_unique<RType>(RType::Add, r_ins->dst,
+                                                       r_ins->dst, r_ins->s1));
+              bb->insns.insert(
+                  instr, std::make_unique<FullRType>(
+                             FullRType::Ands, r_ins->dst, r_ins->dst,
+                             Operand2::from(ShiftType::ASR, r_ins->s1, 32)));
+              auto cond_mov =
+                  std::make_unique<Move>(r_ins->dst, Operand2::from(r_ins->s1));
+              cond_mov->cond = ExCond::Cc;
+              bb->insns.insert(instr, std::move(cond_mov));
+              insn = std::make_unique<Move>(
+                  r_ins->dst,
+                  Operand2::from(ShiftType::ASR, r_ins->dst,
+                                 static_cast<int>(std::log2<unsigned>(imm))));
+            }
+          } else {
+            continue;
+          }
         }
       }
       else TypeCase(i_ins, IType *, ins) {
@@ -260,7 +290,8 @@ void remove_useless(Function &f) {
     for (auto it = insns.begin(); it != insns.end();) {
       bool remove = false;
       TypeCase(mov, Move *, it->get()) {
-        if (mov->is_reg_mov() && mov->use().count(mov->dst))
+        if (mov->is_reg_mov() && mov->use().count(mov->dst) &&
+            mov->cond == ExCond::Always)
           remove = true;
       }
       TypeCase(i_type, IType *, it->get()) {
