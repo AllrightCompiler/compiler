@@ -121,5 +121,6 @@ struct Program {
 
 std::unique_ptr<Program> translate(const ir::Program &ir_program);
 void emit_global(std::ostream &os, const ir::Program &ir_program);
+void emit_load_imm(BasicBlock *bb, Reg dst, int imm);
 
 } // namespace armv7
