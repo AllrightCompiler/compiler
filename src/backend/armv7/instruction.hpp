@@ -65,7 +65,6 @@ enum class ExCond {
   Gt,
   Le,
   Lt,
-  Cc,
 };
 
 ExCond logical_not(ExCond cond);
@@ -179,13 +178,7 @@ struct RType : Instruction {
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
-  std::set<Reg> use() const override {
-    if (this->cond == ExCond::Always) {
-      return {s1, s2};
-    } else {
-      return {dst, s1, s2};
-    }
-  }
+  std::set<Reg> use() const override { return {s1, s2}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &s1, &s2}; }
 
   static Op from(BinaryOp);
@@ -203,19 +196,13 @@ struct IType : Instruction {
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
-  std::set<Reg> use() const override {
-    if (this->cond == ExCond::Always) {
-      return {s1};
-    } else {
-      return {dst, s1};
-    }
-  }
+  std::set<Reg> use() const override { return {s1}; }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &s1}; }
 };
 
 // 具有 op Rd, R1, Operand2 形式的指令
 struct FullRType : Instruction {
-  enum Op { Add, Sub, RevSub, Ands } op;
+  enum Op { Add, Sub, RevSub } op;
   Reg dst, s1;
   Operand2 s2;
 
@@ -227,9 +214,6 @@ struct FullRType : Instruction {
   std::set<Reg> use() const override {
     auto u = s2.get_use();
     u.insert(s1);
-    if (this->cond != ExCond::Always) {
-      u.insert(dst);
-    }
     return u;
   }
   std::vector<Reg *> reg_ptrs() override {
@@ -256,9 +240,6 @@ struct Move : Instruction {
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override {
     auto u = src.get_use();
-    if (this->cond != ExCond::Always) {
-      u.insert(dst);
-    }
     return u;
   }
   std::vector<Reg *> reg_ptrs() override {
@@ -697,6 +678,20 @@ struct ComplexStore : Instruction {
   std::vector<Reg *> reg_ptrs() override {
     return {&this->src, &this->base, &this->offset};
   }
+};
+
+// sdiv dst, src, imm
+// 伪指令，在最后阶段展开
+struct PseudoDivConstant : Instruction {
+  Reg dst, src;
+  int imm;
+
+  PseudoDivConstant(Reg dst, Reg src, int imm) : dst{dst}, src{src}, imm{imm} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
 };
 
 } // namespace armv7

@@ -177,42 +177,30 @@ void fold_constants(Function &f) {
           }
           if (imm == 0) {
             insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
+          } else if (imm == 1) {
+            insn = std::make_unique<Move>(r_ins->dst, Operand2::from(other));
+          } else if (imm == -1) {
+            insn = std::make_unique<IType>(IType::RevSub, r_ins->dst, other, 0);
           } else {
+            assert(imm > 1);
             insn = std::make_unique<Move>(
-                r_ins->dst,
-                Operand2::from(ShiftType::LSL, other,
-                               static_cast<int>(std::log2<unsigned>(imm))));
+                r_ins->dst, Operand2::from(ShiftType::LSL, other,
+                                           static_cast<int>(std::log2(imm))));
           }
         } else if (op == RType::Div) {
-          // TODO 一般的立即数
           if (auto const iter = constants.find(r_ins->s2);
               iter != constants.end() && is_power_of_2(iter->second.iv)) {
             int imm = iter->second.iv;
-            assert(imm != 0);
-            if (imm == -1) { // 0x8000'0000
-              insn = std::make_unique<IType>(IType::RevSub, r_ins->dst,
-                                             r_ins->s1, 0);
-            } else {
-              assert(imm > 0);
-              emit_load_imm(bb->insns, instr, r_ins->dst, imm - 1);
-              bb->insns.insert(instr,
-                               std::make_unique<RType>(RType::Add, r_ins->dst,
-                                                       r_ins->dst, r_ins->s1));
-              bb->insns.insert(
-                  instr, std::make_unique<FullRType>(
-                             FullRType::Ands, r_ins->dst, r_ins->dst,
-                             Operand2::from(ShiftType::ASR, r_ins->s1, 32)));
-              auto cond_mov =
-                  std::make_unique<Move>(r_ins->dst, Operand2::from(r_ins->s1));
-              cond_mov->cond = ExCond::Cc;
-              bb->insns.insert(instr, std::move(cond_mov));
-              insn = std::make_unique<Move>(
-                  r_ins->dst,
-                  Operand2::from(ShiftType::ASR, r_ins->dst,
-                                 static_cast<int>(std::log2<unsigned>(imm))));
+            if (is_power_of_2(imm)) {
+              insn = std::make_unique<PseudoDivConstant>(r_ins->dst, r_ins->s1,
+                                                         imm);
             }
-          } else {
-            continue;
+          } else if (auto const iter = constants.find(r_ins->s1);
+                     iter != constants.end()) {
+            int imm = iter->second.iv;
+            if (imm == 0) {
+              insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
+            }
           }
         }
       }

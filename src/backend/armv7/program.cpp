@@ -12,6 +12,22 @@
 
 namespace armv7 {
 
+template <typename Container = std::list<std::unique_ptr<Instruction>>>
+void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
+                   int imm) {
+  if (is_imm8m(imm))
+    cont.emplace(it, new Move{dst, Operand2::from(imm)});
+  else if (is_imm8m(~imm))
+    cont.emplace(it, new Move{dst, Operand2::from(~imm), true});
+  else {
+    uint32_t x = uint32_t(imm);
+    auto lo = x & 0xffff, hi = x >> 16;
+    cont.emplace(it, new MovW(dst, lo));
+    if (hi > 0)
+      cont.emplace(it, new MovT(dst, hi));
+  }
+}
+
 void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
   emit_load_imm(bb->insns, bb->insns.end(), dst, imm);
 }
@@ -924,6 +940,50 @@ void Function::replace_pseudo_insns() {
       else TypeCase(br, Branch *, it->get()) {
         if (br->target == next_bb && br->cond == ExCond::Always)
           remove = true;
+      }
+      else TypeCase(div, PseudoDivConstant *, it->get()) {
+        // TODO 一般的立即数
+        assert(div->imm != 0);
+        if (div->imm == 1) {
+          *it = std::make_unique<Move>(div->dst, Operand2::from(div->src));
+        } else if (div->imm == -1) { // 0x8000'0000
+          *it = std::make_unique<IType>(IType::RevSub, div->dst, div->src, 0);
+        } else {
+          assert(div->imm > 1);
+          if (div->imm == 2) {
+            insns.insert(it, std::make_unique<FullRType>(
+                                 FullRType::Add, div->dst, div->src,
+                                 Operand2::from(ShiftType::LSR, div->src, 31)));
+            *it = std::make_unique<Move>(
+                div->dst, Operand2::from(ShiftType::ASR, div->dst, 1));
+          } else {
+            insns.insert(
+                it, std::make_unique<Compare>(div->src, Operand2::from(0)));
+            auto const log_imm = static_cast<int>(std::log2(div->imm));
+            assert(log_imm > 0);
+            if (log_imm <= 8) {
+              insns.insert(it, std::make_unique<IType>(IType::Add, div->dst,
+                                                       div->src, div->imm - 1));
+            } else if (log_imm <= 16) {
+              insns.insert(it, std::make_unique<IType>(IType::Add, div->dst,
+                                                       div->src,
+                                                       div->imm - 1 & 0xff00));
+              insns.insert(it, std::make_unique<IType>(IType::Add, div->dst,
+                                                       div->dst,
+                                                       div->imm - 1 & 0x00ff));
+            } else {
+              emit_load_imm(bb, div->dst, div->imm - 1);
+              insns.insert(it, std::make_unique<RType>(RType::Add, div->dst,
+                                                       div->dst, div->src));
+            }
+            auto cond_mov =
+                std::make_unique<Move>(div->dst, Operand2::from(div->src));
+            cond_mov->cond = ExCond::Ge;
+            insns.insert(it, std::move(cond_mov));
+            *it = std::make_unique<Move>(
+                div->dst, Operand2::from(ShiftType::ASR, div->dst, log_imm));
+          }
+        }
       }
 
       if (remove)

@@ -77,7 +77,7 @@ def run(
     executable = os.path.join(workdir, 'main')
     output = os.path.join(workdir, 'output')
     time = os.path.join(workdir, 'time')
-    if os.system(f'gcc -march=armv7 {assemble} runtime/libsysy.a'
+    if os.system(f'gcc -march=armv7-a {assemble} runtime/libsysy.a'
                  f' -o {executable}') != 0:
         return Result.LINKER_ERROR
     answer_content, answer_exitcode = get_answer(answer)

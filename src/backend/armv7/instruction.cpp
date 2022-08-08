@@ -110,7 +110,8 @@ constexpr const char *COND_NAME[] = {
     [int(ExCond::Always)] = "", [int(ExCond::Eq)] = "eq",
     [int(ExCond::Ne)] = "ne",   [int(ExCond::Ge)] = "ge",
     [int(ExCond::Gt)] = "gt",   [int(ExCond::Le)] = "le",
-    [int(ExCond::Lt)] = "lt",   [int(ExCond::Cc)] = "cc"};
+    [int(ExCond::Lt)] = "lt",
+};
 
 ostream &operator<<(ostream &os, ExCond c) { return os << COND_NAME[int(c)]; }
 
@@ -207,7 +208,7 @@ void IType::emit(std::ostream &os) const {
 
 void FullRType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb", [Ands] = "ands"};
+      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb"};
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", " << s2;
 }
 
@@ -373,6 +374,11 @@ void ComplexStore::emit(std::ostream &os) const {
     os << ", " << this->shift_type << " #" << this->shift;
   }
   os << ']';
+}
+
+void PseudoDivConstant::emit(std::ostream &os) const {
+  os << "*div-" << this->cond << ' ' << this->dst << ", " << this->src << ", "
+     << this->imm;
 }
 
 } // namespace armv7
