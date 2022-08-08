@@ -93,7 +93,7 @@ void br2switch(Function *func) {
                     break;
                   }
                 }
-                if(switch_map.size() == BR_CNT){
+                if(switch_map.size() > BR_CNT){
                   found = true;
                   default_target = pos;
                 }
