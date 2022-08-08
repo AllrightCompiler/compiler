@@ -24,7 +24,11 @@ ExCond logical_not(ExCond cond) {
     return ExCond::Gt;
   case ExCond::Lt:
     return ExCond::Ge;
-  default:
+  case ExCond::Cs:
+    return ExCond::Cc;
+  case ExCond::Cc:
+    return ExCond::Cs;
+  case ExCond::Always:
     __builtin_unreachable();
   }
 }
@@ -110,7 +114,8 @@ constexpr const char *COND_NAME[] = {
     [int(ExCond::Always)] = "", [int(ExCond::Eq)] = "eq",
     [int(ExCond::Ne)] = "ne",   [int(ExCond::Ge)] = "ge",
     [int(ExCond::Gt)] = "gt",   [int(ExCond::Le)] = "le",
-    [int(ExCond::Lt)] = "lt",
+    [int(ExCond::Lt)] = "lt",   [int(ExCond::Cs)] = "cs",
+    [int(ExCond::Cc)] = "cc",
 };
 
 ostream &operator<<(ostream &os, ExCond c) { return os << COND_NAME[int(c)]; }
@@ -377,8 +382,12 @@ void ComplexStore::emit(std::ostream &os) const {
 }
 
 void PseudoDivConstant::emit(std::ostream &os) const {
-  os << "*div-" << this->cond << ' ' << this->dst << ", " << this->src << ", "
+  os << "*div-" << this->cond << ' ' << this->dst << ", " << this->src << ", #"
      << this->imm;
+}
+
+void PseudoOneDividedByReg::emit(std::ostream &os) const {
+  os << "*div-" << this->cond << ' ' << this->dst << ", #1, " << this->src;
 }
 
 } // namespace armv7

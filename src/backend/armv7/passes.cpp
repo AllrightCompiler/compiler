@@ -174,17 +174,19 @@ void fold_constants(Function &f) {
           } else {
             continue;
           }
-          if (imm == 0) {
-            insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
-          } else if (imm == 1) {
-            insn = std::make_unique<Move>(r_ins->dst, Operand2::from(other));
+          if (is_power_of_2(imm)) {
+            if (imm == 0) {
+              insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
+            } else if (imm == 1) {
+              insn = std::make_unique<Move>(r_ins->dst, Operand2::from(other));
+            } else {
+              insn = std::make_unique<Move>(
+                  r_ins->dst,
+                  Operand2::from(ShiftType::LSL, other,
+                                 static_cast<int>(std::log2<unsigned>(imm))));
+            }
           } else if (imm == -1) {
             insn = std::make_unique<IType>(IType::RevSub, r_ins->dst, other, 0);
-          } else if (is_power_of_2(imm)) {
-            insn = std::make_unique<Move>(
-                r_ins->dst,
-                Operand2::from(ShiftType::LSL, other,
-                               static_cast<int>(std::log2<unsigned>(imm))));
           } else if (is_power_of_2(imm - 1)) {
             insn = std::make_unique<FullRType>(
                 FullRType::Add, r_ins->dst, other,
@@ -198,17 +200,18 @@ void fold_constants(Function &f) {
           }
         } else if (op == RType::Div) {
           if (auto const iter = constants.find(r_ins->s2);
-              iter != constants.end() && is_power_of_2(iter->second.iv)) {
+              iter != constants.end()) {
             int imm = iter->second.iv;
-            if (is_power_of_2(imm)) {
-              insn = std::make_unique<PseudoDivConstant>(r_ins->dst, r_ins->s1,
-                                                         imm);
-            }
+            insn =
+                std::make_unique<PseudoDivConstant>(r_ins->dst, r_ins->s1, imm);
           } else if (auto const iter = constants.find(r_ins->s1);
                      iter != constants.end()) {
             int imm = iter->second.iv;
             if (imm == 0) {
               insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
+            } else if (imm == 1) {
+              insn = std::make_unique<PseudoOneDividedByReg>(r_ins->dst,
+                                                             r_ins->s2);
             }
           }
         }

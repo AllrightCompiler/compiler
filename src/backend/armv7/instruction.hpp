@@ -65,6 +65,8 @@ enum class ExCond {
   Gt,
   Le,
   Lt,
+  Cs,
+  Cc,
 };
 
 ExCond logical_not(ExCond cond);
@@ -687,6 +689,19 @@ struct PseudoDivConstant : Instruction {
   int imm;
 
   PseudoDivConstant(Reg dst, Reg src, int imm) : dst{dst}, src{src}, imm{imm} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
+};
+
+// sdiv dst, #1, src
+// 伪指令，在最后阶段展开
+struct PseudoOneDividedByReg : Instruction {
+  Reg dst, src;
+
+  PseudoOneDividedByReg(Reg dst, Reg src) : dst{dst}, src{src} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {this->dst}; }

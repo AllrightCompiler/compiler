@@ -942,26 +942,24 @@ void Function::replace_pseudo_insns() {
           remove = true;
       }
       else TypeCase(div, PseudoDivConstant *, it->get()) {
-        // TODO 一般的立即数
         assert(div->imm != 0);
-        if (div->imm == 1) {
-          *it = std::make_unique<Move>(div->dst, Operand2::from(div->src));
-        } else if (div->imm == 0x8000'0000) {
-          insns.insert(it, std::make_unique<IType>(IType::Sub, div->dst,
-                                                   div->src, 0x8000'0000));
-          insns.insert(it,
-                       std::make_unique<CountLeadingZero>(div->dst, div->dst));
-          *it = std::make_unique<Move>(
-              div->dst, Operand2::from(ShiftType::LSR, div->src, 5));
-        } else {
-          assert(div->imm > 1);
-          if (div->imm == 2) {
+        if (is_power_of_2(div->imm)) {
+          if (div->imm == 0x8000'0000) {
+            insns.insert(it, std::make_unique<IType>(IType::Add, div->dst,
+                                                     div->src, 0x8000'0000));
+            insns.insert(
+                it, std::make_unique<CountLeadingZero>(div->dst, div->dst));
+            *it = std::make_unique<Move>(
+                div->dst, Operand2::from(ShiftType::LSR, div->dst, 5));
+          } else if (div->imm == 1) {
+            *it = std::make_unique<Move>(div->dst, Operand2::from(div->src));
+          } else if (div->imm == 2) {
             insns.insert(it, std::make_unique<FullRType>(
                                  FullRType::Add, div->dst, div->src,
                                  Operand2::from(ShiftType::LSR, div->src, 31)));
             *it = std::make_unique<Move>(
                 div->dst, Operand2::from(ShiftType::ASR, div->dst, 1));
-          } else {
+          } else { // div->imm > 2
             auto const log_imm = static_cast<int>(std::log2(div->imm));
             assert(log_imm > 0);
             insns.insert(it, std::make_unique<Move>(
@@ -974,7 +972,22 @@ void Function::replace_pseudo_insns() {
             *it = std::make_unique<Move>(
                 div->dst, Operand2::from(ShiftType::ASR, div->dst, log_imm));
           }
+        } else if (div->imm == -1) {
+          *it = std::make_unique<IType>(IType::RevSub, div->dst, div->src, 0);
+        } else {
+          // TODO 一般的立即数
+          emit_load_imm(insns, it, div->dst, div->imm);
+          *it =
+              std::make_unique<RType>(RType::Div, div->dst, div->src, div->dst);
         }
+      }
+      else TypeCase(div, PseudoOneDividedByReg *, it->get()) {
+        insns.insert(
+            it, std::make_unique<IType>(IType::Add, div->dst, div->src, 1));
+        insns.insert(it,
+                     std::make_unique<Compare>(div->dst, Operand2::from(3)));
+        *it = std::make_unique<Move>(div->dst, Operand2::from(0));
+        it->get()->cond = ExCond::Cs;
       }
 
       if (remove)
