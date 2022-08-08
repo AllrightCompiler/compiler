@@ -164,12 +164,11 @@ void fold_constants(Function &f) {
           int imm;
           Reg other;
           if (auto const iter = constants.find(r_ins->s1);
-              iter != constants.end() && is_power_of_2(iter->second.iv)) {
+              iter != constants.end()) {
             imm = iter->second.iv;
             other = r_ins->s2;
           } else if (auto const iter = constants.find(r_ins->s2);
-                     iter != constants.end() &&
-                     is_power_of_2(iter->second.iv)) {
+                     iter != constants.end()) {
             imm = iter->second.iv;
             other = r_ins->s1;
           } else {
@@ -181,11 +180,21 @@ void fold_constants(Function &f) {
             insn = std::make_unique<Move>(r_ins->dst, Operand2::from(other));
           } else if (imm == -1) {
             insn = std::make_unique<IType>(IType::RevSub, r_ins->dst, other, 0);
-          } else {
-            assert(imm > 1);
+          } else if (is_power_of_2(imm)) {
             insn = std::make_unique<Move>(
-                r_ins->dst, Operand2::from(ShiftType::LSL, other,
-                                           static_cast<int>(std::log2(imm))));
+                r_ins->dst,
+                Operand2::from(ShiftType::LSL, other,
+                               static_cast<int>(std::log2<unsigned>(imm))));
+          } else if (is_power_of_2(imm - 1)) {
+            insn = std::make_unique<FullRType>(
+                FullRType::Add, r_ins->dst, other,
+                Operand2::from(ShiftType::LSL, other,
+                               static_cast<int>(std::log2<unsigned>(imm - 1))));
+          } else if (is_power_of_2(imm + 1)) {
+            insn = std::make_unique<FullRType>(
+                FullRType::RevSub, r_ins->dst, other,
+                Operand2::from(ShiftType::LSL, other,
+                               static_cast<int>(std::log2<unsigned>(imm + 1))));
           }
         } else if (op == RType::Div) {
           if (auto const iter = constants.find(r_ins->s2);

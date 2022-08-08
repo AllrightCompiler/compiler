@@ -946,8 +946,13 @@ void Function::replace_pseudo_insns() {
         assert(div->imm != 0);
         if (div->imm == 1) {
           *it = std::make_unique<Move>(div->dst, Operand2::from(div->src));
-        } else if (div->imm == -1) { // 0x8000'0000
-          *it = std::make_unique<IType>(IType::RevSub, div->dst, div->src, 0);
+        } else if (div->imm == 0x8000'0000) {
+          insns.insert(it, std::make_unique<IType>(IType::Sub, div->dst,
+                                                   div->src, 0x8000'0000));
+          insns.insert(it,
+                       std::make_unique<CountLeadingZero>(div->dst, div->dst));
+          *it = std::make_unique<Move>(
+              div->dst, Operand2::from(ShiftType::LSR, div->src, 5));
         } else {
           assert(div->imm > 1);
           if (div->imm == 2) {
@@ -957,29 +962,15 @@ void Function::replace_pseudo_insns() {
             *it = std::make_unique<Move>(
                 div->dst, Operand2::from(ShiftType::ASR, div->dst, 1));
           } else {
-            insns.insert(
-                it, std::make_unique<Compare>(div->src, Operand2::from(0)));
             auto const log_imm = static_cast<int>(std::log2(div->imm));
             assert(log_imm > 0);
-            if (log_imm <= 8) {
-              insns.insert(it, std::make_unique<IType>(IType::Add, div->dst,
-                                                       div->src, div->imm - 1));
-            } else if (log_imm <= 16) {
-              insns.insert(it, std::make_unique<IType>(IType::Add, div->dst,
-                                                       div->src,
-                                                       div->imm - 1 & 0xff00));
-              insns.insert(it, std::make_unique<IType>(IType::Add, div->dst,
-                                                       div->dst,
-                                                       div->imm - 1 & 0x00ff));
-            } else {
-              emit_load_imm(bb, div->dst, div->imm - 1);
-              insns.insert(it, std::make_unique<RType>(RType::Add, div->dst,
-                                                       div->dst, div->src));
-            }
-            auto cond_mov =
-                std::make_unique<Move>(div->dst, Operand2::from(div->src));
-            cond_mov->cond = ExCond::Ge;
-            insns.insert(it, std::move(cond_mov));
+            insns.insert(it, std::make_unique<Move>(
+                                 div->dst,
+                                 Operand2::from(ShiftType::ASR, div->src, 31)));
+            insns.insert(it, std::make_unique<FullRType>(
+                                 FullRType::Add, div->dst, div->src,
+                                 Operand2::from(ShiftType::LSR, div->dst,
+                                                32 - log_imm)));
             *it = std::make_unique<Move>(
                 div->dst, Operand2::from(ShiftType::ASR, div->dst, log_imm));
           }
