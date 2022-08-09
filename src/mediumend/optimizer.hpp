@@ -42,6 +42,7 @@ void gep_destruction(ir::Program *prog);
 void remove_recursive_tail_call(ir::Program *prog);
 void value_range_analysis(ir::Program *prog);
 void br2switch(ir::Program *prog);
+void loop_interchange(ir::Program *prog);
 
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);

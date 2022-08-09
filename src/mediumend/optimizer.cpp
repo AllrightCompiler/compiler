@@ -30,6 +30,7 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"remove_recursive_tail_call", remove_recursive_tail_call},
   {"value_range_analysis", value_range_analysis},
   {"br2switch", br2switch},
+  {"loop_interchange", loop_interchange},
 };
 
 // define default passes here
@@ -54,6 +55,8 @@ std::vector<funcptr> passes = {
     gvn_no_cfg,
     duplicate_load_store_elimination,
   array_ssa_destruction,
+
+  loop_interchange,
   
   remove_recursive_tail_call,
 
