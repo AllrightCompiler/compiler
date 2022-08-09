@@ -382,8 +382,8 @@ void ComplexStore::emit(std::ostream &os) const {
 }
 
 void PseudoDivConstant::emit(std::ostream &os) const {
-  os << "*div-" << this->cond << ' ' << this->dst << ", " << this->src << ", #"
-     << this->imm;
+  os << "*div-" << this->cond << '[' << this->tmp << "] " << this->dst << ", "
+     << this->src << ", #" << this->imm;
 }
 
 void PseudoOneDividedByReg::emit(std::ostream &os) const {

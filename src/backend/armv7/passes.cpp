@@ -202,17 +202,58 @@ void fold_constants(Function &f) {
           if (auto const iter = constants.find(r_ins->s2);
               iter != constants.end()) {
             int imm = iter->second.iv;
-            insn =
-                std::make_unique<PseudoDivConstant>(r_ins->dst, r_ins->s1, imm);
-          } else if (auto const iter = constants.find(r_ins->s1);
-                     iter != constants.end()) {
-            int imm = iter->second.iv;
-            if (imm == 0) {
-              insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
-            } else if (imm == 1) {
-              insn = std::make_unique<PseudoOneDividedByReg>(r_ins->dst,
-                                                             r_ins->s2);
+            assert(imm != 0);
+            if (is_power_of_2(imm)) {
+              if (imm == 0x8000'0000) {
+                bb->insns.insert(
+                    instr, std::make_unique<IType>(IType::Add, r_ins->dst,
+                                                   r_ins->s1, 0x8000'0000));
+                bb->insns.insert(instr, std::make_unique<CountLeadingZero>(
+                                            r_ins->dst, r_ins->dst));
+                insn = std::make_unique<Move>(
+                    r_ins->dst, Operand2::from(ShiftType::LSR, r_ins->dst, 5));
+              } else if (imm == 1) {
+                insn = std::make_unique<Move>(r_ins->dst,
+                                              Operand2::from(r_ins->s1));
+              } else if (imm == 2) {
+                bb->insns.insert(
+                    instr, std::make_unique<FullRType>(
+                               FullRType::Add, r_ins->dst, r_ins->s1,
+                               Operand2::from(ShiftType::LSR, r_ins->s1, 31)));
+                insn = std::make_unique<Move>(
+                    r_ins->dst, Operand2::from(ShiftType::ASR, r_ins->dst, 1));
+              } else { // div->imm > 2
+                auto const log_imm = static_cast<int>(std::log2(imm));
+                assert(log_imm > 0);
+                bb->insns.insert(
+                    instr, std::make_unique<Move>(
+                               r_ins->dst,
+                               Operand2::from(ShiftType::ASR, r_ins->s1, 31)));
+                bb->insns.insert(instr,
+                                 std::make_unique<FullRType>(
+                                     FullRType::Add, r_ins->dst, r_ins->s1,
+                                     Operand2::from(ShiftType::LSR, r_ins->dst,
+                                                    32 - log_imm)));
+                insn = std::make_unique<Move>(
+                    r_ins->dst,
+                    Operand2::from(ShiftType::ASR, r_ins->dst, log_imm));
+              }
+            } else if (imm == -1) {
+              insn = std::make_unique<IType>(IType::RevSub, r_ins->dst,
+                                             r_ins->s1, 0);
+            } else {
+              insn = std::make_unique<PseudoDivConstant>(
+                  r_ins->dst, r_ins->s1, imm, f.new_reg(RegType::General));
             }
+          }
+        } else if (auto const iter = constants.find(r_ins->s1);
+                   iter != constants.end()) {
+          int imm = iter->second.iv;
+          if (imm == 0) {
+            insn = std::make_unique<Move>(r_ins->dst, Operand2::from(0));
+          } else if (imm == 1) {
+            insn =
+                std::make_unique<PseudoOneDividedByReg>(r_ins->dst, r_ins->s2);
           }
         }
       }

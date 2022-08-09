@@ -685,15 +685,18 @@ struct ComplexStore : Instruction {
 // sdiv dst, src, imm
 // 伪指令，在最后阶段展开
 struct PseudoDivConstant : Instruction {
-  Reg dst, src;
+  Reg dst, src, tmp;
   int imm;
 
-  PseudoDivConstant(Reg dst, Reg src, int imm) : dst{dst}, src{src}, imm{imm} {}
+  PseudoDivConstant(Reg dst, Reg src, int imm, Reg tmp)
+      : dst{dst}, src{src}, tmp{tmp}, imm{imm} {}
 
   void emit(std::ostream &os) const override;
-  std::set<Reg> def() const override { return {this->dst}; }
-  std::set<Reg> use() const override { return {this->src}; }
-  std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
+  std::set<Reg> def() const override { return {this->dst, this->tmp}; }
+  std::set<Reg> use() const override { return {this->src, this->tmp}; }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->dst, &this->src, &this->tmp};
+  }
 };
 
 // sdiv dst, #1, src
