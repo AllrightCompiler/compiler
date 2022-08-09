@@ -48,6 +48,23 @@ ExCond from(BinaryOp op) {
   }
 }
 
+std::optional<std::pair<ShiftType, int>>
+combine_shift(std::pair<ShiftType, int> lhs, std::pair<ShiftType, int> rhs) {
+  if (lhs.second == 0) {
+    return rhs;
+  }
+  if (rhs.second == 0) {
+    return lhs;
+  }
+  if (lhs.first == rhs.first) {
+    auto shift = lhs.second + rhs.second;
+    if (0 <= shift && shift < 32) {
+      return {{lhs.first, shift}};
+    }
+  }
+  return {};
+}
+
 RType::Op RType::from(BinaryOp op) {
   switch (op) {
   case BinaryOp::Add:
@@ -93,8 +110,7 @@ constexpr const char *COND_NAME[] = {
     [int(ExCond::Always)] = "", [int(ExCond::Eq)] = "eq",
     [int(ExCond::Ne)] = "ne",   [int(ExCond::Ge)] = "ge",
     [int(ExCond::Gt)] = "gt",   [int(ExCond::Le)] = "le",
-    [int(ExCond::Lt)] = "lt",
-};
+    [int(ExCond::Lt)] = "lt",   [int(ExCond::Cc)] = "cc"};
 
 ostream &operator<<(ostream &os, ExCond c) { return os << COND_NAME[int(c)]; }
 
@@ -191,7 +207,7 @@ void IType::emit(std::ostream &os) const {
 
 void FullRType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb"};
+      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb", [Ands] = "ands"};
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", " << s2;
 }
 
@@ -260,6 +276,20 @@ void RegBranch::emit(std::ostream &os) const {
   write_op(os, op) << src << ", " << target->label;
 }
 
+void CmpBranch::emit(std::ostream &os) const {
+  cmp->emit(os);
+  next_instruction(os);
+  write_op(os, "*b") << true_target->label << ", " << false_target->label;
+}
+
+void Switch::emit(std::ostream &os) const {
+  os << "*switch " << val << ", " << default_target->label;
+  for (auto &[v, target] : targets) {
+    next_instruction(os);
+    os << "    " << v << " -> " << target->label;
+  }
+}
+
 void LoadStack::emit(std::ostream &os) const {
   os << "*load-stack " << dst << ", obj[" << base->size << ", " << base->offset
      << "]+" << offset;
@@ -308,7 +338,7 @@ void CountLeadingZero::emit(std::ostream &os) const {
 }
 
 void PseudoCompare::emit(std::ostream &os) const {
-  os << "*compare-" << cond << ' ' << dst << ' ';
+  os << "*set" << cond << ' ' << dst << ' ';
   cmp->emit(os);
 }
 
@@ -333,6 +363,24 @@ void Phi::emit(std::ostream &os) const {
 
 void Vneg::emit(std::ostream &os) const {
   write_op(os, "vneg.f32") << this->dst << ", " << this->src;
+}
+
+void ComplexLoad::emit(std::ostream &os) const {
+  write_op(os, "ldr") << this->dst << ", [" << this->base << ", "
+                      << this->offset;
+  if (this->shift != 0) {
+    os << ", " << this->shift_type << " #" << this->shift;
+  }
+  os << ']';
+}
+
+void ComplexStore::emit(std::ostream &os) const {
+  write_op(os, "str") << this->src << ", [" << this->base << ", "
+                      << this->offset;
+  if (this->shift != 0) {
+    os << ", " << this->shift_type << " #" << this->shift;
+  }
+  os << ']';
 }
 
 } // namespace armv7

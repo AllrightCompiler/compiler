@@ -29,10 +29,14 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"gep_destruction", gep_destruction},
   {"remove_recursive_tail_call", remove_recursive_tail_call},
   {"loop_parallel", loop_parallel},
+  {"value_range_analysis", value_range_analysis},
+  {"br2switch", br2switch},
+  {"loop_interchange", loop_interchange},
 };
 
 // define default passes here
 std::vector<funcptr> passes = {
+  clean_useless_cf,
   main_global_var_to_local,
   mem2reg,
   remove_uneffective_inst,
@@ -40,6 +44,8 @@ std::vector<funcptr> passes = {
   main_global_var_to_local,
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
+  
+  // br2switch,
 
   gvn_no_cfg,
 
@@ -51,36 +57,41 @@ std::vector<funcptr> passes = {
     duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  operator_strength_promotion,
-
-  loop_unroll,
+  loop_interchange,
+  
+  remove_recursive_tail_call,
 
   gvn_cfg,
 
   loop_parallel,
 
   function_inline,
+  remove_unused_function,
+  main_global_var_to_local,
+  mem2reg,
+
+  loop_unroll,
 
   array_mem2reg,
     gvn_cfg,
     duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  main_global_var_to_local,
-  mem2reg,
+  value_range_analysis,
+
+  gvn_cfg,
+  gvn_cfg,
+  loop_unroll,
 
   gvn_cfg,
   remove_useless_loop,
   gvn_cfg,
 
-  
   gep_destruction,
   gvn_no_cfg,
 
   operator_strength_reduction,
   gvn_cfg,
-
-  operator_strength_promotion,
 
   sort_basicblock,
 };
@@ -90,6 +101,7 @@ void gvn_no_cfg(ir::Program *prog) {
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
   remove_unused_function(prog);
+  operator_strength_promotion(prog);
 }
 
 // modify cfg
@@ -97,6 +109,7 @@ void gvn_cfg(ir::Program *prog) {
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
   remove_unused_function(prog);
+  operator_strength_promotion(prog);
   constant_propagation(prog);
   clean_useless_cf(prog);
 }

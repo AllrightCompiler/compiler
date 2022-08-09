@@ -1,5 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+#include "mediumend/optimizer.hpp"
 
 namespace mediumend {
 
@@ -90,7 +91,7 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
           ret_phi->bb = ret_bb;
         }
         inst_iter->get()->remove_use_def();
-        inst_iter->reset(new ir::insns::Jump(bb2bb[callee->bbs.front().get()]));
+        inst_iter->reset(new ir::insns::Jump(bb2bb.at(callee->bbs.front().get())));
         inst_iter->get()->bb = inst_bb;
         inst_iter++;
         break;
@@ -135,9 +136,9 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
           }
           inst_copy = new ir::insns::Jump(ret_bb);
         } else TypeCase(jump, ir::insns::Jump *, inst.get()){
-          inst_copy = new ir::insns::Jump(bb2bb[jump->target]);
+          inst_copy = new ir::insns::Jump(bb2bb.at(jump->target));
         } else TypeCase(branch, ir::insns::Branch *, inst.get()){
-          inst_copy = new ir::insns::Branch(reg2reg.at(branch->val), bb2bb[branch->true_target], bb2bb[branch->false_target]);
+          inst_copy = new ir::insns::Branch(reg2reg.at(branch->val), bb2bb.at(branch->true_target), bb2bb.at(branch->false_target));
         } else TypeCase(loadimm, ir::insns::LoadImm *, inst.get()){
           inst_copy = new ir::insns::LoadImm(reg2reg.at(loadimm->dst), loadimm->imm);
         } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()){
@@ -154,6 +155,12 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
           inst_copy = new ir::insns::GetElementPtr(reg2reg.at(getptr->dst), getptr->type, reg2reg.at(getptr->base), indexs_copy);
         } else TypeCase(convey, ir::insns::Convert *, inst.get()){
           inst_copy = new ir::insns::Convert(reg2reg.at(convey->dst), reg2reg.at(convey->src));
+        } else TypeCase(switch_inst, ir::insns::Switch *, inst.get()){
+          std::map<int, BasicBlock*> new_targets;
+          for(auto each : switch_inst->targets){
+            new_targets[each.first] = bb2bb.at(each.second);
+          }
+          inst_copy = new ir::insns::Switch(reg2reg.at(switch_inst->val), new_targets, bb2bb.at(switch_inst->default_target));
         } else {
           assert(false);
         }
@@ -227,6 +234,7 @@ void function_inline(ir::Program *prog) {
       }
     }
   }
+  ir_validation(prog);
 }
 
 } // namespace mediumend

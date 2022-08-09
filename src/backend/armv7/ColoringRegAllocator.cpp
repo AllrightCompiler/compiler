@@ -513,9 +513,11 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
 
           ++it;
           if (def.count(r)) {
-            if (obj)
-              insns.emplace(it, new StoreStack{tmp, obj, 0});
-            else
+            if (obj) {
+              // NOTE: 针对switch的特殊处理，不在基本块终结指令后添加store
+              if (it != insns.end())
+                insns.emplace(it, new StoreStack{tmp, obj, 0});
+            } else
               insns.erase(std::prev(it));
           }
         }

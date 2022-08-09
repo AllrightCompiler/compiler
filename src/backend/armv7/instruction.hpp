@@ -3,6 +3,7 @@
 #include "backend/armv7/arch.hpp"
 
 #include "common/ir.hpp"
+#include "common/utils.hpp"
 
 #include <set>
 #include <variant>
@@ -50,9 +51,7 @@ struct Reg {
   static Reg from(ir::Reg ir_reg) {
     return Reg{ir_to_machine_reg_type(ir_reg.type), -ir_reg.id};
   }
-  static Reg from(int t, int id) {
-    return Reg{ir_to_machine_reg_type(t), id};
-  }
+  static Reg from(int t, int id) { return Reg{ir_to_machine_reg_type(t), id}; }
 };
 
 std::ostream &operator<<(std::ostream &os, const Reg &r);
@@ -66,6 +65,7 @@ enum class ExCond {
   Gt,
   Le,
   Lt,
+  Cc,
 };
 
 ExCond logical_not(ExCond cond);
@@ -79,6 +79,9 @@ enum ShiftType {
   ASR, // Arithmetic Shift Right
   ROR, // ROtate Right
 };
+
+std::optional<std::pair<ShiftType, int>>
+combine_shift(std::pair<ShiftType, int> lhs, std::pair<ShiftType, int> rhs);
 
 struct RegImmShift {
   ShiftType type;
@@ -176,7 +179,13 @@ struct RType : Instruction {
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
-  std::set<Reg> use() const override { return {s1, s2}; }
+  std::set<Reg> use() const override {
+    if (this->cond == ExCond::Always) {
+      return {s1, s2};
+    } else {
+      return {dst, s1, s2};
+    }
+  }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &s1, &s2}; }
 
   static Op from(BinaryOp);
@@ -194,13 +203,19 @@ struct IType : Instruction {
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
-  std::set<Reg> use() const override { return {s1}; }
+  std::set<Reg> use() const override {
+    if (this->cond == ExCond::Always) {
+      return {s1};
+    } else {
+      return {dst, s1};
+    }
+  }
   std::vector<Reg *> reg_ptrs() override { return {&dst, &s1}; }
 };
 
 // 具有 op Rd, R1, Operand2 形式的指令
 struct FullRType : Instruction {
-  enum Op { Add, Sub, RevSub } op;
+  enum Op { Add, Sub, RevSub, Ands } op;
   Reg dst, s1;
   Operand2 s2;
 
@@ -212,6 +227,9 @@ struct FullRType : Instruction {
   std::set<Reg> use() const override {
     auto u = s2.get_use();
     u.insert(s1);
+    if (this->cond != ExCond::Always) {
+      u.insert(dst);
+    }
     return u;
   }
   std::vector<Reg *> reg_ptrs() override {
@@ -236,7 +254,13 @@ struct Move : Instruction {
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
-  std::set<Reg> use() const override { return src.get_use(); }
+  std::set<Reg> use() const override {
+    auto u = src.get_use();
+    if (this->cond != ExCond::Always) {
+      u.insert(dst);
+    }
+    return u;
+  }
   std::vector<Reg *> reg_ptrs() override {
     auto ptrs = src.get_reg_ptrs();
     ptrs.push_back(&dst);
@@ -372,9 +396,10 @@ struct FusedMul : Instruction {
 };
 
 struct BasicBlock;
+struct Terminator : Instruction {};
 
 // B.cond
-struct Branch : Instruction {
+struct Branch : Terminator {
   BasicBlock *target;
 
   Branch(BasicBlock *target) : target{target} {}
@@ -383,7 +408,7 @@ struct Branch : Instruction {
 };
 
 // CBZ/CBNZ
-struct RegBranch : Instruction {
+struct RegBranch : Terminator {
   enum Type { Cbnz, Cbz } type;
   BasicBlock *target;
   Reg src;
@@ -395,6 +420,39 @@ struct RegBranch : Instruction {
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {src}; }
   std::vector<Reg *> reg_ptrs() override { return {&src}; }
+};
+
+// 实际条件跳转的中间形式，保留了两个分支，需要在最后展开
+// 有些情况比较和分支指令应被视作一个整体，避免中间插入其它指令影响cpsr
+// NOTE: true_target的跳转条件即此伪指令的条件码
+struct CmpBranch : Terminator {
+  std::unique_ptr<Compare> cmp;
+  BasicBlock *true_target, *false_target;
+
+  CmpBranch(Compare *inner_cmp, BasicBlock *true_target,
+            BasicBlock *false_target)
+      : cmp{inner_cmp}, true_target{true_target}, false_target{false_target} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override { return cmp->use(); }
+  std::vector<Reg *> reg_ptrs() override { return cmp->reg_ptrs(); }
+};
+
+struct Switch : Terminator {
+  Reg val, tmp;
+  std::vector<std::pair<int, BasicBlock *>> targets;
+  BasicBlock *default_target;
+
+  Switch(Reg val, Reg tmp, BasicBlock *default_target,
+         std::vector<std::pair<int, BasicBlock *>> targets)
+      : val{val}, tmp{tmp}, default_target{default_target}, targets{std::move(
+                                                                targets)} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {tmp}; }
+  std::set<Reg> use() const override { return {val, tmp}; }
+  std::vector<Reg *> reg_ptrs() override { return {&val, &tmp}; }
 };
 
 // 下面是与栈指针sp相关的指令
@@ -527,7 +585,7 @@ struct Call : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 
-struct Return : Instruction {
+struct Return : Terminator {
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {Reg{General, r0}, Reg{Fp, s0}}; }
@@ -619,4 +677,50 @@ struct Vneg : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
 };
 
+struct ComplexLoad : Instruction {
+  Reg dst, base, offset;
+  ShiftType shift_type;
+  int shift;
+  ComplexLoad(Reg dst, Reg base, Reg offset)
+      : ComplexLoad(dst, base, offset, ShiftType::LSL, 0) {}
+  ComplexLoad(Reg dst, Reg base, Reg offset, ShiftType shift_type, int shift)
+      : dst{dst}, base{base}, offset{offset},
+        shift_type{shift_type}, shift{shift} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->base, this->offset}; }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->dst, &this->base, &this->offset};
+  }
+};
+
+struct ComplexStore : Instruction {
+  Reg src, base, offset;
+  ShiftType shift_type;
+  int shift;
+  ComplexStore(Reg src, Reg base, Reg offset)
+      : ComplexStore(src, base, offset, ShiftType::LSL, 0) {}
+  ComplexStore(Reg src, Reg base, Reg offset, ShiftType shift_type, int shift)
+      : src{src}, base{base}, offset{offset},
+        shift_type{shift_type}, shift{shift} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {}; }
+  std::set<Reg> use() const override {
+    return {this->src, this->base, this->offset};
+  }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->src, &this->base, &this->offset};
+  }
+};
+
 } // namespace armv7
+
+namespace std {
+template <> struct hash<armv7::Reg> {
+  size_t operator()(armv7::Reg const r) const {
+    return hash<pair<armv7::RegType, int>>{}({r.type, r.id});
+  }
+};
+} // namespace std

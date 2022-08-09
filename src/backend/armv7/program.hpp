@@ -26,8 +26,8 @@ struct BasicBlock {
     insns.emplace_back(insn);
   }
 
-  std::list<std::unique_ptr<Instruction>>::iterator seq_end();
-  void insert_before_branch(Instruction *insn);
+  std::list<std::unique_ptr<Instruction>>::iterator sequence_end();
+  void insert_at_end(Instruction *insn);
 
   static void add_edge(BasicBlock *from, BasicBlock *to) {
     from->succ.insert(to);
@@ -36,6 +36,16 @@ struct BasicBlock {
   static void remove_edge(BasicBlock *from, BasicBlock *to) {
     from->succ.erase(to);
     to->pred.erase(from);
+  }
+};
+
+struct OccurPoint {
+  BasicBlock *bb;
+  std::list<std::unique_ptr<Instruction>>::iterator instr;
+  int index;
+
+  friend bool operator<(OccurPoint const &lhs, OccurPoint const &rhs) {
+    return lhs.bb == rhs.bb ? lhs.index < rhs.index : lhs.bb < rhs.bb;
   }
 };
 
@@ -63,9 +73,13 @@ struct Function {
   std::vector<StackObject *> param_objs, normal_objs;
 
   std::map<Reg, RegValue> reg_val; // 记录一些单赋值虚拟寄存器的取值
-  std::set<Move *> phi_moves; // 由phi指令产生的mov，这些mov相关的寄存器不应被合并
+  std::set<Move *>
+      phi_moves; // 由phi指令产生的mov，这些mov相关的寄存器不应被合并
 
   int regs_used; // 分配的虚拟寄存器总数
+
+  std::unordered_map<Reg, std::set<OccurPoint>> reg_def, reg_use;
+  std::vector<std::unique_ptr<Switch>> jump_tables;
 
   Reg new_reg(Reg::Type type) { return Reg{type, -(++regs_used)}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
@@ -75,10 +89,23 @@ struct Function {
                 Reg dst, int imm);
   void emit_imm(BasicBlock *, Reg dst, int imm);
 
-  void do_liveness_analysis(RegFilter filter = [](const Reg &){ return true; });
+  void do_liveness_analysis(RegFilter filter = [](const Reg &) {
+    return true;
+  });
+  void insert_def_use(OccurPoint const &pos, Instruction &instr);
+  void erase_def_use(OccurPoint const &pos, Instruction &instr);
+  void build_def_use();
+
   bool check_and_resolve_stack_store();
   void defer_stack_param_load(Reg r, StackObject *obj);
   void resolve_phi();
+
+  template <typename RegAllocator>
+  void do_reg_alloc(RegAllocator &allocator, bool is_gp_pass = true) {
+    allocator.do_reg_alloc(*this, is_gp_pass);
+  }
+
+  std::vector<BasicBlock *> compute_post_order() const;
 
   // post-register allocation passes
   void emit_prologue_epilogue();
@@ -86,6 +113,7 @@ struct Function {
   void replace_pseudo_insns();
 
   void emit(std::ostream &os);
+  void emit_jump_tables(std::ostream &os);
 };
 
 struct Program {
@@ -102,5 +130,21 @@ struct Program {
 
 std::unique_ptr<Program> translate(const ir::Program &ir_program);
 void emit_global(std::ostream &os, const ir::Program &ir_program);
+
+template <typename Container = std::list<std::unique_ptr<Instruction>>>
+void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
+                   int imm) {
+  if (is_imm8m(imm))
+    cont.emplace(it, new Move{dst, Operand2::from(imm)});
+  else if (is_imm8m(~imm))
+    cont.emplace(it, new Move{dst, Operand2::from(~imm), true});
+  else {
+    uint32_t x = uint32_t(imm);
+    auto lo = x & 0xffff, hi = x >> 16;
+    cont.emplace(it, new MovW(dst, lo));
+    if (hi > 0)
+      cont.emplace(it, new MovT(dst, hi));
+  }
+}
 
 } // namespace armv7

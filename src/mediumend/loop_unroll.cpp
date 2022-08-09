@@ -531,8 +531,8 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
     assert(exit_paths.size() == 1);
     for (auto bb : exit_paths) { // only one exit_prev
       exit_bb->prev.erase(bb);
+      bb->succ.erase(exit_bb); // delete entry's succ to exit
     }
-    loop->header->succ.erase(exit_bb); // delete entry's succ to exit
     if (info.loop_type == 1) {
       for (auto bb : exit_paths) { // only one exit_prev
         exit_bb->prev.insert(bb_map[map_curid].at(bb));
@@ -703,7 +703,7 @@ void loop_unroll(ir::Function *func) {
       } else assert(false);
       assert(full_cnt >= 0);
       if (full_cnt == 0 || full_cnt == 1) continue;
-      if (full_cnt < 100 && full_cnt * loop_info.inst_cnt <= 1000) {
+      if (full_cnt < 350 && full_cnt * loop_info.inst_cnt <= 2000) {
         unroll_cnt = full_cnt; // fully unroll
       } else continue; // TODO: temporarily disabled
       // } else loop_info.loop_type = 2;
@@ -736,6 +736,7 @@ void loop_unroll(ir::Function *func) {
 }
 
 void loop_unroll(ir::Program *prog) {
+  ir_validation(prog);
   for(auto &func : prog->functions) {
     loop_unroll(&func.second);
   }
