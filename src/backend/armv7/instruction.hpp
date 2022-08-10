@@ -173,7 +173,7 @@ void next_instruction(std::ostream &os);
 
 // 形如 op Rd, Rm, Rn 的指令
 struct RType : Instruction {
-  enum Op { Add, Sub, Mul, Div } op;
+  enum Op { Add, Sub, Mul, Div, SMMul } op;
   Reg dst, s1, s2;
 
   RType(Op op, Reg dst, Reg s1, Reg s2) : op{op}, dst{dst}, s1{s1}, s2{s2} {}
@@ -190,7 +190,7 @@ struct RType : Instruction {
 // 大部分的imm都是取自Operand2的imm8m
 // 但Thumb-2的add和sub支持12位无符号立即数
 struct IType : Instruction {
-  enum Op { Add, Sub, RevSub } op;
+  enum Op { Add, Sub, RevSub, Eor } op;
   Reg dst, s1;
   int imm;
 
@@ -363,14 +363,13 @@ struct Store : Instruction {
 
 // MLA Rd, Rm, Rs, Rn: Rd := Rn + Rm * Rs
 // MLS Rd, Rm, Rs, Rn: Rd := Rn - Rm * Rs
+// SMMLA Rd, Rm, Rs, Rn: Rd := high(Rn + Rm * Rs)
 struct FusedMul : Instruction {
+  enum Op { Add, Sub, SMAdd } op;
   Reg dst, s1, s2, s3;
-  bool sub;
 
-  FusedMul(Reg dst, Reg s1, Reg s2, Reg s3)
-      : dst{dst}, s1{s1}, s2{s2}, s3{s3}, sub{false} {}
-  FusedMul(Reg dst, Reg s1, Reg s2, Reg s3, bool sub)
-      : dst{dst}, s1{s1}, s2{s2}, s3{s3}, sub{sub} {}
+  FusedMul(Op op, Reg dst, Reg s1, Reg s2, Reg s3)
+      : op{op}, dst{dst}, s1{s1}, s2{s2}, s3{s3} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
@@ -679,23 +678,6 @@ struct ComplexStore : Instruction {
   }
   std::vector<Reg *> reg_ptrs() override {
     return {&this->src, &this->base, &this->offset};
-  }
-};
-
-// sdiv dst, src, imm
-// 伪指令，在最后阶段展开
-struct PseudoDivConstant : Instruction {
-  Reg dst, src, tmp;
-  int imm;
-
-  PseudoDivConstant(Reg dst, Reg src, int imm, Reg tmp)
-      : dst{dst}, src{src}, tmp{tmp}, imm{imm} {}
-
-  void emit(std::ostream &os) const override;
-  std::set<Reg> def() const override { return {this->dst, this->tmp}; }
-  std::set<Reg> use() const override { return {this->src, this->tmp}; }
-  std::vector<Reg *> reg_ptrs() override {
-    return {&this->dst, &this->src, &this->tmp};
   }
 };
 

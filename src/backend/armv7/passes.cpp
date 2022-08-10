@@ -5,6 +5,7 @@
 #include "backend/armv7/merge_instr.hpp"
 
 #include "common/common.hpp"
+#include "common/utils.hpp"
 
 #include <iostream>
 #include <iterator>
@@ -53,6 +54,25 @@ int compute_shift(ShiftType type, int r, int s) {
   default:
     __builtin_unreachable();
   }
+}
+
+// Division by Invariant Integers using Multiplication
+// Figure 6.2
+// https://zhuanlan.zhihu.com/p/151038723
+std::pair<std::uint64_t, int> choose_multiplier(unsigned d) {
+  assert(d != 0);
+  constexpr auto N = 32;
+  constexpr auto P = N - 1;
+  auto l = N - countl_zero(d - 1); // ceil(log2(d))
+  auto low = (std::uint64_t(1) << (N + l)) / d;
+  auto high =
+      ((std::uint64_t(1) << (N + l)) + (std::uint64_t(1) << (N + l - P))) / d;
+  while (low / 2 < high / 2 && l > 0) {
+    low /= 2;
+    high /= 2;
+    --l;
+  }
+  return {high, l};
 }
 
 void fold_constants(Function &f) {
@@ -181,21 +201,18 @@ void fold_constants(Function &f) {
             } else {
               insn = std::make_unique<Move>(
                   r_ins->dst,
-                  Operand2::from(ShiftType::LSL, other,
-                                 static_cast<int>(std::log2<unsigned>(imm))));
+                  Operand2::from(ShiftType::LSL, other, bit_width(imm) - 1));
             }
           } else if (imm == -1) {
             insn = std::make_unique<IType>(IType::RevSub, r_ins->dst, other, 0);
           } else if (is_power_of_2(imm - 1)) {
             insn = std::make_unique<FullRType>(
                 FullRType::Add, r_ins->dst, other,
-                Operand2::from(ShiftType::LSL, other,
-                               static_cast<int>(std::log2<unsigned>(imm - 1))));
+                Operand2::from(ShiftType::LSL, other, bit_width(imm - 1) - 1));
           } else if (is_power_of_2(imm + 1)) {
             insn = std::make_unique<FullRType>(
                 FullRType::RevSub, r_ins->dst, other,
-                Operand2::from(ShiftType::LSL, other,
-                               static_cast<int>(std::log2<unsigned>(imm + 1))));
+                Operand2::from(ShiftType::LSL, other, bit_width(imm + 1) - 1));
           }
         } else if (op == RType::Div) {
           if (auto const iter = constants.find(r_ins->s2);
@@ -205,7 +222,7 @@ void fold_constants(Function &f) {
             if (is_power_of_2(imm)) {
               if (imm == 0x8000'0000) {
                 auto const tmp1 = f.new_reg(RegType::General);
-                bb->insns.insert(instr, std::make_unique<IType>(IType::Add,
+                bb->insns.insert(instr, std::make_unique<IType>(IType::Eor,
                                                                 tmp1, r_ins->s1,
                                                                 0x8000'0000));
                 auto const tmp2 = f.new_reg(RegType::General);
@@ -225,7 +242,7 @@ void fold_constants(Function &f) {
                 insn = std::make_unique<Move>(
                     r_ins->dst, Operand2::from(ShiftType::ASR, tmp, 1));
               } else { // div->imm > 2
-                auto const log_imm = static_cast<int>(std::log2(imm));
+                auto const log_imm = bit_width(imm) - 1;
                 assert(log_imm > 0);
                 auto const tmp1 = f.new_reg(RegType::General);
                 bb->insns.insert(
@@ -244,8 +261,35 @@ void fold_constants(Function &f) {
               insn = std::make_unique<IType>(IType::RevSub, r_ins->dst,
                                              r_ins->s1, 0);
             } else {
-              insn = std::make_unique<PseudoDivConstant>(
-                  r_ins->dst, r_ins->s1, imm, f.new_reg(RegType::General));
+              // Division by Invariant Integers using Multiplication
+              // Figure 5.2
+              auto const [m, l] = choose_multiplier(std::abs(imm));
+              auto const tmp1 = f.new_reg(RegType::General);
+              auto const tmp2 = f.new_reg(RegType::General);
+              if (m < std::uint64_t(1) << 31) {
+                emit_load_imm(bb->insns, instr, tmp1, static_cast<int>(m));
+                bb->insns.insert(instr,
+                                 std::make_unique<RType>(RType::SMMul, tmp2,
+                                                         tmp1, r_ins->s1));
+              } else {
+                emit_load_imm(bb->insns, instr, tmp1,
+                              static_cast<int>(m - (std::uint64_t(1) << 32)));
+                bb->insns.insert(instr, std::make_unique<FusedMul>(
+                                            FusedMul::SMAdd, tmp2, tmp1,
+                                            r_ins->s1, r_ins->s1));
+              }
+              Reg tmp3;
+              if (l != 0) {
+                tmp3 = f.new_reg(RegType::General);
+                bb->insns.insert(
+                    instr, std::make_unique<Move>(
+                               tmp3, Operand2::from(ShiftType::ASR, tmp2, l)));
+              } else {
+                tmp3 = tmp2;
+              }
+              insn = std::make_unique<FullRType>(
+                  FullRType::Add, r_ins->dst, tmp2,
+                  Operand2::from(ShiftType::LSR, tmp2, 31));
             }
           }
         } else if (auto const iter = constants.find(r_ins->s1);
@@ -308,7 +352,7 @@ void fold_constants(Function &f) {
               insn =
                   std::make_unique<RType>(RType::Sub, mod->dst, mod->s1, tmp);
             } else { // imm > 2
-              auto const log_imm = static_cast<int>(std::log2<unsigned>(imm));
+              auto const log_imm = bit_width(imm) - 1;
               assert(log_imm > 0);
               auto const tmp1 = f.new_reg(RegType::General);
               bb->insns.insert(instr, std::make_unique<Move>(
@@ -354,8 +398,8 @@ void fold_constants(Function &f) {
         auto const tmp = f.new_reg(RegType::General);
         bb->insns.insert(
             instr, std::make_unique<RType>(RType::Div, tmp, mod->s1, mod->s2));
-        insn =
-            std::make_unique<FusedMul>(mod->dst, tmp, mod->s2, mod->s1, true);
+        insn = std::make_unique<FusedMul>(FusedMul::Sub, mod->dst, tmp, mod->s2,
+                                          mod->s1);
       }
     }
   }

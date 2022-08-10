@@ -192,10 +192,8 @@ ostream &Instruction::write_op(std::ostream &os, const char *op, bool is_float,
 
 void RType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add",
-      [Sub] = "sub",
-      [Mul] = "mul",
-      [Div] = "div",
+      [Add] = "add", [Sub] = "sub",     [Mul] = "mul",
+      [Div] = "div", [SMMul] = "smmul",
   };
   std::string op_name = OP_NAMES[op];
   if (op == Div && !dst.is_float()) {
@@ -207,7 +205,11 @@ void RType::emit(std::ostream &os) const {
 
 void IType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb"};
+      [Add] = "add",
+      [Sub] = "sub",
+      [RevSub] = "rsb",
+      [Eor] = "eor",
+  };
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", #" << imm;
 }
 
@@ -270,8 +272,9 @@ void Store::emit(std::ostream &os) const {
 }
 
 void FusedMul::emit(std::ostream &os) const {
-  auto op = sub ? "mls" : "mla";
-  write_op(os, op, dst.is_float())
+  constexpr const char *OP_NAMES[] = {
+      [Add] = "mla", [Sub] = "mls", [SMAdd] = "smmla"};
+  write_op(os, OP_NAMES[op], dst.is_float())
       << dst << ", " << s1 << ", " << s2 << ", " << s3;
 }
 
@@ -381,11 +384,6 @@ void ComplexStore::emit(std::ostream &os) const {
     os << ", " << this->shift_type << " #" << this->shift;
   }
   os << ']';
-}
-
-void PseudoDivConstant::emit(std::ostream &os) const {
-  os << "*div-" << this->cond << '[' << this->tmp << "] " << this->dst << ", "
-     << this->src << ", #" << this->imm;
 }
 
 void PseudoOneDividedByReg::emit(std::ostream &os) const {
