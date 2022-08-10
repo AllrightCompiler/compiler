@@ -225,13 +225,23 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
   new_into_entry->func = func;
   new_into_entry->label = "parallel_check_" + entry->label;
   func->bbs.emplace_back(new_into_entry);
-  BasicBlock *parallel_entry = new BasicBlock; // into_entry for parallel loop
-  BasicBlock *parallel_exit = new BasicBlock; // exit for parallel loop
-  parallel_entry->func = parallel_exit->func = func;
+  BasicBlock *parallel_entry = new BasicBlock; // into_entry for all parallel loop, for distributing control flow
+  BasicBlock *parallel_entries[THREAD_NUM]; // into_entry for parallel loop
+  BasicBlock *parallel_exits[THREAD_NUM]; // exit for parallel loop
+  parallel_entry->func = func;
   parallel_entry->label = "parallel_entry_" + entry->label;
-  parallel_exit->label = "parallel_exit_" + entry->label;
+  for (int i = 0; i < THREAD_NUM; i++) {
+    parallel_entries[i] = new BasicBlock;
+    parallel_exits[i] = new BasicBlock;
+    parallel_entries[i]->func = parallel_exits[i]->func = func;
+    parallel_entries[i]->label = "parallel_entry_" + std::to_string(i) + "_" + entry->label;
+    parallel_exits[i]->label = "parallel_exit_" + std::to_string(i) + "_" + entry->label;
+  }
   func->bbs.emplace_back(parallel_entry);
-  func->bbs.emplace_back(parallel_exit);
+  for (int i = 0; i < THREAD_NUM; i++) {
+    func->bbs.emplace_back(parallel_entries[i]);
+    func->bbs.emplace_back(parallel_exits[i]);
+  }
   // setup new_into_entry
   {
     new_into_entry->prev.insert(into_entry);
@@ -242,77 +252,93 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     auto br = new ir::insns::Branch(parallel_cond, parallel_entry, entry);
     new_into_entry->push_back(br);
   }
-  unordered_map<BasicBlock *, BasicBlock *> bb_map;
-  unordered_map<Reg, Reg> reg_map;
-  for (auto bb : loop_bbs) {
-    BasicBlock *new_bb = new BasicBlock;
-    new_bb->func = func;
-    new_bb->label = "parallel_" + bb->label;
-    func->bbs.emplace_back(new_bb);
-    bb_map[bb] = new_bb;
-    for (auto &insn : bb->insns) {
-      TypeCase(output, ir::insns::Output *, insn.get()) {
-        Reg new_reg = func->new_reg(output->dst.type);
-        reg_map[output->dst] = new_reg;
-      }
-    }
-  }
   // setup parallel_entry
-  Reg tid = func->new_reg(Int);
-  Reg new_start = func->new_reg(Int), new_end = func->new_reg(Int);
   {
     parallel_entry->prev.insert(new_into_entry);
-    parallel_entry->succ.insert(bb_map.at(entry));
+    for (int i = 0; i < THREAD_NUM; i++) {
+      parallel_entry->succ.insert(parallel_entries[i]);
+    }
+    Reg tid = func->new_reg(Int);
     auto syscall = new ir::insns::Call(tid, "__create_threads", {});
     parallel_entry->push_back(syscall);
-    Reg range_len = func->new_reg(Int);
-    auto range_sub = new ir::insns::Binary(range_len, BinaryOp::Sub, info.end_reg, info.start_reg);
-    parallel_entry->push_back(range_sub);
-    Reg imm_1 = func->new_reg(Int);
-    auto loadimm_1 = new ir::insns::LoadImm(imm_1, ConstValue(1));
-    parallel_entry->push_back(loadimm_1);
-    Reg tid_plus_one = func->new_reg(Int);
-    auto tid_inc = new ir::insns::Binary(tid_plus_one, BinaryOp::Add, tid, imm_1);
-    parallel_entry->push_back(tid_inc);
-    Reg imm_TN = func->new_reg(Int);
-    auto loadimm_TN = new ir::insns::LoadImm(imm_TN, ConstValue(THREAD_NUM));
-    parallel_entry->push_back(loadimm_TN);
-    Reg mul_l = func->new_reg(Int), mul_r = func->new_reg(Int);
-    auto l_mul = new ir::insns::Binary(mul_l, BinaryOp::Mul, range_len, tid);
-    auto r_mul = new ir::insns::Binary(mul_r, BinaryOp::Mul, range_len, tid_plus_one);
-    parallel_entry->push_back(l_mul);
-    parallel_entry->push_back(r_mul);
-    Reg l = func->new_reg(Int), r = func->new_reg(Int);
-    auto l_div = new ir::insns::Binary(l, BinaryOp::Div, mul_l, imm_TN); // l = [(end - start) * tid] / THREAD_NUM
-    auto r_div = new ir::insns::Binary(r, BinaryOp::Div, mul_r, imm_TN); // r = [(end - start) * (tid + 1)] / THREAD_NUM
-    parallel_entry->push_back(l_div);
-    parallel_entry->push_back(r_div);
-    auto new_start_add = new ir::insns::Binary(new_start, BinaryOp::Add, info.start_reg, l);
-    auto new_end_add = new ir::insns::Binary(new_end, BinaryOp::Add, info.start_reg, r);
-    parallel_entry->push_back(new_start_add);
-    parallel_entry->push_back(new_end_add);
-    info.entry_ind_phi->change_use(info.start_reg, new_start);
-    info.cond_cmp->change_use(info.end_reg, new_end);
-    auto jmp = new ir::insns::Jump(bb_map.at(entry));
+    std::map<int, BasicBlock *> targets;
+    for (int i = 0; i < THREAD_NUM - 1; i++) {
+      targets[i] = parallel_entries[i];
+    }
+    auto jmp = new ir::insns::Switch(tid, targets, parallel_entries[THREAD_NUM - 1]);
     parallel_entry->push_back(jmp);
   }
-  // setup parallel_exit
-  {
-    parallel_exit->prev.insert(bb_map.at(exit_prev));
-    parallel_exit->succ.insert(exit);
-    auto syscall = new ir::insns::Call(func->new_reg(Int), "__join_threads", {tid});
-    auto jmp = new ir::insns::Jump(exit);
-    parallel_exit->push_back(syscall);
-    parallel_exit->push_back(jmp);
+  Reg new_start, new_end; // store the last
+  unordered_map<Reg, Reg> reg_map[THREAD_NUM];
+  for (int tid = 0; tid < THREAD_NUM; tid++) {
+    unordered_map<BasicBlock *, BasicBlock *> bb_map;
+    for (auto bb : loop_bbs) {
+      BasicBlock *new_bb = new BasicBlock;
+      new_bb->func = func;
+      new_bb->label = "parallel_" + std::to_string(tid) + "_" + bb->label;
+      func->bbs.emplace_back(new_bb);
+      bb_map[bb] = new_bb;
+      for (auto &insn : bb->insns) {
+        TypeCase(output, ir::insns::Output *, insn.get()) {
+          Reg new_reg = func->new_reg(output->dst.type);
+          reg_map[tid][output->dst] = new_reg;
+        }
+      }
+    }
+    // setup parallel_entry_tid
+    Reg imm_tid = func->new_reg(Int);
+    {
+      parallel_entries[tid]->prev.insert(parallel_entry);
+      parallel_entries[tid]->succ.insert(bb_map.at(entry));
+      Reg range_len = func->new_reg(Int);
+      auto range_sub = new ir::insns::Binary(range_len, BinaryOp::Sub, info.end_reg, info.start_reg);
+      parallel_entries[tid]->push_back(range_sub);
+      auto loadimm_tid = new ir::insns::LoadImm(imm_tid, ConstValue(tid));
+      parallel_entries[tid]->push_back(loadimm_tid);
+      Reg tid_plus_one = func->new_reg(Int);
+      auto tid_inc = new ir::insns::LoadImm(tid_plus_one, ConstValue(tid + 1));
+      parallel_entries[tid]->push_back(tid_inc);
+      Reg imm_TN = func->new_reg(Int);
+      auto loadimm_TN = new ir::insns::LoadImm(imm_TN, ConstValue(THREAD_NUM));
+      parallel_entries[tid]->push_back(loadimm_TN);
+      Reg mul_l = func->new_reg(Int), mul_r = func->new_reg(Int);
+      auto l_mul = new ir::insns::Binary(mul_l, BinaryOp::Mul, range_len, imm_tid);
+      auto r_mul = new ir::insns::Binary(mul_r, BinaryOp::Mul, range_len, tid_plus_one);
+      parallel_entries[tid]->push_back(l_mul);
+      parallel_entries[tid]->push_back(r_mul);
+      Reg l = func->new_reg(Int), r = func->new_reg(Int);
+      auto l_div = new ir::insns::Binary(l, BinaryOp::Div, mul_l, imm_TN); // l = [(end - start) * tid] / THREAD_NUM
+      auto r_div = new ir::insns::Binary(r, BinaryOp::Div, mul_r, imm_TN); // r = [(end - start) * (tid + 1)] / THREAD_NUM
+      parallel_entries[tid]->push_back(l_div);
+      parallel_entries[tid]->push_back(r_div);
+      new_start = func->new_reg(Int), new_end = func->new_reg(Int);
+      auto new_start_add = new ir::insns::Binary(new_start, BinaryOp::Add, info.start_reg, l);
+      auto new_end_add = new ir::insns::Binary(new_end, BinaryOp::Add, info.start_reg, r);
+      parallel_entries[tid]->push_back(new_start_add);
+      parallel_entries[tid]->push_back(new_end_add);
+      info.entry_ind_phi->change_use(info.start_reg, new_start);
+      info.cond_cmp->change_use(info.end_reg, new_end);
+      auto jmp = new ir::insns::Jump(bb_map.at(entry));
+      parallel_entries[tid]->push_back(jmp);
+    }
+    // setup parallel_exit_tid
+    {
+      parallel_exits[tid]->prev.insert(bb_map.at(exit_prev));
+      parallel_exits[tid]->succ.insert(exit);
+      auto syscall = new ir::insns::Call(func->new_reg(Int), "__join_threads", {imm_tid});
+      auto jmp = new ir::insns::Jump(exit);
+      parallel_exits[tid]->push_back(syscall);
+      parallel_exits[tid]->push_back(jmp);
+    }
+    bb_map[into_entry] = parallel_entries[tid];
+    bb_map[exit] = parallel_exits[tid];
+    for (auto bb : loop_bbs) {
+      copy_bb(info, bb, bb_map.at(bb), bb_map, reg_map[tid]);
+    }
+    // change back original loop's start & end
+    info.entry_ind_phi->change_use(new_start, info.start_reg);
+    info.cond_cmp->change_use(new_end, info.end_reg);
   }
-  bb_map[into_entry] = parallel_entry;
-  bb_map[exit] = parallel_exit;
-  for (auto bb : loop_bbs) {
-    copy_bb(info, bb, bb_map.at(bb), bb_map, reg_map);
-  }
-  // change back original loop's start & end
-  info.entry_ind_phi->change_use(new_start, info.start_reg);
-  info.cond_cmp->change_use(new_end, info.end_reg);
   // into_entry -> entry  ==>  into_entry -> new_into_entry -> entry
   {
     // modify into_entry's succ & terinst from entry to new_into_entry
@@ -343,13 +369,17 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
   // modify exit
   {
     // add new exit from parallel_exit
-    exit->prev.insert(parallel_exit);
+    for (int i = 0; i < THREAD_NUM; i++) {
+      exit->prev.insert(parallel_exits[i]);
+    }
     for (auto &insn : exit->insns) {
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         phi->remove_use_def();
         Reg new_reg = phi->incoming.at(exit_prev);
-        if (reg_map.count(new_reg)) new_reg = reg_map.at(new_reg);
-        phi->incoming[parallel_exit] = new_reg;
+        for (int i = 0; i < THREAD_NUM; i++) {
+          if (reg_map[i].count(new_reg)) new_reg = reg_map[i].at(new_reg);
+          phi->incoming[parallel_exits[i]] = new_reg;
+        }
         phi->add_use_def();
       } else break;
     }
