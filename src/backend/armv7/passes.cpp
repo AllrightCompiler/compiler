@@ -288,7 +288,7 @@ void fold_constants(Function &f) {
                 tmp3 = tmp2;
               }
               insn = std::make_unique<FullRType>(
-                  FullRType::Add, r_ins->dst, tmp2,
+                  FullRType::Add, r_ins->dst, tmp3,
                   Operand2::from(ShiftType::LSR, tmp2, 31));
             }
           }
