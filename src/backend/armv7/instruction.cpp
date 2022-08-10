@@ -213,7 +213,9 @@ void IType::emit(std::ostream &os) const {
 
 void FullRType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb"};
+      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb",
+      [Bic] = "bic", [And] = "and",
+  };
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", " << s2;
 }
 
@@ -388,6 +390,16 @@ void PseudoDivConstant::emit(std::ostream &os) const {
 
 void PseudoOneDividedByReg::emit(std::ostream &os) const {
   os << "*div-" << this->cond << ' ' << this->dst << ", #1, " << this->src;
+}
+
+void PseudoModulo::emit(std::ostream &os) const {
+  os << "*mod-" << this->cond << ' ' << this->dst << ", " << this->s1 << ", "
+     << this->s2;
+}
+
+void BitFieldClear::emit(std::ostream &os) const {
+  write_op(os, "bfc") << this->dst << ", #" << this->lsb << ", #"
+                      << this->width;
 }
 
 } // namespace armv7

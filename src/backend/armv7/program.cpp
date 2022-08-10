@@ -307,13 +307,9 @@ class ProgramTranslator {
       case BinaryOp::Div:
         bb->push(new RType{RType::from(binary->op), dst, s1, s2});
         break;
-      case BinaryOp::Mod: {
-        // TODO: 确认负数取模的行为
-        Reg t = fn.new_reg(General);
-        bb->push(new RType{RType::Op::Div, t, s1, s2});
-        bb->push(new FusedMul{dst, t, s2, s1, true});
+      case BinaryOp::Mod:
+        bb->push(new PseudoModulo{dst, s1, s2});
         break;
-      }
       case BinaryOp::Eq:
       case BinaryOp::Neq:
       case BinaryOp::Geq:
@@ -916,7 +912,7 @@ void Function::replace_pseudo_insns() {
         insns.emplace(it, cmov_false);
         it->reset(cmov_true);
       }
-      else TypeCase(br, CmpBranch *, it->get()) {
+      TypeCase(br, CmpBranch *, it->get()) {
         auto cond = br->cond;
         auto true_target = br->true_target;
         auto false_target = br->false_target;
@@ -937,16 +933,16 @@ void Function::replace_pseudo_insns() {
           it->reset(new Branch{false_target});
         }
       }
-      else TypeCase(br, Branch *, it->get()) {
+      TypeCase(br, Branch *, it->get()) {
         if (br->target == next_bb && br->cond == ExCond::Always)
           remove = true;
       }
-      else TypeCase(div, PseudoDivConstant *, it->get()) {
+      TypeCase(div, PseudoDivConstant *, it->get()) {
         // TODO 一般的立即数
         emit_load_imm(insns, it, div->tmp, div->imm);
         *it = std::make_unique<RType>(RType::Div, div->dst, div->src, div->tmp);
       }
-      else TypeCase(div, PseudoOneDividedByReg *, it->get()) {
+      TypeCase(div, PseudoOneDividedByReg *, it->get()) {
         insns.insert(
             it, std::make_unique<IType>(IType::Add, div->dst, div->src, 1));
         insns.insert(it,

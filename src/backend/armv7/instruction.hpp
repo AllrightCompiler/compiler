@@ -204,7 +204,7 @@ struct IType : Instruction {
 
 // 具有 op Rd, R1, Operand2 形式的指令
 struct FullRType : Instruction {
-  enum Op { Add, Sub, RevSub } op;
+  enum Op { Add, Sub, RevSub, Bic, And } op;
   Reg dst, s1;
   Operand2 s2;
 
@@ -710,6 +710,44 @@ struct PseudoOneDividedByReg : Instruction {
   std::set<Reg> def() const override { return {this->dst}; }
   std::set<Reg> use() const override { return {this->src}; }
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
+};
+
+// dst = s1 mod s2
+// 伪指令，在 `fold_constants` 阶段提前展开
+struct PseudoModulo : Instruction {
+  Reg dst, s1, s2;
+
+  PseudoModulo(Reg dst, Reg s1, Reg s2) : dst{dst}, s1{s1}, s2{s2} {
+    assert(!this->dst.is_float());
+    assert(!this->s1.is_float());
+    assert(!this->s2.is_float());
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->s1, this->s2}; }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->dst, &this->s1, &this->s2};
+  }
+};
+
+// bfc dst, #lsb, #width
+// 清零 #lsb 开始的、宽 #width 的位
+struct BitFieldClear : Instruction {
+  Reg dst;
+  int lsb, width;
+
+  BitFieldClear(Reg dst, int lsb, int width)
+      : dst{dst}, lsb{lsb}, width{width} {
+    assert(lsb >= 0);
+    assert(width > 0);
+    assert(width + lsb < 32);
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->dst}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst}; }
 };
 
 } // namespace armv7

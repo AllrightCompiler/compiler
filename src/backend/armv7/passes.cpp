@@ -61,11 +61,10 @@ void fold_constants(Function &f) {
   for (auto &bb : f.bbs) {
     for (auto instr = bb->insns.begin(); instr != bb->insns.end(); ++instr) {
       auto &insn = *instr;
-      auto ins = insn.get();
 
       // 匹配常数加载指令
       bool is_load_imm = false;
-      TypeCase(mov, Move *, ins) {
+      TypeCase(mov, Move *, insn.get()) {
         if (mov->src.is_imm8m()) {
           int imm = mov->src.get<int>();
           if (mov->flip)
@@ -84,13 +83,13 @@ void fold_constants(Function &f) {
           is_load_imm = true;
         }
       }
-      else TypeCase(movw, MovW *, ins) {
+      else TypeCase(movw, MovW *, insn.get()) {
         Reg dst = movw->dst;
         if (dst.is_virt())
           constants[dst] = movw->imm;
         is_load_imm = true;
       }
-      else TypeCase(movt, MovT *, ins) {
+      else TypeCase(movt, MovT *, insn.get()) {
         Reg dst = movt->dst;
         if (constants.count(dst)) {
           int lo = constants[dst].iv;
@@ -136,7 +135,7 @@ void fold_constants(Function &f) {
         }
       };
 
-      TypeCase(r_ins, RType *, ins) {
+      TypeCase(r_ins, RType *, insn.get()) {
         auto op = r_ins->op;
         if (r_ins->dst.is_float()) // TODO: 浮点立即数
           continue;
@@ -201,42 +200,45 @@ void fold_constants(Function &f) {
         } else if (op == RType::Div) {
           if (auto const iter = constants.find(r_ins->s2);
               iter != constants.end()) {
-            int imm = iter->second.iv;
+            auto const imm = iter->second.iv;
             assert(imm != 0);
             if (is_power_of_2(imm)) {
               if (imm == 0x8000'0000) {
+                auto const tmp1 = f.new_reg(RegType::General);
+                bb->insns.insert(instr, std::make_unique<IType>(IType::Add,
+                                                                tmp1, r_ins->s1,
+                                                                0x8000'0000));
+                auto const tmp2 = f.new_reg(RegType::General);
                 bb->insns.insert(
-                    instr, std::make_unique<IType>(IType::Add, r_ins->dst,
-                                                   r_ins->s1, 0x8000'0000));
-                bb->insns.insert(instr, std::make_unique<CountLeadingZero>(
-                                            r_ins->dst, r_ins->dst));
+                    instr, std::make_unique<CountLeadingZero>(tmp2, tmp1));
                 insn = std::make_unique<Move>(
-                    r_ins->dst, Operand2::from(ShiftType::LSR, r_ins->dst, 5));
+                    r_ins->dst, Operand2::from(ShiftType::LSR, tmp2, 5));
               } else if (imm == 1) {
                 insn = std::make_unique<Move>(r_ins->dst,
                                               Operand2::from(r_ins->s1));
               } else if (imm == 2) {
+                auto const tmp = f.new_reg(RegType::General);
                 bb->insns.insert(
                     instr, std::make_unique<FullRType>(
-                               FullRType::Add, r_ins->dst, r_ins->s1,
+                               FullRType::Add, tmp, r_ins->s1,
                                Operand2::from(ShiftType::LSR, r_ins->s1, 31)));
                 insn = std::make_unique<Move>(
-                    r_ins->dst, Operand2::from(ShiftType::ASR, r_ins->dst, 1));
+                    r_ins->dst, Operand2::from(ShiftType::ASR, tmp, 1));
               } else { // div->imm > 2
                 auto const log_imm = static_cast<int>(std::log2(imm));
                 assert(log_imm > 0);
+                auto const tmp1 = f.new_reg(RegType::General);
                 bb->insns.insert(
-                    instr, std::make_unique<Move>(
-                               r_ins->dst,
-                               Operand2::from(ShiftType::ASR, r_ins->s1, 31)));
-                bb->insns.insert(instr,
-                                 std::make_unique<FullRType>(
-                                     FullRType::Add, r_ins->dst, r_ins->s1,
-                                     Operand2::from(ShiftType::LSR, r_ins->dst,
-                                                    32 - log_imm)));
+                    instr,
+                    std::make_unique<Move>(
+                        tmp1, Operand2::from(ShiftType::ASR, r_ins->s1, 31)));
+                auto const tmp2 = f.new_reg(RegType::General);
+                bb->insns.insert(instr, std::make_unique<FullRType>(
+                                            FullRType::Add, tmp2, r_ins->s1,
+                                            Operand2::from(ShiftType::LSR, tmp1,
+                                                           32 - log_imm)));
                 insn = std::make_unique<Move>(
-                    r_ins->dst,
-                    Operand2::from(ShiftType::ASR, r_ins->dst, log_imm));
+                    r_ins->dst, Operand2::from(ShiftType::ASR, tmp2, log_imm));
               }
             } else if (imm == -1) {
               insn = std::make_unique<IType>(IType::RevSub, r_ins->dst,
@@ -257,15 +259,15 @@ void fold_constants(Function &f) {
           }
         }
       }
-      else TypeCase(i_ins, IType *, ins) {
+      TypeCase(i_ins, IType *, insn.get()) {
         // 应该不用处理
       }
-      else TypeCase(fr_ins, FullRType *, ins) {
+      TypeCase(fr_ins, FullRType *, insn.get()) {
         auto opt_imm = eval_operand2(fr_ins->s2);
         if (opt_imm && is_imm8m(opt_imm.value()))
           fr_ins->s2 = Operand2::from(opt_imm.value());
       }
-      else TypeCase(mov, Move *, ins) {
+      TypeCase(mov, Move *, insn.get()) {
         auto opt_imm = eval_operand2(mov->src);
         if (opt_imm && !mov->is_transfer_vmov()) {
           int imm = opt_imm.value();
@@ -280,14 +282,80 @@ void fold_constants(Function &f) {
           }
         }
       }
-      else TypeCase(cmp, Compare *, ins) {
-        inline_compare_constant(cmp);
-      }
-      else TypeCase(pcmp, PseudoCompare *, ins) {
+      TypeCase(cmp, Compare *, insn.get()) { inline_compare_constant(cmp); }
+      TypeCase(pcmp, PseudoCompare *, insn.get()) {
         inline_compare_constant(pcmp->cmp.get());
       }
-      else TypeCase(br, CmpBranch *, ins) {
+      TypeCase(br, CmpBranch *, insn.get()) {
         inline_compare_constant(br->cmp.get());
+      }
+      TypeCase(mod, PseudoModulo *, insn.get()) {
+        if (auto const iter = constants.find(mod->s2);
+            iter != constants.end()) {
+          auto const imm = iter->second.iv;
+          assert(imm != 0);
+          if (is_power_of_2(imm)) {
+            if (imm == 1) {
+              insn = std::make_unique<Move>(mod->dst, Operand2::from(0));
+            } else if (imm == 2) {
+              auto const tmp = f.new_reg(RegType::General);
+              bb->insns.insert(
+                  instr, std::make_unique<FullRType>(
+                             FullRType::Add, tmp, mod->s1,
+                             Operand2::from(ShiftType::LSR, mod->s1, 31)));
+              bb->insns.insert(instr,
+                               std::make_unique<BitFieldClear>(tmp, 0, 1));
+              insn =
+                  std::make_unique<RType>(RType::Sub, mod->dst, mod->s1, tmp);
+            } else { // imm > 2
+              auto const log_imm = static_cast<int>(std::log2<unsigned>(imm));
+              assert(log_imm > 0);
+              auto const tmp1 = f.new_reg(RegType::General);
+              bb->insns.insert(instr, std::make_unique<Move>(
+                                          tmp1, Operand2::from(ShiftType::ASR,
+                                                               mod->s1, 31)));
+              auto const tmp2 = f.new_reg(RegType::General);
+              bb->insns.insert(instr, std::make_unique<FullRType>(
+                                          FullRType::Add, tmp2, mod->s1,
+                                          Operand2::from(ShiftType::LSR, tmp1,
+                                                         32 - log_imm)));
+              Reg tmp3;
+              if (log_imm <= 8) {
+                tmp3 = f.new_reg(RegType::General);
+                bb->insns.insert(instr, std::make_unique<FullRType>(
+                                            FullRType::Bic, tmp3, tmp2,
+                                            Operand2::from(imm - 1)));
+              } else if (log_imm >= 24) {
+                tmp3 = f.new_reg(RegType::General);
+                bb->insns.insert(instr, std::make_unique<FullRType>(
+                                            FullRType::And, tmp3, tmp2,
+                                            Operand2::from(~(imm - 1))));
+              } else {
+                bb->insns.insert(
+                    instr, std::make_unique<BitFieldClear>(tmp2, 0, log_imm));
+                tmp3 = tmp2;
+              }
+              insn = std::make_unique<RType>(imm > 0 ? RType::Sub : RType::Add,
+                                             mod->dst, mod->s1, tmp3);
+            }
+            continue;
+          } else if (imm == -1) {
+            insn = std::make_unique<Move>(mod->dst, Operand2::from(0));
+            continue;
+          }
+        } else if (auto const iter = constants.find(mod->s1);
+                   iter != constants.end()) {
+          auto const imm = iter->second.iv;
+          if (imm == 0) {
+            insn = std::make_unique<Move>(mod->dst, Operand2::from(0));
+            continue;
+          }
+        }
+        auto const tmp = f.new_reg(RegType::General);
+        bb->insns.insert(
+            instr, std::make_unique<RType>(RType::Div, tmp, mod->s1, mod->s2));
+        insn =
+            std::make_unique<FusedMul>(mod->dst, tmp, mod->s2, mod->s1, true);
       }
     }
   }
