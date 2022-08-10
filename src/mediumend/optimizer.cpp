@@ -44,7 +44,7 @@ std::vector<funcptr> passes = {
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
   
-  // br2switch,
+  br2switch,
 
   gvn_no_cfg,
 
