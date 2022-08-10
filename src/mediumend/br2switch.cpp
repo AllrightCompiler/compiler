@@ -11,7 +11,7 @@ using ir::BasicBlock;
 using std::vector;
 using std::map;
 
-const static int BR_CNT = 7;
+const static int BR_CNT = 6;
 
 static Function * cur_func = nullptr;
 
