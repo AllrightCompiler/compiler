@@ -90,7 +90,7 @@ std::vector<funcptr> passes = {
   gep_destruction,
   gvn_no_cfg,
 
-  operator_strength_reduction,
+  // operator_strength_reduction,
   gvn_cfg,
 
   sort_basicblock,

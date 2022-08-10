@@ -28,8 +28,21 @@ struct ParallelLoopInfo {
   BasicBlock *entry;
   BasicBlock *exit_prev;
   BasicBlock *exit;
-  Instruction *entry_ind_phi;
-  Instruction *cond_cmp;
+  ir::insns::Phi *entry_ind_phi;
+  ir::insns::Binary *cond_cmp;
+  ir::insns::Binary *binary_upd;
+
+  bool profitable(Loop *loop) {
+    if (loop->no_inner) return false; // don't parallel single layer loop
+    Reg ind_var = entry_ind_phi->dst;
+    for (auto use_i : entry->func->use_list.at(ind_var)) {
+      if (use_i == binary_upd) continue;
+      TypeCase(dummy, ir::insns::GetElementPtr *, use_i) {
+        // i only used for array index
+      } else return false;
+    }
+    return true;
+  }
 };
 
 ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *> &loop_bbs, BasicBlock *exit) {
@@ -117,6 +130,7 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
           info.start_reg = reg_i_init;
           info.entry_ind_phi = inst_phi;
         } else return info; // no phi inst
+        info.binary_upd = binary_update;
       } else return info; // update not binary
     } else return info; // cond not binary
   } else assert(false);
@@ -390,7 +404,9 @@ void loop_parallel(ir::Function *func) {
     // Parallel this loop
     auto loop_info = get_parallel_info(loop, loop_bbs, exit_bb);
     if (!loop_info.valid) continue;
-    loop_parallel(func, loop_info, loop, loop_bbs);
+    if (loop_info.profitable(loop)) {
+      loop_parallel(func, loop_info, loop, loop_bbs);
+    }
   }
 }
 
