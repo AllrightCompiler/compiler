@@ -14,9 +14,13 @@ using ir::BasicBlock;
 static ir::Program* cur_prog = nullptr;
 
 void detect_pure_function(ir::Program *prog, ir::Function *func) {
+  unordered_map<Reg, int> reg2base;
+  int i = 0;
   for(auto &type : func->sig.param_types){
+    i++;
     if(type.is_array()){
       func->pure = 0;
+      reg2base[Reg(type.base_type, i)] = i;
     }
   }
   for (auto &bb : func->bbs) {
@@ -25,6 +29,16 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
       if(auto x = dynamic_cast<ir::insns::LoadAddr *>(inst.get())){
         func->pure = 0;
         func->array_ssa_pure = 0;
+      }
+      TypeCase(gep, ir::insns::GetElementPtr *, inst.get()){
+        if(reg2base.count(gep->base)){
+          reg2base[gep->dst] = reg2base.at(gep->base);
+        }
+      }
+      TypeCase(store, ir::insns::Store *, inst.get()){
+        if(reg2base.count(store->addr)){
+          func->only_load_param = 0;
+        }
       }
       // 此处为了便于处理递归函数，因此这么做
       TypeCase(call, ir::insns::Call *, inst.get()) {
@@ -54,6 +68,9 @@ void detect_pure_function(ir::Program *prog, ir::Function *func) {
   }
   if(func->array_ssa_pure == -1){
     func->array_ssa_pure = 1;
+  }
+  if(func->only_load_param == -1){
+    func->only_load_param = 1;
   }
 }
 

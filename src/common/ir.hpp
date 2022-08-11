@@ -188,6 +188,7 @@ struct Function {
   mediumend::CFG *cfg = nullptr;
   int pure = -1;
   int array_ssa_pure = -1;
+  int only_load_param = -1;
 
   unordered_map<Reg, unordered_set<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
@@ -200,6 +201,7 @@ struct Function {
   bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
   bool is_pure() const { return pure == 1; }
   bool is_array_ssa_pure() const { return array_ssa_pure == 1; }
+  bool is_only_load_param() const { return only_load_param == 1; }
   void clear_visit();
   void clear_graph();
   void clear_dom();
