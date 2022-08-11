@@ -93,7 +93,7 @@ void br2switch(Function *func) {
                     break;
                   }
                 }
-                if(switch_map.size() > BR_CNT){
+                if(switch_map.size() == BR_CNT){
                   found = true;
                   default_target = pos;
                 }
@@ -107,8 +107,19 @@ void br2switch(Function *func) {
   if(found){
     auto br = dynamic_cast<ir::insns::Branch *>(bb->insns.back().get());
     assert(br);
-    auto switch_insn = new ir::insns::Switch(jmp_val, switch_map, default_target);
+    map<int, BasicBlock *> new_map;
+    auto reg = func->new_reg(ScalarType::Int);
+    auto sub_reg = func->new_reg(ScalarType::Int);
+    auto min_val = switch_map.begin()->first;
+    auto loadimm = new ir::insns::LoadImm(sub_reg, ConstValue(min_val));
+    auto sub = new ir::insns::Binary(reg, BinaryOp::Sub, jmp_val, sub_reg);
+    for(auto each : switch_map){
+      new_map[each.first - min_val] = each.second;
+    }
+    auto switch_insn = new ir::insns::Switch(reg, new_map, default_target);
     bb->pop_back();
+    bb->push_back(loadimm);
+    bb->push_back(sub);
     bb->push_back(switch_insn);    
     for(auto each : internal_bbs){
       auto br = dynamic_cast<ir::insns::Branch *>(each->insns.back().get());

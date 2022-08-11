@@ -410,6 +410,9 @@ void gvn(Function *f) {
         if (new_reg != call->dst) {
           copy_propagation(f->use_list, call->dst, new_reg);
         }
+        if (!program->functions.count(call->func) || !program->functions.at(call->func).is_pure()) {
+          loadMap.clear();
+        }
       }
       TypeCase(memuse, ir::insns::MemUse *, insn.get()) {
         Reg new_src = memuse->load_src;

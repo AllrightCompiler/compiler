@@ -37,6 +37,19 @@ void duplicate_load_store_elimination(Function *func) {
                 memdef->store_dst == def->store_dst) {
               def->remove_use_def();
               removable_inst.insert(def);
+            } else {
+              if(def->bb == memdef->bb && memdef->store_val == def->store_val){
+                if(func->def_list.count(memdef->store_val)){
+                  auto load = dynamic_cast<ir::insns::MemUse *>(func->def_list.at(memdef->store_val));
+                  if(load && def->uses_before_def.count(load->dst)){
+                    if(load->load_src == memdef->store_dst){
+                      copy_propagation(func->use_list, memdef->dst, def->dst);
+                      memdef->remove_use_def();
+                      removable_inst.insert(memdef);
+                    }
+                  }
+                }
+              }
             }
           }
         }
