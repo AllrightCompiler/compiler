@@ -10,6 +10,7 @@ using ir::BasicBlock;
 using ir::Instruction;
 
 static const int THREAD_NUM = 4;
+static ir::Program *program;
 
 // Parallel loop:
 // - one exit
@@ -32,8 +33,41 @@ struct ParallelLoopInfo {
   ir::insns::Binary *cond_cmp;
   ir::insns::Binary *binary_upd;
 
-  bool profitable(Loop *loop) {
+  bool profitable(Loop *loop, const unordered_set<BasicBlock *> &loop_bbs) {
     if (loop->no_inner) return false; // don't parallel single layer loop
+    bool wr_perpendicular = true;
+    unordered_set<Reg> write_set, read_set;
+    for (auto bb : loop_bbs) {
+      for (auto &insn : bb->insns) {
+        TypeCase(load, ir::insns::Load *, insn.get()) {
+          assert(entry->func->def_list.count(load->addr));
+          TypeCase(gep, ir::insns::GetElementPtr *, entry->func->def_list.at(load->addr)) {
+            read_set.insert(gep->base);
+          } else TypeCase(loadaddr, ir::insns::LoadAddr *, entry->func->def_list.at(load->addr)) {
+            read_set.insert(loadaddr->dst);
+          } else assert(false);
+        }
+        TypeCase(store, ir::insns::Store *, insn.get()) {
+          assert(entry->func->def_list.count(store->addr));
+          TypeCase(gep, ir::insns::GetElementPtr *, entry->func->def_list.at(store->addr)) {
+            write_set.insert(gep->base);
+            for (auto r : gep->indices) {
+              if (entry->func->def_list.count(r)) {
+                TypeCase(ld, ir::insns::Load *, entry->func->def_list.at(r)) {
+                  return false; // indirect index
+                }
+              }
+            }
+          } else TypeCase(loadaddr, ir::insns::LoadAddr *, entry->func->def_list.at(store->addr)) {
+            write_set.insert(loadaddr->dst);
+          } else assert(false);
+        }
+      }
+    }
+    for (auto w : write_set) {
+      if (read_set.count(w)) wr_perpendicular = false;
+    }
+    if (wr_perpendicular) return true;
     Reg ind_var = entry_ind_phi->dst;
     for (auto use_i : entry->func->use_list.at(ind_var)) {
       if (use_i == binary_upd) continue;
@@ -83,7 +117,9 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
   for (auto &bb : loop_bbs) {
     for (auto &insn : bb->insns) {
       TypeCase(call, ir::insns::Call *, insn.get()) {
-        return info; // call in loop
+        if (!program->functions.count(call->func) || !program->functions.at(call->func).is_pure()) {
+          return info; // call in loop
+        }
       } else TypeCase(output, ir::insns::Output *, insn.get()) {
         bool flag = true; // all use in loop
         if (output->bb->func->use_list.count(output->dst)) {
@@ -106,7 +142,7 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
       TypeCase(binary_update, ir::insns::Binary *, binary_cond->bb->func->def_list.at(binary_cond->src1)) { // i = i + c
         if (binary_update->dst.type != Int) return info;
         if (binary_update->op != BinaryOp::Add) return info; // TODO: only consider i + c now
-        if (binary_update->bb->func->use_list.at(binary_update->dst).size() > 2) return info; // updated i only used in cond_cmp & phi
+        // if (binary_update->bb->func->use_list.at(binary_update->dst).size() > 2) return info; // updated i only used in cond_cmp & phi
         Reg reg_i = binary_update->src1, reg_c = binary_update->src2;
         if (binary_update->bb->func->has_param(reg_i) || binary_update->bb->func->has_param(reg_c)) return info;
         TypeCase(dummy, ir::insns::LoadImm *, binary_update->bb->func->def_list.at(reg_i)) {
@@ -434,13 +470,14 @@ void loop_parallel(ir::Function *func) {
     // Parallel this loop
     auto loop_info = get_parallel_info(loop, loop_bbs, exit_bb);
     if (!loop_info.valid) continue;
-    if (loop_info.profitable(loop)) {
+    if (loop_info.profitable(loop, loop_bbs)) {
       loop_parallel(func, loop_info, loop, loop_bbs);
     }
   }
 }
 
 void loop_parallel(ir::Program *prog) {
+  program = prog;
   for(auto &func : prog->functions) {
     loop_parallel(&func.second);
   }
