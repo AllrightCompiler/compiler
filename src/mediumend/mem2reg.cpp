@@ -116,7 +116,7 @@ void main_global_var_to_local(ir::Program *prog){
       }
     }
   }
-  auto &func = prog->functions["main"];
+  auto &func = prog->functions.at("main");
   unordered_map<string, Reg>
       global_name_to_local_reg; // 全局变量到局部变量的映射
   auto &entry = func.bbs.front();

@@ -440,8 +440,8 @@ bool remove_useless_loop(ir::Function *func) {
     out->change_prev(out_bb, idom_prev);
     
   }
-  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-    auto bb = iter->get();
+  for(auto &each : func->bbs){
+    auto bb = each.get();
     if(remove_bbs.count(bb)){
       for(auto &inst : bb->insns){
         inst->remove_use_def();
@@ -452,6 +452,11 @@ bool remove_useless_loop(ir::Function *func) {
       for(auto succ : bb->succ){
         succ->prev.erase(bb);
       }
+    }
+  }
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    auto bb = iter->get();
+    if(remove_bbs.count(bb)){
       iter = func->bbs.erase(iter);
     } else {
       iter++;
