@@ -62,6 +62,17 @@ struct ParallelLoopInfo {
             write_set.insert(loadaddr->dst);
           } else assert(false);
         }
+        TypeCase(call, ir::insns::Call *, insn.get()) {
+          if (program->functions.count(call->func) && program->functions.at(call->func).is_only_load_param()) {
+            auto &types = program->functions.at(call->func).sig.param_types;
+            int n_params = types.size();
+            for (int i = 0; i < n_params; i++) {
+              if (types[i].is_array()) {
+                read_set.insert(call->args[i]);
+              }
+            }
+          }
+        }
       }
     }
     for (auto w : write_set) {
@@ -117,7 +128,7 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
   for (auto &bb : loop_bbs) {
     for (auto &insn : bb->insns) {
       TypeCase(call, ir::insns::Call *, insn.get()) {
-        if (!program->functions.count(call->func) || !program->functions.at(call->func).is_pure()) {
+        if (!program->functions.count(call->func) || !(program->functions.at(call->func).is_pure() || program->functions.at(call->func).is_only_load_param())) {
           return info; // call in loop
         }
       } else TypeCase(output, ir::insns::Output *, insn.get()) {
@@ -134,6 +145,12 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
   TypeCase(br_cond, ir::insns::Branch *, info.exit_prev->insns.back().get()) { // br entry, exit
     TypeCase(binary_cond, ir::insns::Binary *, br_cond->bb->func->def_list.at(br_cond->val)) { // i < n
       if (binary_cond->dst.type != Int) return info;
+      if (binary_cond->op == BinaryOp::Geq) { // try change op
+        if (binary_cond->bb->func->use_list.at(binary_cond->dst).size() == 1) {
+          binary_cond->op = BinaryOp::Lt;
+          std::swap(br_cond->true_target, br_cond->false_target);
+        }
+      }
       if (binary_cond->op != BinaryOp::Lt) return info; // TODO: only consider i < n now
       if (!binary_cond->bb->func->has_param(binary_cond->src2) && in_loop(binary_cond->bb->func->def_list.at(binary_cond->src2)->bb)) return info; // end_reg should be region constant
       info.end_reg = binary_cond->src2;
