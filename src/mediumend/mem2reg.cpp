@@ -73,10 +73,10 @@ void main_global_var_to_local(ir::Program *prog){
       if(val->type.is_array()){
         continue;
       }
-      if(val->type.base_type == ScalarType::Float){
+      if(val->type.base_type == ScalarType::Int){
         global_const[name] = ConstValue(0);
       }
-      if(val->type.base_type == ScalarType::Int){
+      if(val->type.base_type == ScalarType::Float){
         global_const[name] = ConstValue(0.0f);
       }
     }
