@@ -222,7 +222,16 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
       auto target = jmp->target;
       if(bb->insns.size() == 1) {
         if(auto phi = dynamic_cast<ir::insns::Phi *>(target->insns.front().get())){
-          continue;
+          bool eliminate = true;
+          for(auto each : bb->prev){
+            if(target->prev.count(each)){
+              eliminate = false;
+              break;
+            }
+          }
+          if(!eliminate) {
+            continue;
+          }
         }
         if(entry == bb){
           continue;
