@@ -1,5 +1,8 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+
+#include <regex>
+#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -209,7 +212,8 @@ void BasicBlock::insert_before_ter(Instruction *insn) {
 bool BasicBlock::remove(Instruction *insn) {
   for (auto it = insns.begin(); it != insns.end(); it++) {
     if (it->get() == insn) {
-      it->release(); // important! otherwise inst will be auto deleted
+      std::ignore =
+          it->release(); // important! otherwise inst will be auto deleted
       // insn->remove_use_def();
       insn->bb = nullptr;
       insns.erase(it);
@@ -254,12 +258,11 @@ void BasicBlock::change_succ(BasicBlock *old_bb, BasicBlock *new_bb) {
       }
     }
     TypeCase(swit, ir::insns::Switch *, inst) {
-      for(auto &each : swit->targets){
-        if(each.second == old_bb){
-          each.second = new_bb;
-        }
+      for (auto &[_, bb] : swit->targets) {
+        if (bb == old_bb)
+          bb = new_bb;
       }
-      if(swit->default_target == old_bb){
+      if (swit->default_target == old_bb) {
         swit->default_target = new_bb;
       }
     }
@@ -431,10 +434,9 @@ void Branch::emit(std::ostream &os) const {
 
 void Switch::emit(std::ostream &os) const {
   os << "switch " << type_string(val.type) << " " << reg_name(val) << ", label "
-     << label_name(default_target->label) << "[" << std::endl;
+     << label_name(default_target->label) << "[\n";
   for (auto &[num, target] : this->targets) {
-    os << "    i32 " << num << ", label " << label_name(target->label)
-       << std::endl;
+    os << "    i32 " << num << ", label " << label_name(target->label) << '\n';
   }
   os << "  ]";
 }
@@ -573,6 +575,53 @@ ostream &operator<<(ostream &os, const Program &p) {
     emit_global_var(os, name, var.get());
   for (auto &[_, f] : p.functions)
     os << f;
+  return os;
+}
+
+std::ostream &dump_cfg(std::ostream &os, const Program &p) {
+  set_print_context(p);
+  os << "```mermaid\n";
+  os << "flowchart TD\n";
+  for (auto &[name, f] : p.functions) {
+    os << "subgraph " << name << '\n';
+    for (auto &bb : f.bbs) {
+      if (bb->insns.empty())
+        continue;
+
+      std::stringstream buf;
+      buf << bb->label << "\\n";
+      for (auto &insn : bb->insns) {
+        insn->emit(buf);
+        buf << "\\n";
+      }
+      auto content = buf.str();
+      std::regex newline_re{"[\\n]"};
+      std::regex_replace(content, newline_re, "\\n");
+      os << "  " << bb->label << "[\"" << content << "\"]\n";
+    }
+    for (auto &bb : f.bbs) {
+      if (bb->insns.empty())
+        continue;
+
+      auto ins = bb->insns.back().get();
+      TypeCase(jump, insns::Jump *, ins) {
+        os << "  " << bb->label << " --> " << jump->target->label << '\n';
+      }
+      else TypeCase(br, insns::Branch *, ins) {
+        os << "  " << bb->label << " -- T --> " << br->true_target->label
+           << '\n';
+        os << "  " << bb->label << " -- F --> " << br->false_target->label
+           << '\n';
+      }
+      else TypeCase(sw, insns::Switch *, ins) {
+        for (auto &[_, target] : sw->targets)
+          os << "  " << bb->label << " -- J --> " << target->label << '\n';
+        os << "  " << bb->label << " -- D --> " << sw->default_target << '\n';
+      }
+    }
+    os << "end\n";
+  }
+  os << "```\n";
   return os;
 }
 
