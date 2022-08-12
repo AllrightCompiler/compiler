@@ -229,4 +229,77 @@ void CFG::compute_rpo() {
   std::reverse(rpo.begin(), rpo.end());
 }
 
+void PostDominatorTree::rpo_dfs(BasicBlock *bb, vector<BasicBlock *> &po,
+                                unordered_map<BasicBlock *, int> &rpo_num,
+                                unordered_set<BasicBlock *> &visited) const {
+  if (visited.count(bb))
+    return;
+  visited.insert(bb);
+  for (auto p : bb->prev)
+    rpo_dfs(p, po, rpo_num, visited);
+  po.push_back(bb);
+  rpo_num[bb] = f->bbs.size() - po.size();
+}
+
+BasicBlock *
+PostDominatorTree::intersect(const unordered_map<BasicBlock *, int> &rpo_num,
+                             BasicBlock *u, BasicBlock *v) const {
+  while (u != v) {
+    while (rpo_num.at(u) > rpo_num.at(v))
+      u = ipdom.at(u);
+    while (rpo_num.at(v) > rpo_num.at(u))
+      v = ipdom.at(v);
+  }
+  return u;
+}
+
+void PostDominatorTree::build() {
+  ipdom.clear();
+  exits.clear();
+  for (auto &bb : f->bbs)
+    if (bb->succ.empty())
+      exits.insert(bb.get());
+
+  std::vector<BasicBlock *> po;
+  std::unordered_map<BasicBlock *, int> rpo_num;
+  std::unordered_set<BasicBlock *> visited;
+  for (auto bb : exits) {
+    rpo_dfs(bb, po, rpo_num, visited);
+    ipdom[bb] = bb;
+  }
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (auto it = po.rbegin(); it != po.rend(); ++it) {
+      auto bb = *it;
+      if (exits.count(bb))
+        continue;
+
+      auto succ_iter = bb->succ.begin();
+      auto new_ipdom = *succ_iter++;
+      for (; succ_iter != bb->succ.end(); ++succ_iter) {
+        auto s = *succ_iter;
+        if (ipdom.count(s))
+          new_ipdom = intersect(rpo_num, s, new_ipdom);
+      }
+      if (ipdom[bb] != new_ipdom) { // nullptr default construct
+        ipdom[bb] = new_ipdom;
+        changed = true;
+      }
+    }
+  }
+}
+
+bool PostDominatorTree::pdoms(BasicBlock *a, BasicBlock *b) const {
+  BasicBlock *b_prev;
+  do {
+    if (b == a)
+      return true;
+    b_prev = b;
+    b = ipdom.at(b);
+  } while (b != b_prev);
+  return false;
+}
+
 } // namespace mediumend

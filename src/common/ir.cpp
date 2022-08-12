@@ -76,12 +76,6 @@ inline std::string op_string(BinaryOp op, int t) {
   }
 }
 
-Function::~Function() {
-  if (cfg) {
-    delete cfg;
-  }
-}
-
 void Function::do_liveness_analysis() {
   cfg->compute_rpo();
   auto po = cfg->rpo;
@@ -590,6 +584,9 @@ std::ostream &dump_cfg(std::ostream &os, const Program &p) {
 
       std::stringstream buf;
       buf << bb->label << "\\n";
+      if (bb->loop)
+        buf << "loop level: " << bb->loop->level << "\\n";
+      buf << "freq: " << bb->freq << "\\n";
       for (auto &insn : bb->insns) {
         insn->emit(buf);
         buf << "\\n";
@@ -599,7 +596,8 @@ std::ostream &dump_cfg(std::ostream &os, const Program &p) {
       std::regex_replace(content, newline_re, "\\n");
       os << "  " << bb->label << "[\"" << content << "\"]\n";
     }
-    for (auto &bb : f.bbs) {
+    for (auto &bb_ptr : f.bbs) {
+      auto bb = bb_ptr.get();
       if (bb->insns.empty())
         continue;
 
@@ -608,6 +606,17 @@ std::ostream &dump_cfg(std::ostream &os, const Program &p) {
         os << "  " << bb->label << " --> " << jump->target->label << '\n';
       }
       else TypeCase(br, insns::Branch *, ins) {
+        auto et = std::make_pair(bb, br->true_target);
+        auto ef = std::make_pair(bb, br->false_target);
+
+        // os << "  " << bb->label << " --T"
+        //    << " f: " << f.branch_freqs.at(et) << " p: " <<
+        //    f.branch_probs.at(et)
+        //    << " --> " << br->true_target->label << '\n';
+        // os << "  " << bb->label << " --F"
+        //    << " f: " << f.branch_freqs.at(ef) << " p: " <<
+        //    f.branch_probs.at(ef)
+        //    << " --> " << br->false_target->label << '\n';
         os << "  " << bb->label << " -- T --> " << br->true_target->label
            << '\n';
         os << "  " << bb->label << " -- F --> " << br->false_target->label

@@ -230,6 +230,7 @@ Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry
     }
     return new_inst;
   } else assert(false);
+  __builtin_unreachable();
 }
 
 void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *exit) {
