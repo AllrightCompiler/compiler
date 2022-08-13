@@ -28,6 +28,7 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"sort_basicblock", sort_basicblock},
   {"gep_destruction", gep_destruction},
   {"remove_recursive_tail_call", remove_recursive_tail_call},
+  {"loop_parallel", loop_parallel},
   {"value_range_analysis", value_range_analysis},
   {"br2switch", br2switch},
   {"loop_interchange", loop_interchange},
@@ -60,6 +61,10 @@ std::vector<funcptr> passes = {
   
   remove_recursive_tail_call,
 
+  gvn_cfg,
+
+  loop_parallel,
+
   function_inline,
   remove_unused_function,
   main_global_var_to_local,
@@ -85,7 +90,7 @@ std::vector<funcptr> passes = {
   gep_destruction,
   gvn_no_cfg,
 
-  operator_strength_reduction,
+  // operator_strength_reduction,
   gvn_cfg,
 
   sort_basicblock,

@@ -19,7 +19,7 @@ void add_phi_reg(ir::insns::Phi *phi, unordered_set<ir::insns::Phi *> &used_phi,
   used_phi.insert(phi);
   for(auto &reg : used_reg){
     if(!func->has_param(reg)){
-      auto def = func->def_list[reg];
+      auto def = func->def_list.at(reg);
       TypeCase(new_phi, ir::insns::Phi *, def){
         if(!used_phi.count(new_phi)){
           add_phi_reg(new_phi, used_phi, func);
@@ -39,7 +39,7 @@ void remove_unused_phi(ir::Function *func){
       auto used_reg = inst->use();
       for(auto &reg : used_reg){
         if(!func->has_param(reg)){
-          auto def = func->def_list[reg];
+          auto def = func->def_list.at(reg);
           TypeCase(phi, ir::insns::Phi *, def){
             add_phi_reg(phi, used_phi, func);
           }
@@ -116,7 +116,7 @@ void main_global_var_to_local(ir::Program *prog){
       }
     }
   }
-  auto &func = prog->functions["main"];
+  auto &func = prog->functions.at("main");
   unordered_map<string, Reg>
       global_name_to_local_reg; // 全局变量到局部变量的映射
   auto &entry = func.bbs.front();

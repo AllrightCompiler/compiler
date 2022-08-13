@@ -140,7 +140,7 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
   return info;
 }
 
-Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry, BasicBlock *exit) {
+static Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry, BasicBlock *exit) {
   auto reg_map_if = [=](Reg reg) {
     if (reg_map[map_curid].count(reg)) return reg_map[map_curid].at(reg);
     else return reg;
@@ -232,7 +232,7 @@ Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry
   } else assert(false);
 }
 
-void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *exit) {
+static void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *exit) {
   // map prev & succ
   for (auto prev_bb : bb->prev) {
     if (bb == entry) continue; // new_entry's prev has been done

@@ -611,12 +611,12 @@ void BasicBlock::loop_dfs() {
           bbs.insert(bbs.end(), bb->prev.begin(), bb->prev.end());
         }
       } else {
-        new_loop->no_inner = false;
         Loop *inner_loop = bb->loop;
         while (inner_loop->outer)
           inner_loop = inner_loop->outer;
         if (inner_loop == new_loop)
           continue;
+        new_loop->no_inner = false;
         inner_loop->outer = new_loop;
         bbs.insert(bbs.end(), inner_loop->header->prev.begin(),
                    inner_loop->header->prev.end());

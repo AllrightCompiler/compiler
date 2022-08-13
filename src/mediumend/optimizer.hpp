@@ -40,6 +40,7 @@ void remove_zero_global_def(ir::Program *prog);
 void sort_basicblock(ir::Program *prog);
 void gep_destruction(ir::Program *prog);
 void remove_recursive_tail_call(ir::Program *prog);
+void loop_parallel(ir::Program *prog);
 void value_range_analysis(ir::Program *prog);
 void br2switch(ir::Program *prog);
 void loop_interchange(ir::Program *prog);
