@@ -70,7 +70,7 @@ std::vector<funcptr> passes = {
   main_global_var_to_local,
   mem2reg,
 
-  loop_unroll,
+  // loop_unroll,
 
   array_mem2reg,
     gvn_cfg,
@@ -81,7 +81,7 @@ std::vector<funcptr> passes = {
 
   gvn_cfg,
   gvn_cfg,
-  loop_unroll,
+  // loop_unroll,
 
   gvn_cfg,
   remove_useless_loop,
