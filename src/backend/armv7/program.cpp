@@ -511,7 +511,8 @@ void Function::emit(std::ostream &os) {
 }
 
 void Function::emit_jump_tables(std::ostream &os) {
-  os << ".section .rodata\n";
+  if (!jump_tables.empty())
+    os << ".section .text\n";
   for (size_t i = 0; i < jump_tables.size(); ++i) {
     auto jt_name = "JT" + std::to_string(i) + "$" + name;
     auto &sw = jump_tables[i];
