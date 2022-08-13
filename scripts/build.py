@@ -4,7 +4,7 @@ import subprocess
 
 TIMEOUT = 60
 
-compiler = './compiler'
+compiler = './compiler -O2'
 testcases_dir = '/mnt/d/compiler-testcases/functional'
 cross_gcc = 'arm-linux-gnueabihf-gcc'
 
