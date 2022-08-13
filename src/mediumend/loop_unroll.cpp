@@ -708,6 +708,7 @@ void loop_unroll(ir::Function *func) {
       } else continue; // TODO: temporarily disabled
       // } else loop_info.loop_type = 2;
     }
+    if (loop_info.loop_type == 2 && loop_bbs.size() > 1) continue; // not unroll type 2 loop with branches
     if (loop_info.loop_type == 2) { // Decrease end by unroll * step, therefore erase branches jump out in middle
       Instruction *binary_cond = func->def_list.at(loop_info.cond_reg);
       Reg new_end = func->new_reg(Int);
