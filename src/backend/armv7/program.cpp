@@ -201,7 +201,7 @@ class ProgramTranslator {
         } else {
           Reg imm_reg = fn.new_reg(General);
           fn.emit_imm(bb, imm_reg, dim);
-          bb->push(new FusedMul{t, index_reg, imm_reg, s});
+          bb->push(new FusedMul{FusedMul::Add, t, index_reg, imm_reg, s});
         }
         index_reg = t;
       }
@@ -291,13 +291,9 @@ class ProgramTranslator {
       case BinaryOp::Div:
         bb->push(new RType{RType::from(binary->op), dst, s1, s2});
         break;
-      case BinaryOp::Mod: {
-        // TODO: 确认负数取模的行为
-        Reg t = fn.new_reg(General);
-        bb->push(new RType{RType::Op::Div, t, s1, s2});
-        bb->push(new FusedMul{dst, t, s2, s1, true});
+      case BinaryOp::Mod:
+        bb->push(new PseudoModulo{dst, s1, s2});
         break;
-      }
       case BinaryOp::Eq:
       case BinaryOp::Neq:
       case BinaryOp::Geq:
@@ -937,7 +933,7 @@ void Function::replace_pseudo_insns() {
         insns.emplace(it, cmov_false);
         it->reset(cmov_true);
       }
-      else TypeCase(br, CmpBranch *, it->get()) {
+      TypeCase(br, CmpBranch *, it->get()) {
         auto cond = br->cond;
         auto true_target = br->true_target;
         auto false_target = br->false_target;
@@ -958,11 +954,19 @@ void Function::replace_pseudo_insns() {
           it->reset(new Branch{false_target});
         }
       }
-      else TypeCase(br, Branch *, it->get()) {
+      TypeCase(br, Branch *, it->get()) {
         if (br->target == next_bb && br->cond == ExCond::Always)
           remove = true;
       }
-      else TypeCase(sw, Switch *, it->get()) {
+      TypeCase(div, PseudoOneDividedByReg *, it->get()) {
+        insns.insert(
+            it, std::make_unique<IType>(IType::Add, div->dst, div->src, 1));
+        insns.insert(it,
+                     std::make_unique<Compare>(div->dst, Operand2::from(3)));
+        *it = std::make_unique<Move>(div->dst, Operand2::from(0));
+        it->get()->cond = ExCond::Cs;
+      }
+      TypeCase(sw, Switch *, it->get()) {
         int lb = sw->targets.front().first;
         int ub = sw->targets.back().first;
         Reg val = sw->val, tmp = sw->tmp;

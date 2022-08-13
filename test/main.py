@@ -54,7 +54,7 @@ def get_testcases(config: Config) -> list[str]:
 
 
 def get_answer(file: str) -> tuple[list[str], int]:
-    content = open(file).read().splitlines()
+    content = [line.strip() for line in open(file).read().strip().splitlines()]
     return content[:-1], int(content[-1])
 
 
@@ -77,7 +77,7 @@ def run(
     executable = os.path.join(workdir, 'main')
     output = os.path.join(workdir, 'output')
     time = os.path.join(workdir, 'time')
-    if os.system(f'gcc -march=armv7 {assemble} runtime/libsysy.a'
+    if os.system(f'gcc -march=armv7-a {assemble} runtime/libsysy.a'
                  f' -o {executable}') != 0:
         return Result.LINKER_ERROR
     answer_content, answer_exitcode = get_answer(answer)
@@ -93,8 +93,10 @@ def run(
         except subprocess.TimeoutExpired:
             proc.kill()
             return Result.TIME_LIMIT_EXCEEDED
+        output_content = [line.strip()
+                          for line in open(output).read().strip().splitlines()]
         if proc.returncode != answer_exitcode \
-                or open(output).read().splitlines() != answer_content:
+                or output_content != answer_content:
             return Result.WRONG_ANSWER
         if round > 1:
             print('.', end='', flush=True)
@@ -147,6 +149,9 @@ def test(config: Config, testcase: str) -> bool:
         result = Result.GCC_ERROR \
             if os.system(
                 'gcc -march=armv7 -xc++ -O2 -S'
+                f' -include runtime/sylib.h {source} -o {assemble}') != 0 \
+            and os.system(
+                'gcc -march=armv7 -xc -O2 -S'
                 f' -include runtime/sylib.h {source} -o {assemble}') != 0 \
             else run(tempdir, assemble, input, answer, 1)
         if isinstance(result, Result):
