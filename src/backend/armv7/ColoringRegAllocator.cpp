@@ -489,10 +489,18 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
             spilling_regs.insert(tmp);
           }
 
+          auto insn_to_remove = insns.end();
           if (use.count(r)) {
-            if (obj)
-              insns.emplace(it, new LoadStack{tmp, obj, 0});
-            else {
+            if (obj) {
+              auto mov = dynamic_cast<Move *>(ins);
+              if (mov && mov->is_reg_mov()) {
+                Reg dst = mov->dst;
+                insns.emplace(it, new LoadStack{dst, obj, 0});
+                insn_to_remove = it;
+              } else {
+                insns.emplace(it, new LoadStack{tmp, obj, 0});
+              }
+            } else {
               // f->reg_val[tmp] = f->reg_val.at(r);
               switch (val->index()) {
               case RegValueType::Imm:
@@ -515,11 +523,22 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
           if (def.count(r)) {
             if (obj) {
               // NOTE: 针对switch的特殊处理，不在基本块终结指令后添加store
-              if (it != insns.end())
-                insns.emplace(it, new StoreStack{tmp, obj, 0});
+              if (it != insns.end()) {
+                auto mov = dynamic_cast<Move *>(ins);
+                if (mov && mov->is_reg_mov()) {
+                  Reg src = mov->src.get<RegImmShift>().r;
+                  insn_to_remove = std::prev(it);
+                  insns.emplace(it, new StoreStack{src, obj, 0});
+                } else {
+                  insns.emplace(it, new StoreStack{tmp, obj, 0});
+                }
+              }
             } else
-              insns.erase(std::prev(it));
+              insn_to_remove = std::prev(it);
           }
+
+          if (insn_to_remove != insns.end())
+            insns.erase(insn_to_remove);
         }
       }
     }
