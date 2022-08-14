@@ -190,6 +190,9 @@ void remove_uneffective_inst(ir::Program *prog){
         }
       }
       TypeCase(call, ir::insns::Call *, inst){
+        if(call->func == func->name){
+          continue;
+        }
         if(prog->functions.count(call->func)){
           auto &callee = prog->functions.at(call->func);
           if(func->use_list[call->dst].size()){
