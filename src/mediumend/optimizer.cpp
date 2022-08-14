@@ -45,7 +45,9 @@ std::vector<funcptr> passes = {
   main_global_var_to_local,
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
-  
+  remove_uneffective_inst,
+  remove_unused_function,
+
   // br2switch,
 
   gvn_no_cfg,
