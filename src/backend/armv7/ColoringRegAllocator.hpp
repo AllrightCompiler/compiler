@@ -31,6 +31,7 @@ class ColoringRegAllocator {
   std::set<Move *> active_moves;
 
   std::set<Reg> spilling_regs;
+  std::map<Reg, double> load_weight, store_weight;
 
   int K; // 可用于分配的物理寄存器数量
   Function *f;
@@ -38,7 +39,7 @@ class ColoringRegAllocator {
   RegFilter reg_filter;
 
   void init(Function &func, bool is_gp_pass);
-  double get_basic_spill_cost(Reg r);
+  double get_spill_cost(Reg r);
 
   // functions
   std::set<Reg> adjacent(Reg n) const;
@@ -47,6 +48,7 @@ class ColoringRegAllocator {
   bool ok(Reg t, Reg r) const;
   bool conservative(const std::set<Reg> &nodes) const;
   Reg get_alias(Reg n) const;
+  std::set<Reg> filtered(const std::set<Reg>& regs) const;
 
   // procedures
   void add_edge(Reg u, Reg v);

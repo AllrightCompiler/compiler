@@ -126,7 +126,9 @@ class ProgramTranslator {
         next_bb = std::next(dst_it)->get();
 
       auto bb = dst_it->get();
+      auto loop = (*src_it)->loop;
       bb->label = dst.new_label();
+      bb->loop_level = loop ? loop->level : 0;
       for (auto &ir_insn : (*src_it)->insns)
         translate_instruction(dst_fn, bb, ir_insn.get(), next_bb);
     }

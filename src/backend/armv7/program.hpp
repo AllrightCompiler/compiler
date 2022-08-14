@@ -19,6 +19,7 @@ struct BasicBlock {
 
   std::set<BasicBlock *> pred, succ;              // CFG
   std::set<Reg> def, live_use, live_in, live_out; // for liveness analysis
+  int loop_level;
 
   void push(Instruction *insn) { insns.emplace_back(insn); }
   void push(ExCond cond, Instruction *insn) {
