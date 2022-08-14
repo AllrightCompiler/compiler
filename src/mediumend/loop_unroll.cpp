@@ -225,7 +225,8 @@ static Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock
     } else {
       for (auto pair : phi->incoming) {
         auto mapped_bb = bb_map[map_curid].at(pair.first);
-        auto mapped_reg = reg_map[map_curid].at(pair.second);
+        auto mapped_reg = pair.second;
+        if (reg_map[map_curid].count(mapped_reg)) mapped_reg = reg_map[map_curid].at(mapped_reg);
         new_inst->incoming[mapped_bb] = mapped_reg;
       }
     }
