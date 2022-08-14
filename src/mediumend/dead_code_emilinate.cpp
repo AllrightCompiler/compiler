@@ -206,17 +206,28 @@ void remove_uneffective_inst(ir::Program *prog){
     }
   }
   for(auto &each : prog->functions){
+    bool remove_ret = true;
     if(each.second.ret_used || !each.second.sig.ret_type.has_value()){
-      continue;
+      remove_ret = false;
+    } else {
+      each.second.sig.ret_type.reset();
     }
-    each.second.sig.ret_type.reset();
     auto &bbs = each.second.bbs;
     for(auto &bb : bbs){
-      auto ret = dynamic_cast<ir::insns::Return *>(bb->insns.back().get());
-      if(ret){
-        ret->remove_use_def();
-        ret->val.reset();
-        useful_inst.insert(ret);
+      for(auto &inst : bb->insns){
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          if(prog->functions.count(call->func) && !prog->functions.at(call->func).is_ret_used()){
+            call->dst.type = ScalarType::String;
+          }
+        }
+      }
+      if(remove_ret){
+        auto ret = dynamic_cast<ir::insns::Return *>(bb->insns.back().get());
+        if(ret){
+          ret->remove_use_def();
+          ret->val.reset();
+          useful_inst.insert(ret);
+        }
       }
     }
   }
