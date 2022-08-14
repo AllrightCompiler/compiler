@@ -39,6 +39,7 @@ std::vector<funcptr> passes = {
   clean_useless_cf,
   main_global_var_to_local,
   mem2reg,
+  mark_pure_func,
   remove_uneffective_inst,
   remove_unused_function,
   main_global_var_to_local,

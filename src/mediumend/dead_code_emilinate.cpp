@@ -121,11 +121,21 @@ void check_inst(ir::Instruction *inst){
 }
 
 void remove_uneffective_inst(ir::Program *prog){
+  unordered_set<ir::Instruction *> useful_inst;
+  unordered_set<ir::Function *> func_stack;
+  unordered_set<std::string> visited_func;
   for(auto &each : prog->functions){
-    ir::Function *func = &each.second;
+    each.second.ret_used = false;
+  }
+  prog->functions.at("main").ret_used = true;
+  func_stack.insert(&prog->functions.at("main"));
+  while(func_stack.size()){
+    auto iter = func_stack.begin();
+    ir::Function *func = *iter;
+    func_stack.erase(iter);
     auto &bbs = func->bbs;
     unordered_set<ir::Instruction *> stack;
-    unordered_set<ir::Instruction *> useful_inst; 
+    visited_func.insert(func->name);
     for (auto &bb : bbs) {
       auto &insns = bb->insns;
       for (auto &inst : insns) {
@@ -144,7 +154,13 @@ void remove_uneffective_inst(ir::Program *prog){
             }
           }
         } else TypeCase(term, ir::insns::Terminator *, inst.get()){
-          stack.insert(term);
+          TypeCase(ret, ir::insns::Return *, inst.get()){
+            if(func->is_ret_used() || !func->sig.ret_type.has_value()){
+              stack.insert(term);
+            }
+          } else {
+            stack.insert(term);
+          }
         } else TypeCase(store, ir::insns::Store *, inst.get()){
           stack.insert(store);
         } else TypeCase(memdef, ir::insns::MemDef *, inst.get()){
@@ -173,7 +189,39 @@ void remove_uneffective_inst(ir::Program *prog){
           stack.insert(def);
         }
       }
+      TypeCase(call, ir::insns::Call *, inst){
+        if(prog->functions.count(call->func)){
+          auto &callee = prog->functions.at(call->func);
+          if(func->use_list[call->dst].size()){
+            if(!callee.ret_used){
+              callee.ret_used = true;
+              func_stack.insert(&callee);
+            }
+          }
+          if(!visited_func.count(call->func)){
+            func_stack.insert(&callee);
+          }
+        }
+      }
     }
+  }
+  for(auto &each : prog->functions){
+    if(each.second.ret_used || !each.second.sig.ret_type.has_value()){
+      continue;
+    }
+    each.second.sig.ret_type.reset();
+    auto &bbs = each.second.bbs;
+    for(auto &bb : bbs){
+      auto ret = dynamic_cast<ir::insns::Return *>(bb->insns.back().get());
+      if(ret){
+        ret->remove_use_def();
+        ret->val.reset();
+        useful_inst.insert(ret);
+      }
+    }
+  }
+  for(auto &each : prog->functions){
+    auto &bbs = each.second.bbs;
     for(auto &bb : bbs){
       bb->remove_if([&](ir::Instruction *ir) {
         return !useful_inst.count(ir);
