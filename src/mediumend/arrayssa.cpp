@@ -127,9 +127,6 @@ void array_mem2reg(ir::Program *prog) {
       for (auto &ins : bb->insns) {
         auto inst = ins.get();
         TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
-          if (!prog->global_vars.at(loadaddr->var_name)->type.is_array()) {
-            continue;
-          }
           if (!name2base.count(loadaddr->var_name)) {
             name2base[loadaddr->var_name] = loadaddr->dst;
             alloc_set[loadaddr->dst] = bb;
@@ -219,6 +216,8 @@ void array_mem2reg(ir::Program *prog) {
             new_inst->bb = bb;
             new_inst->add_use_def();
             use_before_def[bb][base].insert(new_inst->dst);
+          } else {
+            assert(false);
           }
         }
         TypeCase(inst, ir::insns::Store *, iter->get()) {
