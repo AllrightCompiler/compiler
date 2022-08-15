@@ -171,6 +171,7 @@ struct BasicBlock {
   }
   void change_succ(BasicBlock *old_bb, BasicBlock *new_bb);
   void change_prev(BasicBlock *old_bb, BasicBlock *new_bb);
+  void remove_prev(BasicBlock *bb);
 };
 
 void calc_loop_level(Loop *loop);

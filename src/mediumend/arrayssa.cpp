@@ -243,6 +243,8 @@ void array_mem2reg(ir::Program *prog) {
             new_inst->add_use_def();
             alloc_map[bb][base] = dst;
             use_before_def[bb][base].clear();
+          } else {
+            assert(false);
           }
         }
         TypeCase(inst, ir::insns::Call *, iter->get()) {

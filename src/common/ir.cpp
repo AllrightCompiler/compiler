@@ -282,6 +282,22 @@ void BasicBlock::change_prev(BasicBlock *old_bb, BasicBlock *new_bb) {
   }
 }
 
+void BasicBlock::remove_prev(BasicBlock *bb) {
+  if (this->prev.count(bb)) {
+    this->prev.erase(bb);
+    for (auto &ins : insns) {
+      TypeCase(phi, ir::insns::Phi *, ins.get()) {
+        phi->remove_use_def();
+        phi->incoming.erase(bb);
+        phi->add_use_def();
+      }
+      else {
+        break;
+      }
+    }
+  }
+}
+
 void Function::clear_visit() {
   for (auto &bb : bbs) {
     bb->clear_visit();
