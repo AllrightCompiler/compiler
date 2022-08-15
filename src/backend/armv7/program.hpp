@@ -3,6 +3,7 @@
 #include "backend/armv7/instruction.hpp"
 #include "common/common.hpp"
 
+#include <deque>
 #include <functional>
 #include <list>
 #include <set>
@@ -71,7 +72,7 @@ struct Function {
   // 2. 普通栈对象，包括局部数组和spilled regs，相对fp偏移为负
   // 未计入的类型:
   // 3. 调用子函数压栈的参数，相对fp偏移为负
-  std::vector<StackObject *> param_objs, normal_objs;
+  std::deque<StackObject *> param_objs, normal_objs;
 
   std::map<Reg, RegValue> reg_val; // 记录一些单赋值虚拟寄存器的取值
   std::set<Move *>

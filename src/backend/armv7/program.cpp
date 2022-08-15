@@ -748,7 +748,7 @@ int round_up_to_imm8m(int x) {
   return (x + a - 1) & m;
 }
 
-void assign_offsets(const std::vector<StackObject *> &objs) {
+void assign_offsets(const std::deque<StackObject *> &objs) {
   int offset = 0;
   for (auto obj : objs) {
     obj->offset = offset;
