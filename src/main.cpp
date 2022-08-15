@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
 
     auto &ir_program = ir_gen.get_program();
     if (has_option(argc, argv, "-O2")) {
-    //   mediumend::run_medium(ir_program.get(), has_option(argc, argv, "--llvm"));
+      mediumend::run_medium(ir_program.get(), has_option(argc, argv, "--llvm"));
     }
     if (has_option(argc, argv, "--ir")) {
       os << *ir_program;
