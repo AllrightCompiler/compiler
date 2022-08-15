@@ -154,6 +154,13 @@ void array_mem2reg(ir::Program *prog) {
               defs[reg2base.at(use_reg)].insert(bb);
             }
           }
+          for (auto &gvar : used_gvar[call->func]){
+            if (name2base.count(gvar)) {
+              defs[name2base.at(gvar)].insert(bb);
+            } else {
+              assert(false);
+            }
+          }
         }
       }
     }
