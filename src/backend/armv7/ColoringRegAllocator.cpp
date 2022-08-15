@@ -108,7 +108,7 @@ void ColoringRegAllocator::build() {
       auto use = filtered(ins->use());
       TypeCase(mov, Move *, ins) {
         // NOTE: phi函数解构产生的mov的源寄存器和目的寄存器不应被合并
-        if (mov->is_reg_mov() && !f->phi_moves.count(mov)) {
+        if (mov->is_reg_mov() /*&& !f->phi_moves.count(mov)*/) {
           auto consider = false;
           for (Reg u : use) {
             consider = true;
