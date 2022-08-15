@@ -52,10 +52,11 @@ void ir_validation(ir::Program *prog);
 bool in_array_ssa();
 
 inline void run_medium(ir::Program *prog, bool disable_gep_des) {
-  for (auto &func : prog->functions){
-    func.second.cfg = new CFG(&func.second);
-    func.second.cfg->build();
-    func.second.cfg->remove_unreachable_bb();
+  for (auto &[_, f] : prog->functions){
+    auto cfg = new CFG{&f};
+    cfg->build();
+    cfg->remove_unreachable_bb();
+    f.cfg = cfg;
   }
   compute_use_def_list(prog);
 

@@ -228,6 +228,8 @@ std::ostream &operator<<(std::ostream &os, const Program &);
 std::ostream &operator<<(std::ostream &os, const ConstValue &);
 void emit_global_var(std::ostream &os, const std::string &name, Var *var);
 
+std::ostream &dump_cfg(std::ostream &os, const Program &);
+
 void set_print_context(const Program &);
 const Program *get_print_context();
 
