@@ -15,6 +15,15 @@ void SimpleBranch::emit(std::ostream &os) const {
      << label_name(false_target->label);
 }
 
+void SimpleSwitch::emit(std::ostream &os) const {
+  os << "switch " << type_string(val.type) << " " << reg_name(val) << ", label "
+     << label_name(default_target->label) << "[" << std::endl;
+  for(auto &[num, target] : this->targets){
+    os << "    i32 " << num << ", label " << label_name(target->label) << std::endl;
+  }
+  os << "  ]";
+}
+
 void SimplePhi::emit(std::ostream &os) const {
   write_reg(os) << "phi " << type_string(dst.type) << ' ';
   for (auto it = srcs.begin(); it != srcs.end(); ++it) {

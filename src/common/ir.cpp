@@ -144,13 +144,15 @@ void BasicBlock::pop_front() {
   insns.pop_front(); // auto release
 }
 
-void BasicBlock::insert_at(list<unique_ptr<Instruction>>::iterator it, Instruction *insn) {
+void BasicBlock::insert_at(list<unique_ptr<Instruction>>::iterator it,
+                           Instruction *insn) {
   insns.emplace(it, insn);
   insn->bb = this;
   insn->add_use_def();
 }
 
-list<unique_ptr<Instruction>>::iterator BasicBlock::remove_at(list<unique_ptr<Instruction>>::iterator it) {
+list<unique_ptr<Instruction>>::iterator
+BasicBlock::remove_at(list<unique_ptr<Instruction>>::iterator it) {
   auto insn = it->release(); // important! otherwise inst will be auto deleted
   insn->remove_use_def();
   insn->bb = nullptr;
@@ -187,7 +189,8 @@ void BasicBlock::insert_after_phi(Instruction *insn) {
 void BasicBlock::insert_after_inst(Instruction *prev, Instruction *insn) {
   auto it = insns.begin();
   for (; it != insns.end(); it++) {
-    if (it->get() == prev) break;
+    if (it->get() == prev)
+      break;
   }
   assert(it != insns.end());
   it++;
@@ -232,36 +235,47 @@ BasicBlock::remove_if(std::function<bool(Instruction *)> f) {
   return ret;
 }
 
-void BasicBlock::change_succ(BasicBlock* old_bb, BasicBlock* new_bb){
-  if(this->succ.count(old_bb)){
+void BasicBlock::change_succ(BasicBlock *old_bb, BasicBlock *new_bb) {
+  if (this->succ.count(old_bb)) {
     auto inst = this->insns.back().get();
     this->succ.erase(old_bb);
     this->succ.insert(new_bb);
-    TypeCase(br, ir::insns::Branch *, inst){
-      if(br->true_target == old_bb){
+    TypeCase(br, ir::insns::Branch *, inst) {
+      if (br->true_target == old_bb) {
         br->true_target = new_bb;
       }
-      if(br->false_target == old_bb){
+      if (br->false_target == old_bb) {
         br->false_target = new_bb;
       }
     }
-    TypeCase(jmp, ir::insns::Jump *, inst){
-      if(jmp->target == old_bb){
+    TypeCase(jmp, ir::insns::Jump *, inst) {
+      if (jmp->target == old_bb) {
         jmp->target = new_bb;
+      }
+    }
+    TypeCase(swit, ir::insns::Switch *, inst) {
+      for(auto &each : swit->targets){
+        if(each.second == old_bb){
+          each.second = new_bb;
+        }
+      }
+      if(swit->default_target == old_bb){
+        swit->default_target = new_bb;
       }
     }
   }
 }
 
-void BasicBlock::change_prev(BasicBlock* old_bb, BasicBlock* new_bb){
-  if(this->prev.count(old_bb)){
+void BasicBlock::change_prev(BasicBlock *old_bb, BasicBlock *new_bb) {
+  if (this->prev.count(old_bb)) {
     this->prev.erase(old_bb);
     this->prev.insert(new_bb);
-    for(auto &ins: insns){
-      TypeCase(phi, ir::insns::Phi*, ins.get()){
+    for (auto &ins : insns) {
+      TypeCase(phi, ir::insns::Phi *, ins.get()) {
         phi->incoming[new_bb] = phi->incoming.at(old_bb);
         phi->incoming.erase(old_bb);
-      } else {
+      }
+      else {
         break;
       }
     }
@@ -321,20 +335,24 @@ void Store::emit(std::ostream &os) const {
 }
 
 void MemUse::emit(std::ostream &os) const {
-  if(call_use){
-    os << "(" << reg_name(dst) << ") = (" << reg_name(dep) << ")(" << reg_name(load_src) << ")";
+  if (call_use) {
+    os << "(" << reg_name(dst) << ") = (" << reg_name(dep) << ")("
+       << reg_name(load_src) << ")";
   } else {
     auto ts = type_string(dst.type);
-    write_reg(os) << "(" << reg_name(dep) <<")[" << reg_name(load_src) << "]";
+    write_reg(os) << "(" << reg_name(dep) << ")[" << reg_name(load_src) << "]";
   }
 }
 
 void MemDef::emit(std::ostream &os) const {
-  if(call_def){
-    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"] = (" << reg_name(store_val) << ")";
+  if (call_def) {
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) << "] = ("
+       << reg_name(store_val) << ")";
   } else {
     auto ts = type_string(store_val.type);
-    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst) <<"](dep:" << reg_name(dep) << ") = " << ts << " " << reg_name(store_val);
+    os << "(" << reg_name(dst) << ")[" << reg_name(store_dst)
+       << "](dep:" << reg_name(dep) << ") = " << ts << " "
+       << reg_name(store_val);
   }
 }
 
@@ -409,6 +427,16 @@ void Branch::emit(std::ostream &os) const {
   os << "br " << type_string(val.type) << " " << reg_name(val) << ", label "
      << label_name(true_target->label) << ", label "
      << label_name(false_target->label);
+}
+
+void Switch::emit(std::ostream &os) const {
+  os << "switch " << type_string(val.type) << " " << reg_name(val) << ", label "
+     << label_name(default_target->label) << "[" << std::endl;
+  for (auto &[num, target] : this->targets) {
+    os << "    i32 " << num << ", label " << label_name(target->label)
+       << std::endl;
+  }
+  os << "  ]";
 }
 
 void Phi::emit(std::ostream &os) const {
@@ -583,12 +611,12 @@ void BasicBlock::loop_dfs() {
           bbs.insert(bbs.end(), bb->prev.begin(), bb->prev.end());
         }
       } else {
-        new_loop->no_inner = false;
         Loop *inner_loop = bb->loop;
         while (inner_loop->outer)
           inner_loop = inner_loop->outer;
         if (inner_loop == new_loop)
           continue;
+        new_loop->no_inner = false;
         inner_loop->outer = new_loop;
         bbs.insert(bbs.end(), inner_loop->header->prev.begin(),
                    inner_loop->header->prev.end());
@@ -681,12 +709,12 @@ void MemUse::remove_use_def() {
 }
 
 void MemUse::change_use(Reg old_reg, Reg new_reg) {
-  if(dep == old_reg){
+  if (dep == old_reg) {
     dep = new_reg;
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
   }
-  if(load_src == old_reg){
+  if (load_src == old_reg) {
     load_src = new_reg;
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
@@ -698,7 +726,7 @@ void MemDef::add_use_def() {
   bb->func->use_list[store_dst].insert(this);
   bb->func->use_list[store_val].insert(this);
   bb->func->use_list[dep].insert(this);
-  for(auto each : uses_before_def){
+  for (auto each : uses_before_def) {
     bb->func->use_list[each].insert(this);
   }
 }
@@ -708,32 +736,32 @@ void MemDef::remove_use_def() {
   bb->func->use_list[store_dst].erase(this);
   bb->func->use_list[store_val].erase(this);
   bb->func->use_list[dep].erase(this);
-  for(auto each : uses_before_def){
+  for (auto each : uses_before_def) {
     bb->func->use_list[each].erase(this);
   }
 }
 
 void MemDef::change_use(Reg old_reg, Reg new_reg) {
-  if(store_dst == old_reg){
+  if (store_dst == old_reg) {
     store_dst = new_reg;
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
   }
-  if(store_val == old_reg){
+  if (store_val == old_reg) {
     store_val = new_reg;
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
   }
-  if(dep == old_reg){
+  if (dep == old_reg) {
     dep = new_reg;
     bb->func->use_list[new_reg].insert(this);
     bb->func->use_list[old_reg].erase(this);
   }
-  if(uses_before_def.count(old_reg)){
+  if (uses_before_def.count(old_reg)) {
     uses_before_def.erase(old_reg);
     bb->func->use_list[old_reg].erase(this);
-    if(bb->func->def_list.count(new_reg)){
-      TypeCase(memuse, ir::insns::MemUse *, bb->func->def_list.at(new_reg)){
+    if (bb->func->def_list.count(new_reg)) {
+      TypeCase(memuse, ir::insns::MemUse *, bb->func->def_list.at(new_reg)) {
         uses_before_def.insert(new_reg);
         bb->func->use_list[new_reg].insert(this);
       }
@@ -764,7 +792,7 @@ void Call::add_use_def() {
   for (auto &reg : args) {
     bb->func->use_list[reg].insert(this);
   }
-  for(auto &reg : global_use){
+  for (auto &reg : global_use) {
     bb->func->use_list[reg].insert(this);
   }
 }
@@ -774,7 +802,7 @@ void Call::remove_use_def() {
   for (auto &reg : args) {
     bb->func->use_list[reg].erase(this);
   }
-  for(auto &reg : global_use){
+  for (auto &reg : global_use) {
     bb->func->use_list[reg].erase(this);
   }
 }
@@ -787,7 +815,7 @@ void Call::change_use(Reg old_reg, Reg new_reg) {
       bb->func->use_list[old_reg].erase(this);
     }
   }
-  for(auto &reg : global_use){
+  for (auto &reg : global_use) {
     if (reg == old_reg) {
       reg = new_reg;
       bb->func->use_list[new_reg].insert(this);
@@ -867,7 +895,7 @@ void Phi::change_use(Reg old_reg, Reg new_reg) {
       bb->func->use_list[old_reg].erase(this);
     }
   }
-  if(use_before_def.count(old_reg)){
+  if (use_before_def.count(old_reg)) {
     use_before_def.erase(old_reg);
     use_before_def.insert(new_reg);
     bb->func->use_list[new_reg].insert(this);
@@ -909,6 +937,18 @@ void Branch::add_use_def() { bb->func->use_list[val].insert(this); }
 void Branch::remove_use_def() { bb->func->use_list[val].erase(this); }
 
 void Branch::change_use(Reg old_reg, Reg new_reg) {
+  if (val == old_reg) {
+    val = new_reg;
+    bb->func->use_list[new_reg].insert(this);
+    bb->func->use_list[old_reg].erase(this);
+  }
+}
+
+void Switch::add_use_def() { bb->func->use_list[val].insert(this); }
+
+void Switch::remove_use_def() { bb->func->use_list[val].erase(this); }
+
+void Switch::change_use(Reg old_reg, Reg new_reg) {
   if (val == old_reg) {
     val = new_reg;
     bb->func->use_list[new_reg].insert(this);

@@ -19,6 +19,7 @@ struct BasicBlock {
 
   std::set<BasicBlock *> pred, succ;              // CFG
   std::set<Reg> def, live_use, live_in, live_out; // for liveness analysis
+  int loop_level;
 
   void push(Instruction *insn) { insns.emplace_back(insn); }
   void push(ExCond cond, Instruction *insn) {
@@ -79,6 +80,7 @@ struct Function {
   int regs_used; // 分配的虚拟寄存器总数
 
   std::unordered_map<Reg, std::set<OccurPoint>> reg_def, reg_use;
+  std::vector<std::unique_ptr<Switch>> jump_tables;
 
   Reg new_reg(Reg::Type type) { return Reg{type, -(++regs_used)}; }
   void push(BasicBlock *bb) { bbs.emplace_back(bb); }
@@ -112,6 +114,7 @@ struct Function {
   void replace_pseudo_insns();
 
   void emit(std::ostream &os);
+  void emit_jump_tables(std::ostream &os);
 };
 
 struct Program {
@@ -128,5 +131,21 @@ struct Program {
 
 std::unique_ptr<Program> translate(const ir::Program &ir_program);
 void emit_global(std::ostream &os, const ir::Program &ir_program);
+
+template <typename Container = std::list<std::unique_ptr<Instruction>>>
+void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
+                   int imm) {
+  if (is_imm8m(imm))
+    cont.emplace(it, new Move{dst, Operand2::from(imm)});
+  else if (is_imm8m(~imm))
+    cont.emplace(it, new Move{dst, Operand2::from(~imm), true});
+  else {
+    uint32_t x = uint32_t(imm);
+    auto lo = x & 0xffff, hi = x >> 16;
+    cont.emplace(it, new MovW(dst, lo));
+    if (hi > 0)
+      cont.emplace(it, new MovT(dst, hi));
+  }
+}
 
 } // namespace armv7

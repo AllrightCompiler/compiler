@@ -2,6 +2,7 @@
 #include "backend/armv7/arch.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include <iostream>
 
@@ -63,6 +64,13 @@ Reg ColoringRegAllocator::get_alias(Reg n) const {
   return n;
 }
 
+std::set<Reg> ColoringRegAllocator::filtered(const std::set<Reg> &regs) const {
+  std::set<Reg> res;
+  std::copy_if(regs.begin(), regs.end(), std::inserter(res, res.begin()),
+               reg_filter);
+  return res;
+}
+
 void ColoringRegAllocator::add_edge(Reg u, Reg v) {
   if (u != v && !adj_set.count({u, v})) {
     adj_set.insert({u, v});
@@ -96,58 +104,42 @@ void ColoringRegAllocator::build() {
     for (auto it = bb->insns.rbegin(); it != bb->insns.rend(); ++it) {
       auto ins = it->get();
 
-      auto def = ins->def();
-      auto use = ins->use();
+      auto def = filtered(ins->def());
+      auto use = filtered(ins->use());
       TypeCase(mov, Move *, ins) {
         // NOTE: phi函数解构产生的mov的源寄存器和目的寄存器不应被合并
         if (mov->is_reg_mov() && !f->phi_moves.count(mov)) {
           auto consider = false;
           for (Reg u : use) {
-            if (this->reg_filter(u)) {
-              consider = true;
-              live.erase(u);
-            }
+            consider = true;
+            live.erase(u);
           }
           for (Reg n : def) {
-            if (this->reg_filter(n)) {
-              consider = true;
-              move_list[n].insert(mov);
-            }
+            consider = true;
+            move_list[n].insert(mov);
           }
-          for (Reg n : use) {
-            if (this->reg_filter(n)) {
-              move_list[n].insert(mov);
-            }
-          }
-          if (consider) {
+          for (Reg n : use)
+            move_list[n].insert(mov);
+          if (consider)
             worklist_moves.insert(mov);
-          }
         }
       }
 
-      for (Reg d : def) {
-        if (this->reg_filter(d)) {
-          live.insert(d);
-        }
-      }
-      for (Reg d : def) {
-        if (this->reg_filter(d)) {
-          for (Reg l : live) {
-            add_edge(l, d);
-          }
-        }
-      }
+      for (Reg d : def)
+        live.insert(d);
+      for (Reg d : def)
+        for (Reg l : live)
+          add_edge(l, d);
       // live := use(I) ∪ (live - def(I))
-      for (Reg d : def) {
-        if (this->reg_filter(d)) {
-          live.erase(d);
-        }
-      }
-      for (Reg u : use) {
-        if (this->reg_filter(u)) {
-          live.insert(u);
-        }
-      }
+      for (Reg d : def)
+        live.erase(d);
+      for (Reg u : use)
+        live.insert(u);
+
+      for (Reg d : def)
+        store_weight[d] += std::pow(8, bb->loop_level);
+      for (Reg u : use)
+        load_weight[u] += std::pow(8, bb->loop_level);
     }
   }
 }
@@ -322,29 +314,32 @@ void ColoringRegAllocator::freeze_moves(Reg u) {
   }
 }
 
-double ColoringRegAllocator::get_basic_spill_cost(Reg r) {
+double ColoringRegAllocator::get_spill_cost(Reg r) {
   if (spilling_regs.count(r))
     return 1e100;
 
   if (f->reg_val.count(r)) {
     auto &val = f->reg_val.at(r);
+    double base_cost;
+    // NOTE: 立即数和全局地址记载的基本代价都设为1
+    // 处理器可以将movw + movt合并
     switch (val.index()) {
-    case RegValueType::Imm: {
-      // 存活到寄存器分配阶段的立即数寄存器不能作为imm8m嵌入指令中
-      // 需要至少1条指令重新加载
-      uint32_t x = static_cast<uint32_t>(std::get<Imm>(val));
-      return x >= 0x10000 ? 2.0 : 1.0;
-    }
+    case RegValueType::Imm:
+      base_cost = 1.0;
+      break;
     case RegValueType::GlobalName:
-      return 2.0;
+      base_cost = 1.0;
+      break;
     case RegValueType::StackAddr:
       // 多数栈上地址可以嵌入至ldr/str中，因此认为rematerialize所需代价少于1条指令
-      return 0.9;
+      base_cost = 0.9;
+      break;
     default:
       assert(false);
     }
+    return base_cost * load_weight[r];
   }
-  return 5.0;
+  return 5.0 * (load_weight[r] + store_weight[r]);
 }
 
 void ColoringRegAllocator::select_spill() {
@@ -365,7 +360,7 @@ void ColoringRegAllocator::select_spill() {
 
   std::vector<std::pair<double, Reg>> spill_costs;
   for (Reg r : spill_worklist) {
-    auto basic_cost = get_basic_spill_cost(r);
+    auto basic_cost = get_spill_cost(r);
     auto cost = basic_cost / degree.at(r);
     spill_costs.push_back({cost, r});
   }
@@ -376,7 +371,8 @@ void ColoringRegAllocator::select_spill() {
                                     auto [c2, r2] = p2;
                                     if (c1 != c2)
                                       return c1 < c2;
-                                    // NOTE: cost相同时优先选择编号较小的虚拟寄存器
+                                    // NOTE:
+                                    // cost相同时优先选择编号较小的虚拟寄存器
                                     // 以避免spill最近新生成的虚拟寄存器
                                     // 由于编号实际是负数，这里反过来写
                                     return r2 < r1;
@@ -489,10 +485,18 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
             spilling_regs.insert(tmp);
           }
 
+          auto insn_to_remove = insns.end();
           if (use.count(r)) {
-            if (obj)
-              insns.emplace(it, new LoadStack{tmp, obj, 0});
-            else {
+            if (obj) {
+              auto mov = dynamic_cast<Move *>(ins);
+              if (mov && mov->is_reg_mov()) {
+                Reg dst = mov->dst;
+                insns.emplace(it, new LoadStack{dst, obj, 0});
+                insn_to_remove = it;
+              } else {
+                insns.emplace(it, new LoadStack{tmp, obj, 0});
+              }
+            } else {
               // f->reg_val[tmp] = f->reg_val.at(r);
               switch (val->index()) {
               case RegValueType::Imm:
@@ -513,11 +517,24 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
 
           ++it;
           if (def.count(r)) {
-            if (obj)
-              insns.emplace(it, new StoreStack{tmp, obj, 0});
-            else
-              insns.erase(std::prev(it));
+            if (obj) {
+              // NOTE: 针对switch的特殊处理，不在基本块终结指令后添加store
+              if (it != insns.end()) {
+                auto mov = dynamic_cast<Move *>(ins);
+                if (mov && mov->is_reg_mov()) {
+                  Reg src = mov->src.get<RegImmShift>().r;
+                  insn_to_remove = std::prev(it);
+                  insns.emplace(it, new StoreStack{src, obj, 0});
+                } else {
+                  insns.emplace(it, new StoreStack{tmp, obj, 0});
+                }
+              }
+            } else
+              insn_to_remove = std::prev(it);
           }
+
+          if (insn_to_remove != insns.end())
+            insns.erase(insn_to_remove);
         }
       }
     }
