@@ -32,6 +32,7 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"value_range_analysis", value_range_analysis},
   {"br2switch", br2switch},
   {"loop_interchange", loop_interchange},
+  {"algebra_simpilifacation", algebra_simpilifacation},
 };
 
 // define default passes here
@@ -81,6 +82,8 @@ std::vector<funcptr> passes = {
   array_ssa_destruction,
 
   value_range_analysis,
+  
+  algebra_simpilifacation,
 
   gvn_cfg,
   gvn_cfg,
