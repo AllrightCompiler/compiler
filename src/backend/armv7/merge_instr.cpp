@@ -16,7 +16,13 @@ static void merge_instr(
                                                Instruction const &)> const
         &transform_use_instr) {
   func.build_def_use();
-  for (auto const &[r, occurs] : func.reg_def) {
+  std::vector<Reg> regs;
+  regs.reserve(func.reg_def.size());
+  std::transform(
+      func.reg_def.cbegin(), func.reg_def.cend(), std::back_inserter(regs),
+      [](decltype(func.reg_def)::value_type const &def) { return def.first; });
+  for (auto const r : regs) {
+    auto const &occurs = func.reg_def.find(r)->second;
     if (occurs.size() != 1) {
       continue;
     }
@@ -30,11 +36,8 @@ static void merge_instr(
     int max_use_instr_index = -1;
     std::vector<std::pair<OccurPoint const *, std::unique_ptr<Instruction>>>
         new_instrs;
-    auto const uses = func.reg_use.find(r);
-    if (uses == func.reg_use.end()) {
-      continue;
-    }
-    for (auto const &use : uses->second) {
+    auto const &uses = func.reg_use[r];
+    for (auto const &use : uses) {
       auto new_instr = transform_use_instr(r, **def.instr, **use.instr);
       if (!new_instr) {
         goto continue_;
@@ -46,11 +49,7 @@ static void merge_instr(
       }
     }
     for (auto dep_r : def.instr->get()->use()) {
-      auto const dep_defs = func.reg_def.find(dep_r);
-      if (dep_defs == func.reg_def.end()) {
-        continue;
-      }
-      for (auto const &dep_def : dep_defs->second) {
+      for (auto const &dep_def : func.reg_def[dep_r]) {
         if (dep_def.bb == def.bb && def.index <= dep_def.index &&
             dep_def.index <= max_use_instr_index) {
           goto continue_;
@@ -70,7 +69,7 @@ static void merge_instr(
 void merge_shift_with_binary_op(Function &func) {
   auto const check_def_instr = [](Instruction const &def) -> bool {
     TypeCase(instr, Move const *, &def) {
-      return instr->is_reg_mov() && instr->src.get<RegImmShift>().s != 0;
+      return instr->src.is_imm_shift() && instr->src.get<RegImmShift>().s != 0;
     }
     else {
       return false;
@@ -80,7 +79,7 @@ void merge_shift_with_binary_op(Function &func) {
       [](Reg r, Instruction const &def,
          Instruction const &use) -> std::unique_ptr<Instruction> {
     auto &instr = dynamic_cast<Move const &>(def);
-    assert(instr.is_reg_mov());
+    assert(instr.src.is_imm_shift());
     assert(instr.dst == r);
     auto &shift = instr.src.get<RegImmShift>();
     TypeCase(r_instr, RType const *, &use) {
