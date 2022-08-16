@@ -21,6 +21,7 @@ void backend_passes(Program &p) {
 
     merge_shift_with_binary_op(f);
     merge_add_with_load_or_store(f);
+    merge_mul_with_add_or_sub(f);
 
     remove_unused(f);
 

@@ -271,5 +271,79 @@ void merge_add_with_load_or_store(Function &func) {
   };
   merge_instr(func, check_def_instr, transform_use_instr);
 }
+void merge_mul_with_add_or_sub(Function &func) {
+  auto const check_def_instr = [](Instruction const &def) -> bool {
+    TypeCase(instr, RType const *, &def) { return instr->op == RType::Mul; }
+    else {
+      return false;
+    }
+  };
+  auto const transform_use_instr =
+      [](Reg r, Instruction const &def,
+         Instruction const &use) -> std::unique_ptr<Instruction> {
+    auto &instr = dynamic_cast<RType const &>(def);
+    assert(instr.dst == r);
+    TypeCase(r_instr, RType const *, &use) {
+      if (r_instr->s1 == r_instr->s2) {
+        return {};
+      }
+      switch (r_instr->op) {
+      case RType::Add: {
+        Reg other;
+        if (r_instr->s1 == r) {
+          other = r_instr->s2;
+        } else {
+          other = r_instr->s1;
+        }
+        return std::make_unique<FusedMul>(FusedMul::Add, r_instr->dst, instr.s1,
+                                          instr.s2, other);
+      } break;
+      case RType::Sub: {
+        if (r_instr->s2 == r) {
+          return std::make_unique<FusedMul>(FusedMul::Sub, r_instr->dst,
+                                            instr.s1, instr.s2, r_instr->s1);
+        }
+      } break;
+      default:
+        return {};
+      }
+    }
+    TypeCase(fr_instr, FullRType const *, &use) {
+      if (!fr_instr->s2.is_reg()) {
+        return {};
+      }
+      auto const s2 = fr_instr->s2.get<RegImmShift>().r;
+      if (fr_instr->s1 == s2) {
+        return {};
+      }
+      switch (fr_instr->op) {
+      case FullRType::Add: {
+        Reg other;
+        if (fr_instr->s1 == r) {
+          other = s2;
+        } else {
+          other = fr_instr->s1;
+        }
+        return std::make_unique<FusedMul>(FusedMul::Add, fr_instr->dst,
+                                          instr.s1, instr.s2, other);
+      } break;
+      case FullRType::Sub: {
+        if (s2 == r) {
+          return std::make_unique<FusedMul>(FusedMul::Sub, fr_instr->dst,
+                                            instr.s1, instr.s2, fr_instr->s1);
+        }
+      } break;
+      case FullRType::RevSub: {
+        if (fr_instr->s1 == r) {
+          return std::make_unique<FusedMul>(FusedMul::Sub, fr_instr->dst,
+                                            instr.s1, instr.s2, s2);
+        }
+      } break;
+      }
+    }
+    return {};
+  };
+  merge_instr(func, check_def_instr, transform_use_instr);
+}
 
 } // namespace armv7
