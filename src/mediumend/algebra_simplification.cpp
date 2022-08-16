@@ -41,11 +41,11 @@ void algebra_simpilifacation(Function *func) {
             single_map[binary->src2] -= 1;
           } 
         }
-        for(auto iter = single_map.begin(); iter != single_map.end();){
-          if(iter->second == 0){
-            iter = single_map.erase(iter);
+        for(auto map_iter = single_map.begin(); map_iter != single_map.end();){
+          if(map_iter->second == 0){
+            map_iter = single_map.erase(map_iter);
           } else {
-            ++iter;
+            ++map_iter;
           }
         }
         reg_map[binary->dst] = single_map;
@@ -68,6 +68,72 @@ void algebra_simpilifacation(Function *func) {
             new_inst->bb = bb.get();
             new_inst->add_use_def();
             iter->reset(new_inst);
+          }
+        } else if(single_map.size() == 2){
+          bool removable = true;
+          for(auto &each : single_map){
+            if(each.second != 1 && each.second != -1){
+              removable = false;
+            }
+          }
+          if(removable){
+            binary->remove_use_def();
+            auto map_iter = single_map.begin();
+            auto src1 = *map_iter;
+            map_iter++;
+            auto src2 = *map_iter;
+            bool add_not = false;
+            if(src1.second == src2.second){
+              binary->op = BinaryOp::Add;
+              binary->src1 = src1.first;
+              binary->src2 = src2.first;
+              if(src1.second == -1){
+                add_not = true;
+              }
+            } else {
+              binary->op = BinaryOp::Sub;
+              if(src1.second == 1){
+                binary->src1 = src1.first;
+                binary->src2 = src2.first;
+              } else {
+                binary->src1 = src2.first;
+                binary->src2 = src1.first;
+              }
+            }
+            binary->add_use_def();
+            ++iter;
+            if(add_not){
+              auto reg = func->new_reg(ScalarType::Int);
+              ir::Instruction* inst = new ir::insns::Unary(reg, UnaryOp::Sub, binary->dst);
+              inst->bb = bb.get();
+              bb->insns.emplace(iter, inst);
+              copy_propagation(func->use_list, binary->dst, reg);
+            }
+            continue;
+          }
+        }
+      } else TypeCase(unary, ir::insns::Unary *, iter->get()){
+        if(unary->op != UnaryOp::Sub || unary->dst.type != Int){
+          ++iter;
+          continue;
+        }
+        unordered_map<Reg, int> single_map;
+        if(reg_map.count(unary->src)){
+          single_map = reg_map.at(unary->src);
+        } else {
+          single_map[unary->src] = 1;
+        }
+        for(auto &each : single_map){
+          each.second = -each.second;
+        }
+        reg_map[binary->dst] = single_map;
+        if(single_map.size() == 1){
+          auto reg_pair = single_map.begin();
+          if(reg_pair->second == 1){
+            copy_propagation(func->use_list, binary->dst, reg_pair->first);
+            iter->get()->remove_use_def();
+            iter = bb->insns.erase(iter);
+            continue;
           }
         }
       }
