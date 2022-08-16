@@ -3,6 +3,7 @@
 #include "common/common.hpp"
 
 #include <functional>
+#include <iostream>
 
 namespace armv7 {
 
@@ -29,8 +30,11 @@ static void merge_instr(
     int max_use_instr_index = -1;
     std::vector<std::pair<OccurPoint const *, std::unique_ptr<Instruction>>>
         new_instrs;
-    auto const &uses = func.reg_use[r];
-    for (auto const &use : uses) {
+    auto const uses = func.reg_use.find(r);
+    if (uses == func.reg_use.end()) {
+      continue;
+    }
+    for (auto const &use : uses->second) {
       auto new_instr = transform_use_instr(r, **def.instr, **use.instr);
       if (!new_instr) {
         goto continue_;
@@ -42,7 +46,11 @@ static void merge_instr(
       }
     }
     for (auto dep_r : def.instr->get()->use()) {
-      for (auto const &dep_def : func.reg_def[dep_r]) {
+      auto const dep_defs = func.reg_def.find(dep_r);
+      if (dep_defs == func.reg_def.end()) {
+        continue;
+      }
+      for (auto const &dep_def : dep_defs->second) {
         if (dep_def.bb == def.bb && def.index <= dep_def.index &&
             dep_def.index <= max_use_instr_index) {
           goto continue_;

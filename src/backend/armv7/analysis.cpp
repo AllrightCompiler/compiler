@@ -51,19 +51,31 @@ void Function::do_liveness_analysis(RegFilter filter) {
 }
 
 void Function::insert_def_use(OccurPoint const &pos, Instruction &instr) {
-  for (auto r : instr.def()) {
-    this->reg_def[r].insert(pos);
+  for (auto const r : instr.def()) {
+    auto const defs = this->reg_def.find(r);
+    if (defs != this->reg_def.end()) {
+      defs->second.insert(pos);
+    }
   }
-  for (auto r : instr.use()) {
-    this->reg_use[r].insert(pos);
+  for (auto const r : instr.use()) {
+    auto const uses = this->reg_use.find(r);
+    if (uses != this->reg_use.end()) {
+      uses->second.insert(pos);
+    }
   }
 }
 void Function::erase_def_use(OccurPoint const &pos, Instruction &instr) {
-  for (auto r : instr.def()) {
-    this->reg_def[r].erase(pos);
+  for (auto const r : instr.def()) {
+    auto const defs = this->reg_def.find(r);
+    if (defs != this->reg_def.end()) {
+      defs->second.erase(pos);
+    }
   }
-  for (auto r : instr.use()) {
-    this->reg_use[r].erase(pos);
+  for (auto const r : instr.use()) {
+    auto const uses = this->reg_use.find(r);
+    if (uses != this->reg_use.end()) {
+      uses->second.erase(pos);
+    }
   }
 }
 void Function::build_def_use() {
