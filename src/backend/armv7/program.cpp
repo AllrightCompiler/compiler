@@ -890,10 +890,9 @@ void Function::replace_pseudo_insns() {
         auto cmov_true = new Move{dst, Operand2::from(1)};
         cmov_true->cond = cond;
         auto cmov_false = new Move{dst, Operand2::from(0)};
-        cmov_false->cond = logical_not(cond);
 
-        insns.emplace(it, pcmp->cmp.release());
         insns.emplace(it, cmov_false);
+        insns.emplace(it, pcmp->cmp.release());
         it->reset(cmov_true);
       }
       TypeCase(br, CmpBranch *, it->get()) {

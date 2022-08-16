@@ -205,18 +205,17 @@ void RType::emit(std::ostream &os) const {
 
 void IType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add",
-      [Sub] = "sub",
-      [RevSub] = "rsb",
-      [Eor] = "eor",
+      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb",
+      [Eor] = "eor", [Bic] = "bic", [And] = "and",
   };
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", #" << imm;
 }
 
 void FullRType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb",
-      [Bic] = "bic", [And] = "and",
+      [Add] = "add",
+      [Sub] = "sub",
+      [RevSub] = "rsb",
   };
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", " << s2;
 }

@@ -113,6 +113,10 @@ struct Operand2 {
 
   template <typename T> auto &get() const { return std::get<T>(opd); }
 
+  bool is_reg() const {
+    return this->is_imm_shift() && this->get<RegImmShift>().s == 0;
+  }
+
   std::set<Reg> get_use() const {
     if (is_imm_shift())
       return {std::get<RegImmShift>(opd).r};
@@ -190,7 +194,7 @@ struct RType : Instruction {
 // 大部分的imm都是取自Operand2的imm8m
 // 但Thumb-2的add和sub支持12位无符号立即数
 struct IType : Instruction {
-  enum Op { Add, Sub, RevSub, Eor } op;
+  enum Op { Add, Sub, RevSub, Eor, Bic, And } op;
   Reg dst, s1;
   int imm;
 
@@ -204,7 +208,7 @@ struct IType : Instruction {
 
 // 具有 op Rd, R1, Operand2 形式的指令
 struct FullRType : Instruction {
-  enum Op { Add, Sub, RevSub, Bic, And } op;
+  enum Op { Add, Sub, RevSub } op;
   Reg dst, s1;
   Operand2 s2;
 
