@@ -106,10 +106,10 @@ void algebra_simpilifacation(Function *func) {
             if(add_not){
               auto reg = func->new_reg(ScalarType::Int);
               ir::Instruction* inst = new ir::insns::Unary(reg, UnaryOp::Sub, binary->dst);
+              copy_propagation(func->use_list, binary->dst, reg);
               inst->bb = bb.get();
               inst->add_use_def();
               bb->insns.emplace(iter, inst);
-              copy_propagation(func->use_list, binary->dst, reg);
               reg_map[reg] = single_map;
             } else {
               reg_map[binary->dst] = single_map;
