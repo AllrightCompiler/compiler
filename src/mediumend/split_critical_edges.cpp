@@ -1,5 +1,5 @@
 #include "common/ir.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 #include <cassert>
 
@@ -44,13 +44,24 @@ void split_critical_edges(Function &f) {
       BasicBlock::add_edge(bb_in, bb_mid);
       BasicBlock::add_edge(bb_mid, bb);
 
-      // bb_in至少有2条出边，其中一定含有条件分支指令
-      auto last_br = dynamic_cast<Branch *>(bb_in->insns.back().get());
-      assert(last_br != nullptr);
-      if (last_br->true_target == bb)
-        last_br->true_target = bb_mid;
-      else
-        last_br->false_target = bb_mid;
+      // bb_in至少有2条出边
+      auto last = bb_in->insns.back().get();
+      TypeCase(br, Branch *, last) {
+        if (br->true_target == bb)
+          br->true_target = bb_mid;
+        else
+          br->false_target = bb_mid;
+      }
+      else TypeCase(sw, Switch *, last) {
+        if (sw->default_target == bb)
+          sw->default_target = bb_mid;
+        for (auto &[v, target] : sw->targets)
+          if (target == bb)
+            sw->targets[v] = bb_mid;
+      }
+      else {
+        assert(false);
+      }
 
       bb_mid->insns.emplace_back(new Jump{bb});
 

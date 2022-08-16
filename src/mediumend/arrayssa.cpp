@@ -1,5 +1,5 @@
 #include "common/ir.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 #include <cassert>
 
@@ -9,50 +9,95 @@ using ir::Function;
 using ir::Reg;
 using std::unordered_map;
 
+static bool array_ssa_enable = false;
+
+bool in_array_ssa() {
+  return array_ssa_enable;
+}
+
 unordered_map<Reg, Reg> find_base(Function *func) {
   unordered_map<Reg, Reg> reg2base;
   unordered_map<std::string, Reg> name2base;
   for (auto &bb : func->bbs) {
     for (auto &ins : bb->insns) {
       auto inst = ins.get();
-      TypeCase(loadaddr, ir::insns::LoadAddr *, inst){
-        if(!name2base.count(loadaddr->var_name)){
+      TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+        if (!name2base.count(loadaddr->var_name)) {
           name2base[loadaddr->var_name] = loadaddr->dst;
         }
         reg2base[loadaddr->dst] = name2base[loadaddr->var_name];
-      } else TypeCase(alloca, ir::insns::Alloca *, inst){
+      }
+      else TypeCase(alloca, ir::insns::Alloca *, inst) {
         reg2base[alloca->dst] = alloca->dst;
-      } else TypeCase(gep, ir::insns::GetElementPtr *, inst){
-        reg2base[gep->base] = reg2base.at(gep->base);
+      }
+      else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
+        reg2base[gep->dst] = reg2base.at(gep->base);
       }
     }
   }
   return reg2base;
 }
 
-void array_mem2reg(ir::Program *prog) {
-  unordered_map<std::string, unordered_set<std::string>> used_gvar;
-  for (auto &each : prog->functions) {
-    Function *func = &each.second;
-    for(auto &bb : func->bbs){
-      for(auto &inst : bb->insns){
-        TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()){
-          used_gvar[each.first].insert(loadaddr->var_name);
+static unordered_map<std::string, unordered_set<std::string>> used_gvar;
+static unordered_map<std::string, unordered_set<int>> modified_param;
+static ir::Program *cur_prog = nullptr;
+
+void find_use_def_array(Function * func){
+  unordered_map<Reg, Reg> reg2base;
+  for (int i = 0; i < func->sig.param_types.size(); i++) {
+    auto &param = func->sig.param_types[i];
+    if (param.is_array()) {
+      auto reg = Reg(param.base_type, i + 1);
+      reg2base[reg] = reg;
+    }
+  }
+  used_gvar[func->name] = {};
+  modified_param[func->name] = {};
+  for (auto &bb : func->bbs) {
+    for (auto &inst : bb->insns) {
+      TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
+        used_gvar[func->name].insert(loadaddr->var_name);
+      }
+      TypeCase(gep, ir::insns::GetElementPtr *, inst.get()) {
+        if(reg2base.count(gep->base)){
+          reg2base[gep->dst] = reg2base.at(gep->base);
         }
+      }
+      TypeCase(store, ir::insns::Store *, inst.get()){
+        if(reg2base.count(store->addr)){
+          modified_param[func->name].insert(reg2base.at(store->addr).id);
+        }
+      }
+      TypeCase(call, ir::insns::Call *, inst.get()){
+        if(!cur_prog->functions.count(call->func)){
+          continue;
+        }
+        if(!used_gvar.count(call->func)){
+          find_use_def_array(&cur_prog->functions.at(call->func));
+        }
+        used_gvar[func->name].insert(used_gvar[call->func].begin(), used_gvar[call->func].end());
+        modified_param[func->name].insert(modified_param[call->func].begin(), modified_param[call->func].end());
       }
     }
   }
+}
+
+void array_mem2reg(ir::Program *prog) {
+  cur_prog = prog;
+  used_gvar.clear();
+  modified_param.clear();
+  find_use_def_array(&prog->functions.at("main"));
   for (auto &each : prog->functions) {
     Function *func = &each.second;
     CFG *cfg = func->cfg;
     cfg->remove_unreachable_bb();
     cfg->compute_dom();
     auto df = cfg->compute_df();
-    func->do_liveness_analysis();
     auto entry = func->bbs.front().get();
 
-    for(auto each : prog->global_vars){
-      entry->push_front(new ir::insns::LoadAddr(func->new_reg(ScalarType::String), each.first));
+    for (auto each : prog->global_vars) {
+      entry->push_front(new ir::insns::LoadAddr(
+          func->new_reg(ScalarType::String), each.first));
     }
     unordered_map<Reg, BasicBlock *> alloc_set;
     unordered_map<Reg, int> alloc2type;
@@ -64,47 +109,51 @@ void array_mem2reg(ir::Program *prog) {
     unordered_map<std::string, Reg> name2base;
     vector<BasicBlock *> stack;
     stack.push_back(entry);
-    for(int i = 0; i < func->sig.param_types.size(); i++){
+    for (int i = 0; i < func->sig.param_types.size(); i++) {
       auto &param = func->sig.param_types[i];
-      if(param.is_array()){
+      if (param.is_array()) {
         auto reg = Reg(param.base_type, i + 1);
         reg2base[reg] = reg;
         alloc_set[reg] = entry;
         alloc_map[entry][reg] = reg;
       }
     }
-    while(stack.size()){
+    while (stack.size()) {
       auto bb = stack.back();
       stack.pop_back();
-      for(auto dom : bb->dom){
+      for (auto dom : bb->dom) {
         stack.push_back(dom);
       }
       for (auto &ins : bb->insns) {
         auto inst = ins.get();
-        TypeCase(loadaddr, ir::insns::LoadAddr *, inst){
-          if(!prog->global_vars.at(loadaddr->var_name)->type.is_array()){
+        TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
+          if (!prog->global_vars.at(loadaddr->var_name)->type.is_array()) {
             continue;
           }
-          if(!name2base.count(loadaddr->var_name)){
+          if (!name2base.count(loadaddr->var_name)) {
             name2base[loadaddr->var_name] = loadaddr->dst;
             alloc_set[loadaddr->dst] = bb;
             defs[loadaddr->dst].insert(bb);
           }
           reg2base[loadaddr->dst] = name2base[loadaddr->var_name];
-        } else TypeCase(alloca, ir::insns::Alloca *, inst){
+        }
+        else TypeCase(alloca, ir::insns::Alloca *, inst) {
           reg2base[alloca->dst] = alloca->dst;
           alloc_set[alloca->dst] = bb;
           defs[alloca->dst].insert(bb);
-        } else TypeCase(gep, ir::insns::GetElementPtr *, inst){
+        }
+        else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
           reg2base[gep->dst] = reg2base.at(gep->base);
-        } else TypeCase(store, ir::insns::Store *, inst) {
+        }
+        else TypeCase(store, ir::insns::Store *, inst) {
           if (reg2base.count(store->addr)) {
             defs[reg2base.at(store->addr)].insert(bb);
           }
-        } else TypeCase(call, ir::insns::Call *, inst) {
+        }
+        else TypeCase(call, ir::insns::Call *, inst) {
           auto use = call->use();
-          for(auto &use_reg : use){
-            if(reg2base.count(use_reg)){
+          for (auto &use_reg : use) {
+            if (reg2base.count(use_reg)) {
               defs[reg2base.at(use_reg)].insert(bb);
             }
           }
@@ -123,7 +172,7 @@ void array_mem2reg(ir::Program *prog) {
         auto bb = *W.begin();
         W.erase(W.begin());
         for (auto &Y : df[bb]) {
-          if (F.find(Y) == F.end() && Y->live_in.count(v.first)) {
+          if (F.find(Y) == F.end()) {
             Reg r = func->new_reg(alloc2type[v.first]);
             auto phi = new ir::insns::Phi(r, true);
             Y->insns.emplace_front(phi); // add phi
@@ -142,9 +191,13 @@ void array_mem2reg(ir::Program *prog) {
     stack.push_back(func->bbs.front().get());
     func->clear_visit();
     func->bbs.front().get()->visit = true;
+    std::unordered_map<BasicBlock *, unordered_map<Reg, unordered_set<Reg>>>
+        use_before_def;
+    use_before_def[nullptr] = {};
     while (stack.size()) {
       auto bb = stack.back();
       stack.pop_back();
+      use_before_def[bb] = use_before_def.at(bb->idom);
       for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
         TypeCase(inst, ir::insns::Load *, iter->get()) {
           if (reg2base.find(inst->addr) != reg2base.end()) {
@@ -160,10 +213,12 @@ void array_mem2reg(ir::Program *prog) {
               dep = alloc_map[pos][base];
             }
             inst->remove_use_def();
-            auto new_inst = new ir::insns::MemUse(inst->dst, dep, inst->addr, false);
+            auto new_inst =
+                new ir::insns::MemUse(inst->dst, dep, inst->addr, false);
             iter->reset(new_inst);
             new_inst->bb = bb;
             new_inst->add_use_def();
+            use_before_def[bb][base].insert(new_inst->dst);
           }
         }
         TypeCase(inst, ir::insns::Store *, iter->get()) {
@@ -181,18 +236,25 @@ void array_mem2reg(ir::Program *prog) {
             } else {
               dep = alloc_map[pos][base];
             }
-            auto new_inst = new ir::insns::MemDef(dst, dep, inst->addr, inst->val, false);
+            auto new_inst =
+                new ir::insns::MemDef(dst, dep, inst->addr, inst->val, false,
+                                      use_before_def[bb][base]);
             iter->reset(new_inst);
             new_inst->bb = bb;
             new_inst->add_use_def();
             alloc_map[bb][base] = dst;
+            use_before_def[bb][base].clear();
           }
         }
         TypeCase(inst, ir::insns::Call *, iter->get()) {
           auto use = inst->use();
+          unordered_map<Reg, int> use2num;
+          for(int i = 0; i < inst->args.size(); i++){
+            use2num[inst->args[i]] = i + 1;
+          }
           unordered_map<Reg, Reg> use2def;
-          unordered_map<std::string, Reg>name2def;
-          for(auto reg : use){
+          unordered_map<std::string, Reg> name2def;
+          for (auto reg : use) {
             if (reg2base.find(reg) != reg2base.end()) {
               auto base = reg2base[reg];
               BasicBlock *pos = bb;
@@ -207,15 +269,17 @@ void array_mem2reg(ir::Program *prog) {
                 src = alloc_map.at(pos).at(base);
               }
               auto new_inst = new ir::insns::MemUse(dst, src, reg, true);
-              bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
+              bb->insns.insert(iter,
+                               std::unique_ptr<ir::Instruction>(new_inst));
               new_inst->bb = bb;
               new_inst->add_use_def();
               inst->change_use(reg, dst);
               use2def[reg] = dst;
+              use_before_def[bb][base].insert(dst);
             }
           }
-          for(auto &gvar : used_gvar[inst->func]){
-            if(!name2base.count(gvar)){
+          for (auto &gvar : used_gvar[inst->func]) {
+            if (!name2base.count(gvar)) {
               continue;
             }
             auto base = name2base.at(gvar);
@@ -235,14 +299,15 @@ void array_mem2reg(ir::Program *prog) {
             new_inst->bb = bb;
             new_inst->add_use_def();
             name2def[gvar] = dst;
+            use_before_def[bb][base].insert(dst);
           }
-          for(auto &each : name2def){
+          for (auto &each : name2def) {
             inst->global_use.push_back(each.second);
           }
           inst->add_use_def();
           iter++;
-          for(auto &gvar : used_gvar[inst->func]){
-            if(!name2base.count(gvar)){
+          for (auto &gvar : used_gvar[inst->func]) {
+            if (!name2base.count(gvar)) {
               continue;
             }
             auto base = name2base[gvar];
@@ -257,14 +322,22 @@ void array_mem2reg(ir::Program *prog) {
             } else {
               dep = alloc_map[pos][base];
             }
-            auto new_inst = new ir::insns::MemDef(dst, dep, name2def.at(gvar), inst->dst, true);
-            iter = bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
+            auto new_inst =
+                new ir::insns::MemDef(dst, dep, name2def.at(gvar), inst->dst,
+                                      true, use_before_def[bb][base]);
+            bb->insns.insert(iter,
+                                    std::unique_ptr<ir::Instruction>(new_inst));
             new_inst->bb = bb;
             new_inst->add_use_def();
             alloc_map[bb][base] = dst;
+            use_before_def[bb][base].clear();
           }
-          for(auto reg : use){
+          for (auto reg : use) {
+            int cnt = use2num[reg];
             if (reg2base.find(reg) != reg2base.end()) {
+              if(prog->functions.count(inst->func) && !modified_param.at(inst->func).count(cnt)){
+                continue;
+              }
               auto base = reg2base[reg];
               Reg dst = func->new_reg(ScalarType::String);
               BasicBlock *pos = bb;
@@ -277,17 +350,23 @@ void array_mem2reg(ir::Program *prog) {
               } else {
                 dep = alloc_map[pos][base];
               }
-              auto new_inst = new ir::insns::MemDef(dst, dep, use2def.at(reg), inst->dst, true);
-              iter = bb->insns.insert(iter, std::unique_ptr<ir::Instruction>(new_inst));
+              auto new_inst = new ir::insns::MemDef(dst, dep, use2def.at(reg),
+                                                    inst->dst, true, use_before_def[bb][base]);
+              bb->insns.insert(
+                  iter, std::unique_ptr<ir::Instruction>(new_inst));
               new_inst->bb = bb;
               new_inst->add_use_def();
               alloc_map[bb][base] = dst;
+              use_before_def[bb][base].clear();
             }
           }
+          continue;
         }
         TypeCase(inst, ir::insns::Phi *, iter->get()) {
           if (phi2mem.count(inst)) {
             alloc_map[bb][phi2mem.at(inst)] = inst->dst;
+            inst->use_before_def = use_before_def[bb][phi2mem.at(inst)];
+            use_before_def[bb][phi2mem.at(inst)].clear();
           }
         }
         TypeCase(inst, ir::insns::Alloca *, iter->get()) {
@@ -299,8 +378,8 @@ void array_mem2reg(ir::Program *prog) {
         iter++;
         continue;
       }
-      for(auto &succ : bb->succ){
-        for(auto &inst : succ->insns){
+      for (auto &succ : bb->succ) {
+        for (auto &inst : succ->insns) {
           TypeCase(phi, ir::insns::Phi *, inst.get()) {
             if (!phi2mem.count(phi)) {
               continue;
@@ -319,7 +398,7 @@ void array_mem2reg(ir::Program *prog) {
           }
         }
       }
-      for(auto dom : bb->dom){
+      for (auto dom : bb->dom) {
         stack.push_back(dom);
       }
     }
@@ -328,28 +407,32 @@ void array_mem2reg(ir::Program *prog) {
     }
     remove_unused_phi(func);
   }
+  array_ssa_enable = true;
 }
 
-void array_ssa_destruction(ir::Program *prog){
+void array_ssa_destruction(ir::Program *prog) {
+  array_ssa_enable = false;
   for (auto &each : prog->functions) {
     Function *func = &each.second;
-    for(auto &bb : func->bbs){
-      for(auto iter = bb->insns.begin(); iter != bb->insns.end();){
+    for (auto &bb : func->bbs) {
+      for (auto iter = bb->insns.begin(); iter != bb->insns.end();) {
         auto inst = iter->get();
-        TypeCase(memdef, ir::insns::MemDef *, inst){
-          if(memdef->call_def){
+        TypeCase(memdef, ir::insns::MemDef *, inst) {
+          if (memdef->call_def) {
             memdef->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           } else {
             memdef->remove_use_def();
-            auto new_inst = new ir::insns::Store(memdef->store_dst, memdef->store_val);
+            auto new_inst =
+                new ir::insns::Store(memdef->store_dst, memdef->store_val);
             iter->reset(new_inst);
             new_inst->bb = bb.get();
             new_inst->add_use_def();
           }
-        } else TypeCase(memuse, ir::insns::MemUse *, inst){
-          if(memuse->call_use){
+        }
+        else TypeCase(memuse, ir::insns::MemUse *, inst) {
+          if (memuse->call_use) {
             copy_propagation(func->use_list, memuse->dst, memuse->load_src);
             memuse->remove_use_def();
             iter = bb->insns.erase(iter);
@@ -361,13 +444,15 @@ void array_ssa_destruction(ir::Program *prog){
             new_inst->bb = bb.get();
             new_inst->add_use_def();
           }
-        } else TypeCase(phi, ir::insns::Phi *, inst){
-          if(phi->array_ssa){
+        }
+        else TypeCase(phi, ir::insns::Phi *, inst) {
+          if (phi->array_ssa) {
             phi->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
           }
-        } else TypeCase(call, ir::insns::Call *, inst){
+        }
+        else TypeCase(call, ir::insns::Call *, inst) {
           call->remove_use_def();
           call->global_use.clear();
           call->add_use_def();

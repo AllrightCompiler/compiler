@@ -1,6 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 namespace mediumend {
 
@@ -14,50 +14,74 @@ using ir::BasicBlock;
 static ir::Program* cur_prog = nullptr;
 
 void detect_pure_function(ir::Program *prog, ir::Function *func) {
-  if(func->pure != -1){
-    return;
-  }
+  unordered_map<Reg, int> reg2base;
+  int i = 0;
   for(auto &type : func->sig.param_types){
+    i++;
     if(type.is_array()){
       func->pure = 0;
-      return;
+      reg2base[Reg(type.base_type, i)] = i;
     }
   }
   for (auto &bb : func->bbs) {
     for (auto &inst : bb->insns) {
-      // 修改了全局变量，不是纯函数
-      TypeCase(store, ir::insns::Store *, inst.get()){
-        if(func->global_addr.count(store->addr)){
-          func->pure = 0;
-          return;
-        }
-      }
       // 使用了全局变量，不能当作纯函数
       if(auto x = dynamic_cast<ir::insns::LoadAddr *>(inst.get())){
         func->pure = 0;
-        return;
+        func->array_ssa_pure = 0;
+      }
+      TypeCase(gep, ir::insns::GetElementPtr *, inst.get()){
+        if(reg2base.count(gep->base)){
+          reg2base[gep->dst] = reg2base.at(gep->base);
+        }
+      }
+      TypeCase(store, ir::insns::Store *, inst.get()){
+        if(reg2base.count(store->addr)){
+          func->only_load_param = 0;
+        }
       }
       // 此处为了便于处理递归函数，因此这么做
       TypeCase(call, ir::insns::Call *, inst.get()) {
+        if(call->func == func->name){
+          continue;
+        }
         auto call_func = prog->functions.find(call->func);
         if(call_func != prog->functions.end()){
-          if(call_func->second.pure == 1){
-            continue;
+          if(call_func->second.pure == -1){
+            detect_pure_function(prog, &call_func->second);
           }
+          if(!call_func->second.is_pure()){
+            func->pure = 0;
+          }
+          if(!call_func->second.is_array_ssa_pure()){
+            func->array_ssa_pure = 0;
+          }
+        } else {
+          func->pure = 0;
+          func->array_ssa_pure = 0;
         }
-        func->pure = 0;
-        return;
       }
     }
   }
-  func->pure = 1;
+  if(func->pure == -1){
+    func->pure = 1;
+  }
+  if(func->array_ssa_pure == -1){
+    func->array_ssa_pure = 1;
+  }
+  if(func->only_load_param == -1){
+    func->only_load_param = 1;
+  }
 }
 
 void mark_pure_func(ir::Program *prog){
-  prog->functions.at("main").pure = 0;
-  for(auto &func : prog->functions){
-    detect_pure_function(prog, &func.second);
+  for(auto &each : prog->functions){
+    each.second.array_ssa_pure = -1;
+    each.second.pure = -1;
   }
+  detect_pure_function(prog, &prog->functions.at("main"));
+  prog->functions.at("main").pure = 0;
+  prog->functions.at("main").array_ssa_pure = 0;
 }
 
 void remove_unused_function(ir::Program *prog){
@@ -91,6 +115,11 @@ void remove_unused_function(ir::Program *prog){
   }
 }
 
+void check_inst(ir::Instruction *inst){
+  assert(inst);
+  assert(inst->bb);
+}
+
 void remove_uneffective_inst(ir::Program *prog){
   for(auto &each : prog->functions){
     ir::Function *func = &each.second;
@@ -101,15 +130,27 @@ void remove_uneffective_inst(ir::Program *prog){
       auto &insns = bb->insns;
       for (auto &inst : insns) {
         TypeCase(call, ir::insns::Call *, inst.get()){
-          if(prog->functions.find(call->func) == prog->functions.end() || prog->functions.at(call->func).pure == 0){
+          if(prog->functions.find(call->func) == prog->functions.end()){
             stack.insert(call);
+          } else {
+            if(in_array_ssa()){
+              if(!prog->functions.at(call->func).is_array_ssa_pure()){
+                stack.insert(call);
+              }
+            } else {
+              if(!prog->functions.at(call->func).is_pure()){
+                stack.insert(call);
+              }
+            }
           }
         } else TypeCase(term, ir::insns::Terminator *, inst.get()){
           stack.insert(term);
         } else TypeCase(store, ir::insns::Store *, inst.get()){
           stack.insert(store);
         } else TypeCase(memdef, ir::insns::MemDef *, inst.get()){
-          stack.insert(memdef);
+          if(func->name != "main"){
+            stack.insert(memdef);
+          }
         }
       }
     }
@@ -128,6 +169,7 @@ void remove_uneffective_inst(ir::Program *prog){
           if(useful_inst.count(def)){
             continue;
           }
+          check_inst(def);
           stack.insert(def);
         }
       }
@@ -172,6 +214,7 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
       if(branch->true_target == branch->false_target){
         branch->remove_use_def();
         inst.reset(new ir::insns::Jump(branch->true_target));
+        inst->bb = bb;
         ret = true;
       }
     }
@@ -179,28 +222,23 @@ bool eliminate_useless_cf_one_pass(ir::Function *func){
       auto target = jmp->target;
       if(bb->insns.size() == 1) {
         if(auto phi = dynamic_cast<ir::insns::Phi *>(target->insns.front().get())){
-          continue;
+          bool eliminate = true;
+          for(auto each : bb->prev){
+            if(target->prev.count(each)){
+              eliminate = false;
+              break;
+            }
+          }
+          if(!eliminate) {
+            continue;
+          }
         }
         if(entry == bb){
           continue;
         }
         for(auto &pre : bb->prev){
           auto &last = pre->insns.back();
-          TypeCase(br, ir::insns::Branch *, last.get()){
-            if(br->true_target == bb){
-              br->true_target = target;
-            }
-            if(br->false_target == bb){
-              br->false_target = target;
-            }
-          }
-          TypeCase(j, ir::insns::Jump *, last.get()){
-            if(j->target == bb){
-              j->target = target;
-            }
-          }
-          pre->succ.erase(bb);
-          pre->succ.insert(target);
+          pre->change_succ(bb, target);
           target->prev.insert(pre);
           for(auto &ins : target->insns){
             TypeCase(phi, ir::insns::Phi *, ins.get()){
@@ -317,7 +355,6 @@ void clean_useless_cf(ir::Program *prog){
 
 bool remove_useless_loop(ir::Function *func) {
   func->loop_analysis();
-  func->do_liveness_analysis();
   bool changed = false;
   unordered_set<BasicBlock *> remove_bbs;
   for (auto &loop_ptr : func->loops) {
@@ -360,7 +397,13 @@ bool remove_useless_loop(ir::Function *func) {
       }
       for(auto &inst : bb->insns){
         TypeCase(output, ir::insns::Output *, inst.get()){
-          defs.insert(output->dst);
+          auto uses = func->use_list[output->dst];
+          for(auto each : uses){
+            if(!loop_bbs.count(each->bb)){
+              check = false;
+              break;
+            }
+          }
         }
         TypeCase(call, ir::insns::Call *, inst.get()){
           if(!cur_prog->functions.count(call->func) || !cur_prog->functions.at(call->func).is_pure()){
@@ -378,6 +421,7 @@ bool remove_useless_loop(ir::Function *func) {
         if (!suc->loop || suc->loop != loop) {
           if(out && suc != out){
             check = false;
+            break;
           } else {
             out_bb = bb;
             out = suc;
@@ -385,15 +429,7 @@ bool remove_useless_loop(ir::Function *func) {
         }
       }
     }
-    int raw_size = out->live_in.size() + defs.size();
-    defs.merge(out->live_in);
-    if(raw_size != defs.size()){
-      check = false;
-    }
-    if (!out) {
-      check = false;  
-    }
-    if(check == false){
+    if(!out || !check){
       continue;
     }
     changed = true;

@@ -541,6 +541,7 @@ void IrGen::visit_if(const ast::IfElse &node) {
 void IrGen::visit_while(const ast::While &node) {
   auto cond_bb = new_bb();
   auto body_bb = new_bb();
+  auto body_cond_bb = new_bb();
   auto next_bb = new_bb();
 
   emit(new insns::Jump{cond_bb});
@@ -550,8 +551,10 @@ void IrGen::visit_while(const ast::While &node) {
 
   cur_bb = body_bb;
   break_targets.push_back(next_bb);
-  continue_targets.push_back(cond_bb);
+  continue_targets.push_back(body_cond_bb);
   visit_statement(*node.body());
+  emit(new insns::Jump{body_cond_bb});
+  cur_bb = body_cond_bb;
   auto body_br_targets = visit_logical_expr(node.cond());
   body_br_targets.resolve(body_bb, next_bb);
   continue_targets.pop_back();

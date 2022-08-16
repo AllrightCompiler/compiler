@@ -1,5 +1,6 @@
 #include "common/ir.hpp"
 #include "mediumend/cfg.hpp"
+#include "mediumend/optimizer.hpp"
 
 namespace mediumend {
 
@@ -12,7 +13,8 @@ using std::unordered_set;
 using std::unordered_map;
 using std::vector;
 
-const int LONG_CALL_LEN = 64000;
+const int LONG_CALL_LEN = 256;
+const int TOO_LONG_CALL_LEN = 1000;
 
 void inline_single_func(Function *caller, Program *prog, unordered_set<string> &cursive_or_long_calls){
   vector<ir::insns::Call *> calls;
@@ -89,7 +91,8 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
           ret_phi->bb = ret_bb;
         }
         inst_iter->get()->remove_use_def();
-        inst_iter->reset(new ir::insns::Jump(bb2bb[callee->bbs.front().get()]));
+        inst_iter->reset(new ir::insns::Jump(bb2bb.at(callee->bbs.front().get())));
+        inst_iter->get()->bb = inst_bb;
         inst_iter++;
         break;
       }
@@ -133,16 +136,17 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
           }
           inst_copy = new ir::insns::Jump(ret_bb);
         } else TypeCase(jump, ir::insns::Jump *, inst.get()){
-          inst_copy = new ir::insns::Jump(bb2bb[jump->target]);
+          inst_copy = new ir::insns::Jump(bb2bb.at(jump->target));
         } else TypeCase(branch, ir::insns::Branch *, inst.get()){
-          inst_copy = new ir::insns::Branch(reg2reg.at(branch->val), bb2bb[branch->true_target], bb2bb[branch->false_target]);
+          inst_copy = new ir::insns::Branch(reg2reg.at(branch->val), bb2bb.at(branch->true_target), bb2bb.at(branch->false_target));
         } else TypeCase(loadimm, ir::insns::LoadImm *, inst.get()){
           inst_copy = new ir::insns::LoadImm(reg2reg.at(loadimm->dst), loadimm->imm);
         } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()){
           inst_copy = new ir::insns::LoadAddr(reg2reg.at(loadaddr->dst), loadaddr->var_name);
         } else TypeCase(alloc, ir::insns::Alloca *, inst.get()){
-          allocas.push_back(new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type));
-          continue;
+          inst_copy = new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type);
+          // allocas.push_back(new ir::insns::Alloca(reg2reg.at(alloc->dst), alloc->type));
+          // continue;
         } else TypeCase(getptr, ir::insns::GetElementPtr *, inst.get()){
           vector<Reg> indexs_copy;
           for(auto &index : getptr->indices){
@@ -151,6 +155,12 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
           inst_copy = new ir::insns::GetElementPtr(reg2reg.at(getptr->dst), getptr->type, reg2reg.at(getptr->base), indexs_copy);
         } else TypeCase(convey, ir::insns::Convert *, inst.get()){
           inst_copy = new ir::insns::Convert(reg2reg.at(convey->dst), reg2reg.at(convey->src));
+        } else TypeCase(switch_inst, ir::insns::Switch *, inst.get()){
+          std::map<int, BasicBlock*> new_targets;
+          for(auto each : switch_inst->targets){
+            new_targets[each.first] = bb2bb.at(each.second);
+          }
+          inst_copy = new ir::insns::Switch(reg2reg.at(switch_inst->val), new_targets, bb2bb.at(switch_inst->default_target));
         } else {
           assert(false);
         }
@@ -159,16 +169,13 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
     }
     // 找一个合适的位置插入，或者就等后面指令调度
     caller->cfg->build();
-    caller->loop_analysis();
-    while(inst_bb->loop){
-      inst_bb = inst_bb->loop->header->idom;
-    }
-    auto jmp = inst_bb->insns.back().release();
-    inst_bb->insns.pop_back();
-    for(int i = 0; i < allocas.size(); i++){
-      inst_bb->push_back(allocas[i]);
-    }
-    inst_bb->insns.emplace_back(jmp);
+    // auto insert_bb = caller->bbs.front().get();
+    // auto jmp = insert_bb->insns.back().release();
+    // insert_bb->insns.pop_back();
+    // for(int i = 0; i < allocas.size(); i++){
+    //   insert_bb->push_back(allocas[i]);
+    // }
+    // insert_bb->insns.emplace_back(jmp);
     if(ret_phi){
       ret_phi->add_use_def();
     }
@@ -184,7 +191,6 @@ void function_inline(ir::Program *prog) {
       use_cnt[func.first] = 0;
     }
     int length = 0;
-    unordered_set<string> calls_func_name;
     for(auto &bb : func.second.bbs){
       length += bb->insns.size();
       for(auto &insn : bb->insns){
@@ -197,10 +203,6 @@ void function_inline(ir::Program *prog) {
           if(call->func == func.first){
             cursive_or_long_calls.insert(call->func);
           } else {
-            if(calls_func_name.count(call->func)){
-              continue;
-            }
-            calls_func_name.insert(call->func);
             if(!use_cnt[func.first]){
               use_cnt[func.first] = 1;
             } else {
@@ -210,7 +212,7 @@ void function_inline(ir::Program *prog) {
         }
       }
     }
-    if(length > LONG_CALL_LEN){
+    if(length > LONG_CALL_LEN && length < TOO_LONG_CALL_LEN){
       cursive_or_long_calls.insert(func.first);
     }
   }
@@ -232,6 +234,7 @@ void function_inline(ir::Program *prog) {
       }
     }
   }
+  ir_validation(prog);
 }
 
 } // namespace mediumend

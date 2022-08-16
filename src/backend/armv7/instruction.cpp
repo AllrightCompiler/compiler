@@ -292,6 +292,14 @@ void CmpBranch::emit(std::ostream &os) const {
   write_op(os, "*b") << true_target->label << ", " << false_target->label;
 }
 
+void Switch::emit(std::ostream &os) const {
+  os << "*switch " << val << ", " << default_target->label;
+  for (auto &[v, target] : targets) {
+    next_instruction(os);
+    os << "    " << v << " -> " << target->label;
+  }
+}
+
 void LoadStack::emit(std::ostream &os) const {
   os << "*load-stack " << dst << ", obj[" << base->size << ", " << base->offset
      << "]+" << offset;
@@ -340,7 +348,7 @@ void CountLeadingZero::emit(std::ostream &os) const {
 }
 
 void PseudoCompare::emit(std::ostream &os) const {
-  os << "*compare-" << cond << ' ' << dst << ' ';
+  os << "*set" << cond << ' ' << dst << ' ';
   cmp->emit(os);
 }
 

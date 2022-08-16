@@ -1,5 +1,5 @@
 #include "common/ir.hpp"
-#include "mediumend/optmizer.hpp"
+#include "mediumend/optimizer.hpp"
 
 namespace mediumend {
 
@@ -59,6 +59,11 @@ auto check_osp(list<unique_ptr<Instruction>> &insns, list<unique_ptr<Instruction
       } else assert(false);
       insns.emplace(it_end, loadimm);
       insns.emplace(it_end, mul);
+      if (r_init == r_add) { // change add to mul directly
+        loadimm->imm = ConstValue(inst_cnt + 1);
+        Reg binary_dst = ((ir::insns::Binary *) it_end->get())->dst;
+        copy_propagation(it_end->get()->bb->func->use_list, binary_dst, mul->dst);
+      }
       return it_end;
     }
   }
