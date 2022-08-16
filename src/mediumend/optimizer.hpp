@@ -73,7 +73,7 @@ inline void run_medium(ir::Program *prog, bool disable_gep_des) {
   }
 
   for (int i = 0; i < passes.size(); i++) {
-    if (disable_gep_des && passes[i] == gep_destruction) continue;
+    // if (disable_gep_des && passes[i] == gep_destruction) continue;
     if (disable_gep_des && passes[i] == loop_parallel) continue;
     passes[i](prog);
   }
