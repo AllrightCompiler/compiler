@@ -176,8 +176,7 @@ void fold_constants(Function &f) {
           case ExCond::Cc:
             return static_cast<unsigned>(*opt_imm1) <
                    static_cast<unsigned>(*opt_imm2);
-          case ExCond::Always:
-            [[fallthrough]];
+          case ExCond::Always:;
           }
         }
         if (opt_imm2) {
@@ -487,7 +486,7 @@ void fold_constants(Function &f) {
         } break;
         }
       }
-      TypeCase(i_ins, IType *, insn.get()) {
+      else TypeCase(i_ins, IType *, insn.get()) {
         auto const opt_imm1 = get_imm(i_ins->s1);
         switch (i_ins->op) {
         case IType::Add: {
@@ -555,7 +554,7 @@ void fold_constants(Function &f) {
         } break;
         }
       }
-      TypeCase(fr_ins, FullRType *, insn.get()) {
+      else TypeCase(fr_ins, FullRType *, insn.get()) {
         auto const opt_imm1 = get_imm(fr_ins->s1);
         auto const opt_imm2 = eval_operand2(fr_ins->s2);
         switch (fr_ins->op) {
@@ -650,7 +649,7 @@ void fold_constants(Function &f) {
         } break;
         }
       }
-      TypeCase(mov, Move *, insn.get()) {
+      else TypeCase(mov, Move *, insn.get()) {
         auto opt_imm = eval_operand2(mov->src);
         if (opt_imm && !mov->is_transfer_vmov()) {
           int imm = opt_imm.value();
@@ -667,10 +666,10 @@ void fold_constants(Function &f) {
           }
         }
       }
-      TypeCase(cmp, Compare *, insn.get()) {
+      else TypeCase(cmp, Compare *, insn.get()) {
         inline_compare_constant(cmp, cmp->cond);
       }
-      TypeCase(pcmp, PseudoCompare *, insn.get()) {
+      else TypeCase(pcmp, PseudoCompare *, insn.get()) {
         auto const res = inline_compare_constant(pcmp->cmp.get(), pcmp->cond);
         if (res) {
           insn =
@@ -678,7 +677,7 @@ void fold_constants(Function &f) {
           next = instr;
         }
       }
-      TypeCase(br, CmpBranch *, insn.get()) {
+      else TypeCase(br, CmpBranch *, insn.get()) {
         auto const res = inline_compare_constant(br->cmp.get(), br->cond);
         if (res) {
           if (*res) {
@@ -690,7 +689,7 @@ void fold_constants(Function &f) {
           }
         }
       }
-      TypeCase(mod, PseudoModulo *, insn.get()) {
+      else TypeCase(mod, PseudoModulo *, insn.get()) {
         auto const opt_imm1 = get_imm(mod->s1);
         auto const opt_imm2 = get_imm(mod->s2);
         if (opt_imm1 && opt_imm2) {
@@ -765,7 +764,7 @@ void fold_constants(Function &f) {
         insn = std::make_unique<FusedMul>(FusedMul::Sub, mod->dst, tmp, mod->s2,
                                           mod->s1);
       }
-      TypeCase(fused_mul, FusedMul *, insn.get()) {
+      else TypeCase(fused_mul, FusedMul *, insn.get()) {
         auto const opt_imm1 = get_imm(fused_mul->s1);
         auto const opt_imm2 = get_imm(fused_mul->s2);
         auto const opt_imm3 = get_imm(fused_mul->s3);
@@ -790,7 +789,7 @@ void fold_constants(Function &f) {
                                              tmp, imm, 1));
           insn = std::make_unique<RType>(RType::Mul, fused_mul->dst,
                                          fused_mul->s3, tmp);
-        } else { // 后续再经过 merge_add_or_sub_with_mul
+        } else { // 后续再经过 merge_mul_with_add_or_sub
           auto const tmp = f.new_reg(RegType::General);
           next = bb->insns.insert(
               instr, std::make_unique<RType>(RType::Mul, tmp, fused_mul->s1,
@@ -800,7 +799,7 @@ void fold_constants(Function &f) {
               fused_mul->dst, fused_mul->s3, tmp);
         }
       }
-      TypeCase(clz, CountLeadingZero *, insn.get()) {
+      else TypeCase(clz, CountLeadingZero *, insn.get()) {
         auto const opt_imm = get_imm(clz->src);
         if (opt_imm) {
           insn = std::make_unique<Move>(clz->dst,
@@ -808,8 +807,12 @@ void fold_constants(Function &f) {
           next = instr;
         }
       }
-      TypeCase(_, PseudoOneDividedByReg *, insn.get()) { assert(false); }
-      TypeCase(bfc, BitFieldClear *, insn.get()) { assert(false); }
+      else TypeCase(_, PseudoOneDividedByReg *, insn.get()) {
+        assert(false);
+      }
+      else TypeCase(bfc, BitFieldClear *, insn.get()) {
+        assert(false);
+      }
     }
   }
 }
