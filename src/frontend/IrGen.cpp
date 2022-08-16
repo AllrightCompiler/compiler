@@ -45,6 +45,8 @@ IrGen::IrGen() : program{new Program} {
   lib["__builtin_array_init"].sig = {
       .ret_type = std::nullopt,
       .param_types = {Type{Int, std::vector<int>{0}}, Type{Int}}};
+  lib["__create_threads"].sig = {.ret_type = Int, .param_types = {}};
+  lib["__join_threads"].sig = {.ret_type = std::nullopt, .param_types = {Type{Int}}};
 }
 
 BasicBlock *IrGen::new_bb() {

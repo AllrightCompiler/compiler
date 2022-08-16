@@ -23,14 +23,15 @@ void backend_passes(Program &p) {
     merge_add_with_load_or_store(f);
     merge_mul_with_add_or_sub(f);
 
-    remove_unused(f);
-
     f.resolve_phi();
+
+    propagate_constants(f);
+    remove_unused(f);
 
     f.do_reg_alloc(reg_allocator, false); // fp reg
     f.do_reg_alloc(reg_allocator);
 
-    remove_useless(f);
+    remove_nop(f);
 
     f.emit_prologue_epilogue();
 
@@ -818,6 +819,42 @@ void fold_constants(Function &f) {
   }
 }
 
+// 简单的局部常量传播，只是为了消除phi解构引入的多余mov dst, #imm
+void propagate_constants(Function &f) {
+  std::map<Reg, int> int_vals;
+  for (auto &bb : f.bbs) {
+    int_vals.clear();
+    for (auto &insn : bb->insns) {
+      TypeCase(mov, Move *, insn.get()) {
+        if (!mov->is_reg_mov())
+          continue;
+
+        Reg dst = mov->dst;
+        Reg src = mov->src.get<RegImmShift>().r;
+        std::optional<int> opt_imm;
+        if (f.reg_val.count(src)) {
+          auto &val = f.reg_val.at(src);
+          if (val.index() == RegValueType::Imm)
+            opt_imm = std::get<Imm>(val);
+        }
+        if (int_vals.count(src))
+          opt_imm = int_vals.at(src);
+        
+        if (opt_imm) {
+          int imm = *opt_imm;
+          int_vals[dst] = imm;
+          if (is_imm8m(imm))
+            mov->src = Operand2::from(imm);
+          else if (is_imm8m(~imm)) {
+            mov->src = Operand2::from(~imm);
+            mov->flip = !mov->flip;
+          }
+        }
+      }
+    }
+  }
+}
+
 void remove_unused(Function &f) {
   f.do_liveness_analysis();
   for (auto &bb : f.bbs) {
@@ -850,7 +887,7 @@ void remove_unused(Function &f) {
   }
 }
 
-void remove_useless(Function &f) {
+void remove_nop(Function &f) {
   for (auto &bb : f.bbs) {
     auto &insns = bb->insns;
     for (auto it = insns.begin(); it != insns.end();) {

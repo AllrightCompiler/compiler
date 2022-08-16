@@ -40,9 +40,11 @@ void remove_zero_global_def(ir::Program *prog);
 void sort_basicblock(ir::Program *prog);
 void gep_destruction(ir::Program *prog);
 void remove_recursive_tail_call(ir::Program *prog);
+void loop_parallel(ir::Program *prog);
 void value_range_analysis(ir::Program *prog);
 void br2switch(ir::Program *prog);
 void loop_interchange(ir::Program *prog);
+void algebra_simpilifacation(ir::Program *prog);
 
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
@@ -51,10 +53,11 @@ void ir_validation(ir::Program *prog);
 bool in_array_ssa();
 
 inline void run_medium(ir::Program *prog, bool disable_gep_des) {
-  for (auto &func : prog->functions){
-    func.second.cfg = new CFG(&func.second);
-    func.second.cfg->build();
-    func.second.cfg->remove_unreachable_bb();
+  for (auto &[_, f] : prog->functions){
+    auto cfg = new CFG{&f};
+    cfg->build();
+    cfg->remove_unreachable_bb();
+    f.cfg = cfg;
   }
   compute_use_def_list(prog);
 
@@ -71,7 +74,7 @@ inline void run_medium(ir::Program *prog, bool disable_gep_des) {
   }
 
   for (int i = 0; i < passes.size(); i++) {
-    if (disable_gep_des && passes[i] == gep_destruction) continue;
+    if (disable_gep_des && passes[i] == loop_parallel) continue;
     passes[i](prog);
   }
 }

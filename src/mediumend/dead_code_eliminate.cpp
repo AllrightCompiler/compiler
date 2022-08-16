@@ -121,11 +121,21 @@ void check_inst(ir::Instruction *inst){
 }
 
 void remove_uneffective_inst(ir::Program *prog){
+  unordered_set<ir::Instruction *> useful_inst;
+  unordered_set<ir::Function *> func_stack;
+  unordered_set<std::string> visited_func;
   for(auto &each : prog->functions){
-    ir::Function *func = &each.second;
+    each.second.ret_used = false;
+  }
+  prog->functions.at("main").ret_used = true;
+  func_stack.insert(&prog->functions.at("main"));
+  while(func_stack.size()){
+    auto iter = func_stack.begin();
+    ir::Function *func = *iter;
+    func_stack.erase(iter);
     auto &bbs = func->bbs;
     unordered_set<ir::Instruction *> stack;
-    unordered_set<ir::Instruction *> useful_inst; 
+    visited_func.insert(func->name);
     for (auto &bb : bbs) {
       auto &insns = bb->insns;
       for (auto &inst : insns) {
@@ -144,7 +154,13 @@ void remove_uneffective_inst(ir::Program *prog){
             }
           }
         } else TypeCase(term, ir::insns::Terminator *, inst.get()){
-          stack.insert(term);
+          TypeCase(ret, ir::insns::Return *, inst.get()){
+            if(func->is_ret_used() || !func->sig.ret_type.has_value()){
+              stack.insert(term);
+            }
+          } else {
+            stack.insert(term);
+          }
         } else TypeCase(store, ir::insns::Store *, inst.get()){
           stack.insert(store);
         } else TypeCase(memdef, ir::insns::MemDef *, inst.get()){
@@ -173,7 +189,53 @@ void remove_uneffective_inst(ir::Program *prog){
           stack.insert(def);
         }
       }
+      TypeCase(call, ir::insns::Call *, inst){
+        if(call->func == func->name){
+          continue;
+        }
+        if(prog->functions.count(call->func)){
+          auto &callee = prog->functions.at(call->func);
+          if(func->use_list[call->dst].size()){
+            if(!callee.ret_used){
+              callee.ret_used = true;
+              func_stack.insert(&callee);
+            }
+          }
+          if(!visited_func.count(call->func)){
+            func_stack.insert(&callee);
+          }
+        }
+      }
     }
+  }
+  for(auto &each : prog->functions){
+    bool remove_ret = true;
+    if(each.second.ret_used || !each.second.sig.ret_type.has_value()){
+      remove_ret = false;
+    } else {
+      each.second.sig.ret_type.reset();
+    }
+    auto &bbs = each.second.bbs;
+    for(auto &bb : bbs){
+      for(auto &inst : bb->insns){
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          if(prog->functions.count(call->func) && !prog->functions.at(call->func).is_ret_used()){
+            call->dst.type = ScalarType::String;
+          }
+        }
+      }
+      if(remove_ret){
+        auto ret = dynamic_cast<ir::insns::Return *>(bb->insns.back().get());
+        if(ret){
+          ret->remove_use_def();
+          ret->val.reset();
+          useful_inst.insert(ret);
+        }
+      }
+    }
+  }
+  for(auto &each : prog->functions){
+    auto &bbs = each.second.bbs;
     for(auto &bb : bbs){
       bb->remove_if([&](ir::Instruction *ir) {
         return !useful_inst.count(ir);
@@ -440,8 +502,8 @@ bool remove_useless_loop(ir::Function *func) {
     out->change_prev(out_bb, idom_prev);
     
   }
-  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-    auto bb = iter->get();
+  for(auto &each : func->bbs){
+    auto bb = each.get();
     if(remove_bbs.count(bb)){
       for(auto &inst : bb->insns){
         inst->remove_use_def();
@@ -452,6 +514,11 @@ bool remove_useless_loop(ir::Function *func) {
       for(auto succ : bb->succ){
         succ->prev.erase(bb);
       }
+    }
+  }
+  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
+    auto bb = iter->get();
+    if(remove_bbs.count(bb)){
       iter = func->bbs.erase(iter);
     } else {
       iter++;

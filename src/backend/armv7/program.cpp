@@ -126,7 +126,9 @@ class ProgramTranslator {
         next_bb = std::next(dst_it)->get();
 
       auto bb = dst_it->get();
+      auto loop = (*src_it)->loop;
       bb->label = dst.new_label();
+      bb->loop_level = loop ? loop->level : 0;
       for (auto &ir_insn : (*src_it)->insns)
         translate_instruction(dst_fn, bb, ir_insn.get(), next_bb);
     }
@@ -511,7 +513,8 @@ void Function::emit(std::ostream &os) {
 }
 
 void Function::emit_jump_tables(std::ostream &os) {
-  os << ".section .rodata\n";
+  if (!jump_tables.empty())
+    os << ".section .text\n";
   for (size_t i = 0; i < jump_tables.size(); ++i) {
     auto jt_name = "JT" + std::to_string(i) + "$" + name;
     auto &sw = jump_tables[i];
@@ -532,6 +535,30 @@ void Function::emit_jump_tables(std::ostream &os) {
   }
 }
 
+/*
+modified from
+https://github.com/kobayashi-compiler/kobayashi-compiler/blob/main/runtime/armv7/thread.S
+
+int __create_threads() {
+    for (int i = 0; i < 3; ++i) {
+        int pid = clone(CLONE_VM | SIGCHLD, sp, 0, 0, 0);
+        if (pid != 0) {
+            return i;
+        }
+    }
+    return n;
+}
+
+void __join_threads(int i) {
+    if (i != 3) {
+        waitid(P_ALL, 0, NULL, WEXITED);
+    }
+    if (i != 0) {
+        _exit(0);
+    }
+}
+*/
+
 Program::Program() : labels_used{0} {
   auto p = [this](const char *s) { builtin_code.emplace_back(s); };
   p("__builtin_array_init:");
@@ -543,6 +570,62 @@ Program::Program() : labels_used{0} {
   p("    cmp r0, r1");
   p("    blt 1b");
   p("    bx  lr");
+  p("");
+  p("SYS_clone = 120");
+  p("CLONE_VM = 256");
+  p("SIGCHLD = 17");
+  p("");
+  p("__create_threads:");
+  p("    push {r4, r5, r6, r7}");
+  p("    mov r5, #3");
+  p("    mov r7, #SYS_clone");
+  p("    mov r1, sp");
+  p("    mov r2, #0");
+  p("    mov r3, #0");
+  p("    mov r4, #0");
+  p("    mov r6, #0");
+  p(".LT0:");
+  p("    mov r0, #(CLONE_VM | SIGCHLD)");
+  p("    swi #0");
+  p("    cmp r0, #0");
+  p("    movne r0, r6");
+  p("    bne .LT1");
+  p("    add r6, r6, #1");
+  p("    cmp r6, r5");
+  p("    blt .LT0");
+  p("    mov r0, r5");
+  p(".LT1:");
+  p("    pop {r4, r5, r6, r7}");
+  p("    bx lr");
+  p("");
+  p("SYS_waitid = 280");
+  p("SYS_exit = 1");
+  p("P_ALL = 0");
+  p("WEXITED = 4");
+  p("");
+  p("__join_threads:");
+  p("    sub sp, sp, #16");
+  p("    cmp r0, #0");
+  p("    pusheq {r4, r7}");
+  p("    mov r4, r0");
+  p("    cmp r4, #3");
+  p("    beq .LT2");
+  p("    mov r0, #P_ALL");
+  p("    mov r1, #0");
+  p("    mov r2, #0");
+  p("    mov r3, #WEXITED");
+  p("    mov r7, #SYS_waitid");
+  p("    swi #0");
+  p(".LT2:");
+  p("    cmp r4, #0");
+  p("    bne .LT3");
+  p("    pop {r4, r7}");
+  p("    add sp, sp, #16");
+  p("    bx lr");
+  p(".LT3:");
+  p("    mov r0, #0");
+  p("    mov r7, #SYS_exit");
+  p("    swi #0");
 }
 
 void Program::emit(std::ostream &os) {

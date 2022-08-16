@@ -125,6 +125,7 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
       } else return info; // update not binary inst
     } else return info; // cond not binary
   } else assert(false);
+  if (type != 1) return info; // TODO: temporarily stop unrolling type 2 loop
   if (type != 1) { // if type 1: should not have br after gvn_gcm and clean_cf
     TypeCase(into_br_cond, ir::insns::Branch *, into_entry->insns.back().get()) {
       TypeCase(into_binary_cond, ir::insns::Binary *, into_br_cond->bb->func->def_list.at(into_br_cond->val)) {
@@ -134,13 +135,13 @@ SimpleLoopInfo get_loop_info(Loop *loop, const unordered_set<BasicBlock *> &loop
         info.into_cond = into_binary_cond;
       } else return info;
       info.into_br = into_br_cond;
-    } else assert(false);
+    } else assert(false); // TODO: might cause trouble after value_range_analysis
   }
   info.loop_type = type;
   return info;
 }
 
-Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry, BasicBlock *exit) {
+static Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry, BasicBlock *exit) {
   auto reg_map_if = [=](Reg reg) {
     if (reg_map[map_curid].count(reg)) return reg_map[map_curid].at(reg);
     else return reg;
@@ -224,7 +225,8 @@ Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry
     } else {
       for (auto pair : phi->incoming) {
         auto mapped_bb = bb_map[map_curid].at(pair.first);
-        auto mapped_reg = reg_map[map_curid].at(pair.second);
+        auto mapped_reg = pair.second;
+        if (reg_map[map_curid].count(mapped_reg)) mapped_reg = reg_map[map_curid].at(mapped_reg);
         new_inst->incoming[mapped_bb] = mapped_reg;
       }
     }
@@ -232,7 +234,7 @@ Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock *entry
   } else assert(false);
 }
 
-void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *exit) {
+static void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *exit) {
   // map prev & succ
   for (auto prev_bb : bb->prev) {
     if (bb == entry) continue; // new_entry's prev has been done
@@ -549,7 +551,9 @@ void loop_unroll(ir::Function *func, Loop *loop, SimpleLoopInfo info, const unor
         phi->remove_use_def();
         for (auto bb : exit_paths) {
           if (info.loop_type == 1) {
-            phi->incoming[bb_map[map_curid].at(bb)] = reg_map[map_curid].at(phi->incoming.at(bb));
+            Reg new_reg = phi->incoming.at(bb);
+            if (reg_map[map_curid].count(new_reg)) new_reg = reg_map[map_curid].at(new_reg);
+            phi->incoming[bb_map[map_curid].at(bb)] = new_reg;
           }
           phi->incoming.erase(bb);
         }
@@ -709,6 +713,7 @@ void loop_unroll(ir::Function *func) {
       // } else loop_info.loop_type = 2;
     }
     if (loop_info.loop_type == 2 && loop_bbs.size() > 1) continue; // not unroll type 2 loop with branches
+    if (loop_info.loop_type == 2) continue; // TODO: temporarily stop unrolling type 2 loop
     if (loop_info.loop_type == 2) { // Decrease end by unroll * step, therefore erase branches jump out in middle
       Instruction *binary_cond = func->def_list.at(loop_info.cond_reg);
       Reg new_end = func->new_reg(Int);

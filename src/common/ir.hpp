@@ -171,6 +171,7 @@ struct BasicBlock {
   }
   void change_succ(BasicBlock *old_bb, BasicBlock *new_bb);
   void change_prev(BasicBlock *old_bb, BasicBlock *new_bb);
+  void remove_prev(BasicBlock *bb);
 };
 
 void calc_loop_level(Loop *loop);
@@ -189,6 +190,7 @@ struct Function {
   int pure = -1;
   int array_ssa_pure = -1;
   int only_load_param = -1;
+  bool ret_used = false;
 
   unordered_map<Reg, unordered_set<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
@@ -202,6 +204,7 @@ struct Function {
   bool is_pure() const { return pure == 1; }
   bool is_array_ssa_pure() const { return array_ssa_pure == 1; }
   bool is_only_load_param() const { return only_load_param == 1; }
+  bool is_ret_used() const { return ret_used; }
   void clear_visit();
   void clear_graph();
   void clear_dom();
@@ -224,6 +227,8 @@ struct Program {
 std::ostream &operator<<(std::ostream &os, const Program &);
 std::ostream &operator<<(std::ostream &os, const ConstValue &);
 void emit_global_var(std::ostream &os, const std::string &name, Var *var);
+
+std::ostream &dump_cfg(std::ostream &os, const Program &);
 
 void set_print_context(const Program &);
 const Program *get_print_context();

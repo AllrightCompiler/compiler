@@ -28,9 +28,11 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"sort_basicblock", sort_basicblock},
   {"gep_destruction", gep_destruction},
   {"remove_recursive_tail_call", remove_recursive_tail_call},
+  {"loop_parallel", loop_parallel},
   {"value_range_analysis", value_range_analysis},
   {"br2switch", br2switch},
   {"loop_interchange", loop_interchange},
+  {"algebra_simpilifacation", algebra_simpilifacation},
 };
 
 // define default passes here
@@ -38,12 +40,15 @@ std::vector<funcptr> passes = {
   clean_useless_cf,
   main_global_var_to_local,
   mem2reg,
+  mark_pure_func,
   remove_uneffective_inst,
   remove_unused_function,
   main_global_var_to_local,
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
-  
+  remove_uneffective_inst,
+  remove_unused_function,
+
   // br2switch,
 
   gvn_no_cfg,
@@ -60,6 +65,10 @@ std::vector<funcptr> passes = {
   
   remove_recursive_tail_call,
 
+  gvn_cfg,
+
+  loop_parallel,
+
   function_inline,
   remove_unused_function,
   main_global_var_to_local,
@@ -73,6 +82,8 @@ std::vector<funcptr> passes = {
   array_ssa_destruction,
 
   value_range_analysis,
+  
+  algebra_simpilifacation,
 
   gvn_cfg,
   gvn_cfg,
@@ -85,7 +96,7 @@ std::vector<funcptr> passes = {
   gep_destruction,
   gvn_no_cfg,
 
-  operator_strength_reduction,
+  // operator_strength_reduction,
   gvn_cfg,
 
   sort_basicblock,
