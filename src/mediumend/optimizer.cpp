@@ -104,6 +104,7 @@ std::vector<funcptr> passes = {
 
 // without modify cfg
 void gvn_no_cfg(ir::Program *prog) {
+  remove_uneffective_inst(prog);
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
   remove_unused_function(prog);
@@ -112,6 +113,7 @@ void gvn_no_cfg(ir::Program *prog) {
 
 // modify cfg
 void gvn_cfg(ir::Program *prog) {
+  remove_uneffective_inst(prog);
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
   remove_unused_function(prog);
