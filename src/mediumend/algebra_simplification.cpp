@@ -48,13 +48,13 @@ void algebra_simpilifacation(Function *func) {
             ++map_iter;
           }
         }
+        reg_map[binary->dst] = single_map;
         if(single_map.size() == 0){
           binary->remove_use_def();
           auto new_inst = new ir::insns::LoadImm(binary->dst, ConstValue(0));
           new_inst->bb = bb.get();
           new_inst->add_use_def();
           iter->reset(new_inst);
-          reg_map[new_inst->dst] = single_map;
         } else if(single_map.size() == 1){
           auto reg_pair = single_map.begin();
           if(reg_pair->second == 1){
@@ -68,7 +68,6 @@ void algebra_simpilifacation(Function *func) {
             new_inst->bb = bb.get();
             new_inst->add_use_def();
             iter->reset(new_inst);
-            reg_map[new_inst->dst] = single_map;
           }
         } else if(single_map.size() == 2){
           bool removable = true;
@@ -77,20 +76,20 @@ void algebra_simpilifacation(Function *func) {
               removable = false;
             }
           }
+          auto map_iter = single_map.begin();
+          auto src1 = *map_iter;
+          map_iter++;
+          auto src2 = *map_iter;
+          if(src1.second == -1 && src2.second == -1){
+            removable = false;
+          }
           if(removable){
             binary->remove_use_def();
-            auto map_iter = single_map.begin();
-            auto src1 = *map_iter;
-            map_iter++;
-            auto src2 = *map_iter;
             bool add_not = false;
             if(src1.second == src2.second){
               binary->op = BinaryOp::Add;
               binary->src1 = src1.first;
               binary->src2 = src2.first;
-              if(src1.second == -1){
-                add_not = true;
-              }
             } else {
               binary->op = BinaryOp::Sub;
               if(src1.second == 1){
@@ -103,17 +102,6 @@ void algebra_simpilifacation(Function *func) {
             }
             binary->add_use_def();
             ++iter;
-            if(add_not){
-              auto reg = func->new_reg(ScalarType::Int);
-              ir::Instruction* inst = new ir::insns::Unary(reg, UnaryOp::Sub, binary->dst);
-              copy_propagation(func->use_list, binary->dst, reg);
-              inst->bb = bb.get();
-              inst->add_use_def();
-              bb->insns.emplace(iter, inst);
-              reg_map[reg] = single_map;
-            } else {
-              reg_map[binary->dst] = single_map;
-            }
             continue;
           }
         }
