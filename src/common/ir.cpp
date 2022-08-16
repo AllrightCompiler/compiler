@@ -577,13 +577,18 @@ std::ostream &dump_cfg(std::ostream &os, const Program &p) {
   os << "```mermaid\n";
   os << "flowchart TD\n";
   for (auto &[name, f] : p.functions) {
+    string fn_name = name;
+    auto label_of = [&fn_name](BasicBlock *bb) {
+      return bb->label + "$" + fn_name;
+    };
+
     os << "subgraph " << name << '\n';
     for (auto &bb : f.bbs) {
       if (bb->insns.empty())
         continue;
 
       std::stringstream buf;
-      buf << bb->label << "\\n";
+      buf << label_of(bb.get()) << "\\n";
       if (bb->loop)
         buf << "loop level: " << bb->loop->level << "\\n";
       buf << "freq: " << bb->freq << "\\n";
@@ -594,7 +599,7 @@ std::ostream &dump_cfg(std::ostream &os, const Program &p) {
       auto content = buf.str();
       std::regex newline_re{"[\\n]"};
       std::regex_replace(content, newline_re, "\\n");
-      os << "  " << bb->label << "[\"" << content << "\"]\n";
+      os << "  " << label_of(bb.get()) << "[\"" << content << "\"]\n";
     }
     for (auto &bb_ptr : f.bbs) {
       auto bb = bb_ptr.get();
@@ -603,29 +608,31 @@ std::ostream &dump_cfg(std::ostream &os, const Program &p) {
 
       auto ins = bb->insns.back().get();
       TypeCase(jump, insns::Jump *, ins) {
-        os << "  " << bb->label << " --> " << jump->target->label << '\n';
+        os << "  " << label_of(bb) << " --> " << label_of(jump->target) << '\n';
       }
       else TypeCase(br, insns::Branch *, ins) {
         auto et = std::make_pair(bb, br->true_target);
         auto ef = std::make_pair(bb, br->false_target);
 
-        // os << "  " << bb->label << " --T"
+        // os << "  " << label_of(bb) << " --T"
         //    << " f: " << f.branch_freqs.at(et) << " p: " <<
         //    f.branch_probs.at(et)
-        //    << " --> " << br->true_target->label << '\n';
-        // os << "  " << bb->label << " --F"
+        //    << " --> " << label_of(br->true_target) << '\n';
+        // os << "  " << label_of(bb) << " --F"
         //    << " f: " << f.branch_freqs.at(ef) << " p: " <<
         //    f.branch_probs.at(ef)
-        //    << " --> " << br->false_target->label << '\n';
-        os << "  " << bb->label << " -- T --> " << br->true_target->label
+        //    << " --> " << label_of(br->false_target) << '\n';
+        os << "  " << label_of(bb) << " -- T --> " << label_of(br->true_target)
            << '\n';
-        os << "  " << bb->label << " -- F --> " << br->false_target->label
+        os << "  " << label_of(bb) << " -- F --> " << label_of(br->false_target)
            << '\n';
       }
       else TypeCase(sw, insns::Switch *, ins) {
         for (auto &[_, target] : sw->targets)
-          os << "  " << bb->label << " -- J --> " << target->label << '\n';
-        os << "  " << bb->label << " -- D --> " << sw->default_target << '\n';
+          os << "  " << label_of(bb) << " -- J --> " << label_of(target)
+             << '\n';
+        os << "  " << label_of(bb) << " -- D --> "
+           << label_of(sw->default_target) << '\n';
       }
     }
     os << "end\n";

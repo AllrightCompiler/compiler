@@ -238,7 +238,12 @@ public:
         }
         for (auto s : bb->succ) {
           auto e = std::make_pair(bb, s);
-          edge_freqs[e] = bb->freq * edge_probs.at(e);
+          if (edge_probs.count(e))
+            edge_freqs[e] = bb->freq * edge_probs.at(e);
+          else {
+            // s should be a virtual exit
+            assert(s->succ.empty());
+          }
         }
       }
     }
@@ -284,8 +289,13 @@ public:
 
   void build() {
     f.loop_analysis();
+    pdom_tree.add_virtual_exit();
     pdom_tree.build();
     collect_info();
+  }
+
+  void cleanup() {
+    pdom_tree.remove_virtual_exit();
   }
 };
 
@@ -295,6 +305,7 @@ void estimate_exec_freq(ir::Program *prog) {
     ctx.build();
     ctx.compute_branch_probabilities(f.branch_probs);
     ctx.compute_freq_naive(f.branch_freqs, f.branch_probs);
+    ctx.cleanup();
   }
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -10,7 +11,7 @@ struct BasicBlock;
 struct Function;
 struct Program;
 
-}
+} // namespace ir
 
 namespace mediumend {
 
@@ -54,7 +55,7 @@ private:
 
 class PostDominatorTree {
   ir::Function *f;
-  unordered_set<BasicBlock *> exits;
+  std::unique_ptr<BasicBlock> virt_exit;
   unordered_map<BasicBlock *, BasicBlock *> ipdom;
 
   void rpo_dfs(BasicBlock *bb, vector<BasicBlock *> &po,
@@ -65,6 +66,8 @@ class PostDominatorTree {
 
 public:
   PostDominatorTree(ir::Function *f) : f{f} {}
+  void add_virtual_exit();
+  void remove_virtual_exit();
   void build();
   bool pdoms(BasicBlock *a, BasicBlock *b) const; // a pdoms b ?
 };

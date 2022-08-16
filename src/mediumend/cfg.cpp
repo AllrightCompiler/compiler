@@ -253,35 +253,48 @@ PostDominatorTree::intersect(const unordered_map<BasicBlock *, int> &rpo_num,
   return u;
 }
 
-void PostDominatorTree::build() {
-  ipdom.clear();
-  exits.clear();
+void PostDominatorTree::add_virtual_exit() {
+  auto vexit = new BasicBlock;
   for (auto &bb : f->bbs)
     if (bb->succ.empty())
-      exits.insert(bb.get());
+      BasicBlock::add_edge(bb.get(), vexit);
+  virt_exit.reset(vexit);
+}
 
+void PostDominatorTree::remove_virtual_exit() {
+  auto vexit = virt_exit.get();
+  for (auto exit : vexit->prev)
+    exit->succ.erase(vexit);
+}
+
+void PostDominatorTree::build() {
   std::vector<BasicBlock *> po;
   std::unordered_map<BasicBlock *, int> rpo_num;
   std::unordered_set<BasicBlock *> visited;
-  for (auto bb : exits) {
-    rpo_dfs(bb, po, rpo_num, visited);
-    ipdom[bb] = bb;
-  }
+
+  auto vexit = virt_exit.get();
+  rpo_dfs(vexit, po, rpo_num, visited);
+
+  // for (auto &bb : f->bbs)
+  //   ipdom[bb.get()] = nullptr;
+  ipdom[vexit] = vexit;
 
   bool changed = true;
   while (changed) {
     changed = false;
     for (auto it = po.rbegin(); it != po.rend(); ++it) {
       auto bb = *it;
-      if (exits.count(bb))
+      if (bb == vexit)
         continue;
 
-      auto succ_iter = bb->succ.begin();
-      auto new_ipdom = *succ_iter++;
-      for (; succ_iter != bb->succ.end(); ++succ_iter) {
-        auto s = *succ_iter;
-        if (ipdom.count(s))
-          new_ipdom = intersect(rpo_num, s, new_ipdom);
+      BasicBlock *new_ipdom = nullptr;
+      for (auto s : bb->succ) {
+        if (ipdom.count(s)) {
+          if (!new_ipdom)
+            new_ipdom = s;
+          else
+            new_ipdom = intersect(rpo_num, new_ipdom, s);
+        }
       }
       if (ipdom[bb] != new_ipdom) { // nullptr default construct
         ipdom[bb] = new_ipdom;

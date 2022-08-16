@@ -89,8 +89,8 @@ std::vector<Pass> passes = {
   operator_strength_reduction,
   gvn_cfg,
 
-  sort_basicblock,
   estimate_exec_freq,
+  sort_basicblock,
 };
 
 // without modify cfg
