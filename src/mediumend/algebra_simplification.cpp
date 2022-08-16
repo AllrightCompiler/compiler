@@ -131,11 +131,11 @@ void algebra_simpilifacation(Function *func) {
         for(auto &each : single_map){
           each.second = -each.second;
         }
-        reg_map[binary->dst] = single_map;
+        reg_map[unary->dst] = single_map;
         if(single_map.size() == 1){
           auto reg_pair = single_map.begin();
           if(reg_pair->second == 1){
-            copy_propagation(func->use_list, binary->dst, reg_pair->first);
+            copy_propagation(func->use_list, unary->dst, reg_pair->first);
             iter->get()->remove_use_def();
             iter = bb->insns.erase(iter);
             continue;
