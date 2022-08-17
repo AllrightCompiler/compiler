@@ -229,4 +229,90 @@ void CFG::compute_rpo() {
   std::reverse(rpo.begin(), rpo.end());
 }
 
+void PostDominatorTree::rpo_dfs(BasicBlock *bb, vector<BasicBlock *> &po,
+                                unordered_map<BasicBlock *, int> &rpo_num,
+                                unordered_set<BasicBlock *> &visited) const {
+  if (visited.count(bb))
+    return;
+  visited.insert(bb);
+  for (auto p : bb->prev)
+    rpo_dfs(p, po, rpo_num, visited);
+  po.push_back(bb);
+  rpo_num[bb] = f->bbs.size() - po.size();
+}
+
+BasicBlock *
+PostDominatorTree::intersect(const unordered_map<BasicBlock *, int> &rpo_num,
+                             BasicBlock *u, BasicBlock *v) const {
+  while (u != v) {
+    while (rpo_num.at(u) > rpo_num.at(v))
+      u = ipdom.at(u);
+    while (rpo_num.at(v) > rpo_num.at(u))
+      v = ipdom.at(v);
+  }
+  return u;
+}
+
+void PostDominatorTree::add_virtual_exit() {
+  auto vexit = new BasicBlock;
+  for (auto &bb : f->bbs)
+    if (bb->succ.empty())
+      BasicBlock::add_edge(bb.get(), vexit);
+  virt_exit.reset(vexit);
+}
+
+void PostDominatorTree::remove_virtual_exit() {
+  auto vexit = virt_exit.get();
+  for (auto exit : vexit->prev)
+    exit->succ.erase(vexit);
+}
+
+void PostDominatorTree::build() {
+  std::vector<BasicBlock *> po;
+  std::unordered_map<BasicBlock *, int> rpo_num;
+  std::unordered_set<BasicBlock *> visited;
+
+  auto vexit = virt_exit.get();
+  rpo_dfs(vexit, po, rpo_num, visited);
+
+  // for (auto &bb : f->bbs)
+  //   ipdom[bb.get()] = nullptr;
+  ipdom[vexit] = vexit;
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (auto it = po.rbegin(); it != po.rend(); ++it) {
+      auto bb = *it;
+      if (bb == vexit)
+        continue;
+
+      BasicBlock *new_ipdom = nullptr;
+      for (auto s : bb->succ) {
+        if (ipdom.count(s)) {
+          if (!new_ipdom)
+            new_ipdom = s;
+          else
+            new_ipdom = intersect(rpo_num, new_ipdom, s);
+        }
+      }
+      if (ipdom[bb] != new_ipdom) { // nullptr default construct
+        ipdom[bb] = new_ipdom;
+        changed = true;
+      }
+    }
+  }
+}
+
+bool PostDominatorTree::pdoms(BasicBlock *a, BasicBlock *b) const {
+  BasicBlock *b_prev;
+  do {
+    if (b == a)
+      return true;
+    b_prev = b;
+    b = ipdom.at(b);
+  } while (b != b_prev);
+  return false;
+}
+
 } // namespace mediumend

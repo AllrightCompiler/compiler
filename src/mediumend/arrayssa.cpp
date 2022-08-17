@@ -89,7 +89,7 @@ void array_mem2reg(ir::Program *prog) {
   find_use_def_array(&prog->functions.at("main"));
   for (auto &each : prog->functions) {
     Function *func = &each.second;
-    CFG *cfg = func->cfg;
+    auto &cfg = func->cfg;
     cfg->remove_unreachable_bb();
     cfg->compute_dom();
     auto df = cfg->compute_df();

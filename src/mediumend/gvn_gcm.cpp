@@ -637,7 +637,7 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
 // possible, and then is as control dependent as possible.
 void schedule_late(unordered_set<ir::Instruction *> &visited,
                   unordered_map<ir::Instruction *, BasicBlock *> &placement,
-                  const CFG *cfg,
+                  const std::unique_ptr<CFG> &cfg,
                   list<unique_ptr<BasicBlock>> &bbs,
                   const unordered_map<Reg, unordered_set<Instruction *>> &use_list,
                   ir::Instruction *inst) {
