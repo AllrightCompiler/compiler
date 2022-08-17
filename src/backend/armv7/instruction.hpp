@@ -667,11 +667,13 @@ struct ComplexLoad : Instruction {
   Reg dst, base, offset;
   ShiftType shift_type;
   int shift;
-  ComplexLoad(Reg dst, Reg base, Reg offset)
-      : ComplexLoad(dst, base, offset, ShiftType::LSL, 0) {}
-  ComplexLoad(Reg dst, Reg base, Reg offset, ShiftType shift_type, int shift)
+  bool neg;
+  ComplexLoad(Reg dst, Reg base, Reg offset, bool neg)
+      : ComplexLoad(dst, base, offset, ShiftType::LSL, 0, neg) {}
+  ComplexLoad(Reg dst, Reg base, Reg offset, ShiftType shift_type, int shift,
+              bool neg)
       : dst{dst}, base{base}, offset{offset},
-        shift_type{shift_type}, shift{shift} {}
+        shift_type{shift_type}, shift{shift}, neg{neg} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {this->dst}; }
@@ -685,11 +687,13 @@ struct ComplexStore : Instruction {
   Reg src, base, offset;
   ShiftType shift_type;
   int shift;
-  ComplexStore(Reg src, Reg base, Reg offset)
-      : ComplexStore(src, base, offset, ShiftType::LSL, 0) {}
-  ComplexStore(Reg src, Reg base, Reg offset, ShiftType shift_type, int shift)
+  bool neg;
+  ComplexStore(Reg src, Reg base, Reg offset, bool neg)
+      : ComplexStore(src, base, offset, ShiftType::LSL, 0, neg) {}
+  ComplexStore(Reg src, Reg base, Reg offset, ShiftType shift_type, int shift,
+               bool neg)
       : src{src}, base{base}, offset{offset},
-        shift_type{shift_type}, shift{shift} {}
+        shift_type{shift_type}, shift{shift}, neg{neg} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }

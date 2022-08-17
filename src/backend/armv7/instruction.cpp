@@ -377,7 +377,7 @@ void Vneg::emit(std::ostream &os) const {
 
 void ComplexLoad::emit(std::ostream &os) const {
   write_op(os, "ldr") << this->dst << ", [" << this->base << ", "
-                      << this->offset;
+                      << "+-"[this->neg] << this->offset;
   if (this->shift != 0) {
     os << ", " << this->shift_type << " #" << this->shift;
   }
@@ -386,7 +386,7 @@ void ComplexLoad::emit(std::ostream &os) const {
 
 void ComplexStore::emit(std::ostream &os) const {
   write_op(os, "str") << this->src << ", [" << this->base << ", "
-                      << this->offset;
+                      << "+-"[this->neg] << this->offset;
   if (this->shift != 0) {
     os << ", " << this->shift_type << " #" << this->shift;
   }
