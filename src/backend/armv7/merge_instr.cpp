@@ -139,7 +139,7 @@ void merge_shift_with_binary_op(Function &func) {
                   combine_shift({shift.type, shift.s}, {s2.type, s2.s})) {
             return std::make_unique<FullRType>(
                 fr_instr->op, fr_instr->dst, fr_instr->s1,
-                Operand2::from(new_shift->first, r, new_shift->second));
+                Operand2::from(new_shift->first, shift.r, new_shift->second));
           }
         }
       }
@@ -155,8 +155,9 @@ void merge_shift_with_binary_op(Function &func) {
         } else { // load->offset == r
           if (auto const new_shift = combine_shift(
                   {shift.type, shift.s}, {load->shift_type, load->shift})) {
-            return std::make_unique<ComplexLoad>(
-                load->dst, load->base, r, new_shift->first, new_shift->second);
+            return std::make_unique<ComplexLoad>(load->dst, load->base, shift.r,
+                                                 new_shift->first,
+                                                 new_shift->second);
           }
         }
       }
@@ -172,8 +173,8 @@ void merge_shift_with_binary_op(Function &func) {
         } else { // load->offset == r
           if (auto const new_shift = combine_shift(
                   {shift.type, shift.s}, {store->shift_type, store->shift})) {
-            return std::make_unique<ComplexStore>(store->src, store->base, r,
-                                                  new_shift->first,
+            return std::make_unique<ComplexStore>(store->src, store->base,
+                                                  shift.r, new_shift->first,
                                                   new_shift->second);
           }
         }
