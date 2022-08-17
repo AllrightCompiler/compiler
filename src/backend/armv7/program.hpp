@@ -133,18 +133,19 @@ std::unique_ptr<Program> translate(const ir::Program &ir_program);
 void emit_global(std::ostream &os, const ir::Program &ir_program);
 
 template <typename Container = std::list<std::unique_ptr<Instruction>>>
-void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
-                   int imm) {
+auto emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
+                   int imm) -> typename Container::iterator {
   if (is_imm8m(imm))
-    cont.emplace(it, new Move{dst, Operand2::from(imm)});
+    return cont.emplace(it, new Move{dst, Operand2::from(imm)});
   else if (is_imm8m(~imm))
-    cont.emplace(it, new Move{dst, Operand2::from(~imm), true});
+    return cont.emplace(it, new Move{dst, Operand2::from(~imm), true});
   else {
     uint32_t x = uint32_t(imm);
     auto lo = x & 0xffff, hi = x >> 16;
-    cont.emplace(it, new MovW(dst, lo));
+    auto ret = cont.emplace(it, new MovW(dst, lo));
     if (hi > 0)
       cont.emplace(it, new MovT(dst, hi));
+    return ret;
   }
 }
 

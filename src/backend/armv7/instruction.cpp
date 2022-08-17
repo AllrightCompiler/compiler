@@ -205,18 +205,17 @@ void RType::emit(std::ostream &os) const {
 
 void IType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add",
-      [Sub] = "sub",
-      [RevSub] = "rsb",
-      [Eor] = "eor",
+      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb",
+      [Eor] = "eor", [Bic] = "bic", [And] = "and",
   };
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", #" << imm;
 }
 
 void FullRType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb",
-      [Bic] = "bic", [And] = "and",
+      [Add] = "add",
+      [Sub] = "sub",
+      [RevSub] = "rsb",
   };
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", " << s2;
 }
@@ -378,7 +377,7 @@ void Vneg::emit(std::ostream &os) const {
 
 void ComplexLoad::emit(std::ostream &os) const {
   write_op(os, "ldr") << this->dst << ", [" << this->base << ", "
-                      << this->offset;
+                      << "+-"[this->neg] << this->offset;
   if (this->shift != 0) {
     os << ", " << this->shift_type << " #" << this->shift;
   }
@@ -387,7 +386,7 @@ void ComplexLoad::emit(std::ostream &os) const {
 
 void ComplexStore::emit(std::ostream &os) const {
   write_op(os, "str") << this->src << ", [" << this->base << ", "
-                      << this->offset;
+                      << "+-"[this->neg] << this->offset;
   if (this->shift != 0) {
     os << ", " << this->shift_type << " #" << this->shift;
   }
