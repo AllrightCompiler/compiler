@@ -107,6 +107,7 @@ void gvn_no_cfg(ir::Program *prog) {
   remove_uneffective_inst(prog);
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
+  algebra_simpilifacation(prog);
   remove_unused_function(prog);
   operator_strength_promotion(prog);
 }
@@ -116,6 +117,7 @@ void gvn_cfg(ir::Program *prog) {
   remove_uneffective_inst(prog);
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
+  algebra_simpilifacation(prog);
   remove_unused_function(prog);
   operator_strength_promotion(prog);
   constant_propagation(prog);
