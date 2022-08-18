@@ -124,6 +124,18 @@ struct ValueRange {
   }
 
   void intersect(const ValueRange &range, Reg self) {
+    // neq
+    if (bounds.count(BinaryOp::Neq)) {
+      auto &st = bounds.at(BinaryOp::Neq);
+      if (range.bounds.count(BinaryOp::Neq)) {
+        auto &st2 = range.bounds.at(BinaryOp::Neq);
+        for (auto it = st.begin(); it != st.end(); ) {
+          if (!st2.count(*it)) it = st.erase(it);
+          else it++;
+        }
+        if (st.size() == 0) bounds.erase(BinaryOp::Neq);
+      } else bounds.erase(BinaryOp::Neq);
+    }
     // dec loop inductive var
     if (bounds.count(BinaryOp::Lt) && bounds.at(BinaryOp::Lt).count(self)) {
       intersect_dec_indvar(range.bounds);
@@ -148,6 +160,11 @@ struct ValueRange {
   }
 
   void unite(const ValueRange &range) {
+    if (range.bounds.count(BinaryOp::Neq)) {
+      for (auto v : range.bounds.at(BinaryOp::Neq)) {
+        update(BinaryOp::Neq, v, false);
+      }
+    }
     if (range.bounds.count(BinaryOp::Lt)) {
       for (auto v : range.bounds.at(BinaryOp::Lt)) {
         update(BinaryOp::Lt, v, false);
@@ -235,6 +252,10 @@ void update_bound(BasicBlock *bb, Reg reg, const ValueRange &range) {
     for (auto v : range.bounds.at(BinaryOp::Geq))
       range_set.at(pr).update(BinaryOp::Geq, v, true);
   }
+  if (range.bounds.count(BinaryOp::Neq)) {
+    for (auto v : range.bounds.at(BinaryOp::Neq))
+      range_set.at(pr).update(BinaryOp::Neq, v, true);
+  }
 }
 
 void update_val(BasicBlock *bb, Reg reg, bool val) {
@@ -293,6 +314,7 @@ int check_cond(BasicBlock *bb, Reg reg, BinaryOp op, Reg val) {
       }
     }
   }
+  if (op == BinaryOp::Neq) return -1;
   // check false
   switch (op) {
     case BinaryOp::Lt:
@@ -404,6 +426,10 @@ void value_range_analysis(ir::Function *func) {
                   update_bound(BinaryOp::Leq, bb.get(), prev_bb, binary->src2, binary->src1);
                   update_bound(BinaryOp::Geq, bb.get(), prev_bb, binary->src2, binary->src1);
                   break;
+                case BinaryOp::Neq:
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src1, binary->src2);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src2, binary->src1);
+                  break;
                 default:
                   break;
               }
@@ -434,6 +460,10 @@ void value_range_analysis(ir::Function *func) {
                   update_bound(BinaryOp::Geq, bb.get(), prev_bb, binary->src1, binary->src2);
                   update_bound(BinaryOp::Leq, bb.get(), prev_bb, binary->src2, binary->src1);
                   update_bound(BinaryOp::Geq, bb.get(), prev_bb, binary->src2, binary->src1);
+                  break;
+                case BinaryOp::Eq:
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src1, binary->src2);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src2, binary->src1);
                   break;
                 default:
                   break;
@@ -504,7 +534,7 @@ void value_range_analysis(ir::Function *func) {
       } else {
         if (func->has_param(br->val)) continue;
         TypeCase(binary, ir::insns::Binary *, func->def_list.at(br->val)) {
-          if (binary->op != BinaryOp::Lt && binary->op != BinaryOp::Gt && binary->op != BinaryOp::Leq && binary->op != BinaryOp::Geq) continue;
+          if (binary->op != BinaryOp::Lt && binary->op != BinaryOp::Gt && binary->op != BinaryOp::Leq && binary->op != BinaryOp::Geq && binary->op != BinaryOp::Neq) continue;
           int val_cond = check_cond(bb.get(), binary->src1, binary->op, binary->src2);
           if (val_cond != -1) {
             auto new_ins = new ir::insns::LoadImm(binary->dst, ConstValue(val_cond));
