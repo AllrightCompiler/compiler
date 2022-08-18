@@ -158,6 +158,8 @@ struct Instruction {
   virtual std::set<Reg> use() const { return {}; }
   virtual std::vector<Reg *> reg_ptrs() { return {}; }
 
+  [[nodiscard]] virtual std::unique_ptr<Instruction> clone() const = 0;
+
   void replace_reg(Reg src, Reg dst) {
     for (auto p : reg_ptrs())
       if (*p == src)
@@ -170,13 +172,20 @@ struct Instruction {
 
   std::ostream &write_op(std::ostream &os, const char *op,
                          bool is_float = false, bool is_ldst = false,
-                         bool is_push_pop = false) const;
+                         bool is_push_pop = false, bool padding = true) const;
+};
+
+template <typename Derived> struct DefaultCloneableInstruction : Instruction {
+  [[nodiscard]] std::unique_ptr<Instruction> clone() const final {
+    return std::unique_ptr<Instruction>{
+        new Derived{*static_cast<Derived const *>(this)}};
+  }
 };
 
 void next_instruction(std::ostream &os);
 
 // 形如 op Rd, Rm, Rn 的指令
-struct RType : Instruction {
+struct RType final : DefaultCloneableInstruction<RType> {
   enum Op { Add, Sub, Mul, Div, SMMul } op;
   Reg dst, s1, s2;
 
@@ -193,7 +202,7 @@ struct RType : Instruction {
 // 形如 op Rd, Rm, imm 的指令
 // 大部分的imm都是取自Operand2的imm8m
 // 但Thumb-2的add和sub支持12位无符号立即数
-struct IType : Instruction {
+struct IType final : DefaultCloneableInstruction<IType> {
   enum Op { Add, Sub, RevSub, Eor, Bic, And } op;
   Reg dst, s1;
   int imm;
@@ -207,7 +216,7 @@ struct IType : Instruction {
 };
 
 // 具有 op Rd, R1, Operand2 形式的指令
-struct FullRType : Instruction {
+struct FullRType final : DefaultCloneableInstruction<FullRType> {
   enum Op { Add, Sub, RevSub } op;
   Reg dst, s1;
   Operand2 s2;
@@ -233,7 +242,7 @@ struct FullRType : Instruction {
 // 完整形式的MOV: MOV Rd, Operand2
 // 还包括MVN Rd, Operand2, 注意这个东西是将Operand2按位取反
 // e.g. mvn r0, #0 => r0 = -1
-struct Move : Instruction {
+struct Move final : DefaultCloneableInstruction<Move> {
   Reg dst;
   Operand2 src;
   bool flip;
@@ -274,7 +283,7 @@ struct Move : Instruction {
 };
 
 // Thumb-2 movw: 加载低16位，清零高16位
-struct MovW : Instruction {
+struct MovW final : DefaultCloneableInstruction<MovW> {
   Reg dst;
   int imm;
 
@@ -287,7 +296,7 @@ struct MovW : Instruction {
 };
 
 // Thumb-2 movt: 加载高16位，低16位不变
-struct MovT : Instruction {
+struct MovT final : DefaultCloneableInstruction<MovT> {
   Reg dst;
   int imm;
 
@@ -302,7 +311,7 @@ struct MovT : Instruction {
 // 加载全局变量的地址
 // 可能会被翻译为movw + movt
 // 足够近也可能是adr或ldr伪指令
-struct LoadAddr : Instruction {
+struct LoadAddr final : DefaultCloneableInstruction<LoadAddr> {
   Reg dst;
   std::string symbol;
 
@@ -316,7 +325,7 @@ struct LoadAddr : Instruction {
 
 // CMP Rn, Operand2: 更新Rn - Operand2的CPSR标记
 // CMN Rn, Operand2: 更新Rn + Operand2的CPSR标记
-struct Compare : Instruction {
+struct Compare final : DefaultCloneableInstruction<Compare> {
   Reg s1;
   Operand2 s2;
   bool neg;
@@ -340,7 +349,7 @@ struct Compare : Instruction {
 };
 
 // 简单load: base_reg + offset_imm 寻址
-struct Load : Instruction {
+struct Load final : DefaultCloneableInstruction<Load> {
   Reg dst, base;
   int offset;
 
@@ -353,7 +362,7 @@ struct Load : Instruction {
 };
 
 // 简单store: base_reg + offset_imm 寻址
-struct Store : Instruction {
+struct Store final : DefaultCloneableInstruction<Store> {
   Reg src, base;
   int offset;
 
@@ -368,7 +377,7 @@ struct Store : Instruction {
 // MLA Rd, Rm, Rs, Rn: Rd := Rn + Rm * Rs
 // MLS Rd, Rm, Rs, Rn: Rd := Rn - Rm * Rs
 // SMMLA Rd, Rm, Rs, Rn: Rd := high(Rn + Rm * Rs)
-struct FusedMul : Instruction {
+struct FusedMul final : DefaultCloneableInstruction<FusedMul> {
   enum Op { Add, Sub, SMAdd } op;
   Reg dst, s1, s2, s3;
 
@@ -383,9 +392,15 @@ struct FusedMul : Instruction {
 
 struct BasicBlock;
 struct Terminator : Instruction {};
+template <typename Derived> struct DefaultCloneableTerminator : Terminator {
+  [[nodiscard]] std::unique_ptr<Instruction> clone() const final {
+    return std::unique_ptr<Instruction>{
+        new Derived{*static_cast<Derived const *>(this)}};
+  }
+};
 
 // B.cond
-struct Branch : Terminator {
+struct Branch final : DefaultCloneableTerminator<Branch> {
   BasicBlock *target;
 
   Branch(BasicBlock *target) : target{target} {}
@@ -394,7 +409,7 @@ struct Branch : Terminator {
 };
 
 // CBZ/CBNZ
-struct RegBranch : Terminator {
+struct RegBranch final : DefaultCloneableTerminator<RegBranch> {
   enum Type { Cbnz, Cbz } type;
   BasicBlock *target;
   Reg src;
@@ -411,13 +426,17 @@ struct RegBranch : Terminator {
 // 实际条件跳转的中间形式，保留了两个分支，需要在最后展开
 // 有些情况比较和分支指令应被视作一个整体，避免中间插入其它指令影响cpsr
 // NOTE: true_target的跳转条件即此伪指令的条件码
-struct CmpBranch : Terminator {
+struct CmpBranch final : DefaultCloneableTerminator<CmpBranch> {
   std::unique_ptr<Compare> cmp;
   BasicBlock *true_target, *false_target;
 
   CmpBranch(Compare *inner_cmp, BasicBlock *true_target,
             BasicBlock *false_target)
       : cmp{inner_cmp}, true_target{true_target}, false_target{false_target} {}
+  CmpBranch(CmpBranch const &other)
+      : DefaultCloneableTerminator{other}, cmp{static_cast<Compare *>(
+                                               other.cmp->clone().release())},
+        true_target{other.true_target}, false_target{other.false_target} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }
@@ -425,7 +444,7 @@ struct CmpBranch : Terminator {
   std::vector<Reg *> reg_ptrs() override { return cmp->reg_ptrs(); }
 };
 
-struct Switch : Terminator {
+struct Switch final : DefaultCloneableTerminator<Switch> {
   Reg val, tmp;
   std::vector<std::pair<int, BasicBlock *>> targets;
   BasicBlock *default_target;
@@ -446,9 +465,15 @@ struct Switch : Terminator {
 // 由于sp不被用于寄存器分配，此类指令的def和use都不显含sp
 struct StackObject;
 struct SpRelative : Instruction {};
+template <typename Derived> struct DefaultCloneableSpRelative : SpRelative {
+  [[nodiscard]] std::unique_ptr<Instruction> clone() const final {
+    return std::unique_ptr<Instruction>{
+        new Derived{*static_cast<Derived const *>(this)}};
+  }
+};
 
 // dst = base + offset
-struct LoadStackAddr : SpRelative {
+struct LoadStackAddr final : DefaultCloneableSpRelative<LoadStackAddr> {
   Reg dst;
   StackObject *base;
   int offset;
@@ -463,7 +488,7 @@ struct LoadStackAddr : SpRelative {
 };
 
 // dst = [base + offset]
-struct LoadStack : SpRelative {
+struct LoadStack final : DefaultCloneableSpRelative<LoadStack> {
   Reg dst;
   StackObject *base;
   int offset;
@@ -477,7 +502,7 @@ struct LoadStack : SpRelative {
   std::vector<Reg *> reg_ptrs() override { return {&dst}; }
 };
 
-struct StoreStack : SpRelative {
+struct StoreStack final : DefaultCloneableSpRelative<StoreStack> {
   Reg src;
   StackObject *base;
   int offset;
@@ -495,7 +520,7 @@ struct StoreStack : SpRelative {
 // 1. 子函数调用后清栈时sp增加不超过4095
 // 2. 分配/释放空间时sp修改量不超过4095或是imm8m
 // 否则需要增加add/sub sp, sp, r的指令形式
-struct AdjustSp : SpRelative {
+struct AdjustSp final : DefaultCloneableSpRelative<AdjustSp> {
   int offset;
 
   AdjustSp(int offset) : offset{offset} {}
@@ -506,7 +531,7 @@ struct AdjustSp : SpRelative {
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 
-struct Push : SpRelative {
+struct Push final : DefaultCloneableSpRelative<Push> {
   std::vector<Reg> srcs;
 
   Push(std::vector<Reg> srcs) : srcs{std::move(srcs)} {}
@@ -524,7 +549,7 @@ struct Push : SpRelative {
   }
 };
 
-struct Pop : SpRelative {
+struct Pop final : DefaultCloneableSpRelative<Pop> {
   std::vector<Reg> dsts;
 
   Pop(std::vector<Reg> dsts) : dsts{std::move(dsts)} {}
@@ -538,7 +563,7 @@ struct Pop : SpRelative {
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 
-struct Call : Instruction {
+struct Call final : DefaultCloneableInstruction<Call> {
   std::string func;
   int nr_gp_args, nr_fp_args;
   int variadic_at; // 第几个参数是 `...`
@@ -571,14 +596,14 @@ struct Call : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 
-struct Return : Terminator {
+struct Return final : DefaultCloneableTerminator<Return> {
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return {Reg{General, r0}, Reg{Fp, s0}}; }
   std::vector<Reg *> reg_ptrs() override { return {}; }
 };
 
-struct CountLeadingZero : Instruction {
+struct CountLeadingZero final : DefaultCloneableInstruction<CountLeadingZero> {
   Reg dst, src;
 
   CountLeadingZero(Reg dst, Reg src) : dst{dst}, src{src} {}
@@ -591,11 +616,15 @@ struct CountLeadingZero : Instruction {
 
 // 伪二元比较，需要在最后阶段被展开
 // trick: 实际的op用的是本指令的条件码
-struct PseudoCompare : Instruction {
+struct PseudoCompare final : DefaultCloneableInstruction<PseudoCompare> {
   std::unique_ptr<Compare> cmp;
   Reg dst;
 
   PseudoCompare(Compare *real_cmp, Reg dst) : cmp{real_cmp}, dst{dst} {}
+  PseudoCompare(PseudoCompare const &other)
+      : DefaultCloneableInstruction{other}, cmp{static_cast<Compare *>(
+                                                other.cmp->clone().release())},
+        dst{other.dst} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
@@ -612,7 +641,7 @@ enum class ConvertType {
   Int2Float,
 };
 
-struct Convert : Instruction {
+struct Convert final : DefaultCloneableInstruction<Convert> {
   Reg dst, src;
   ConvertType type;
 
@@ -627,7 +656,7 @@ struct Convert : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
 };
 
-struct Phi : Instruction {
+struct Phi final : DefaultCloneableInstruction<Phi> {
   std::vector<std::pair<BasicBlock *, Reg>> srcs;
   Reg dst;
 
@@ -650,7 +679,7 @@ struct Phi : Instruction {
   }
 };
 
-struct Vneg : Instruction {
+struct Vneg final : DefaultCloneableInstruction<Vneg> {
   Reg dst, src;
   Vneg(Reg dst, Reg src) : dst{dst}, src{src} {
     assert(dst.is_float());
@@ -663,7 +692,7 @@ struct Vneg : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
 };
 
-struct ComplexLoad : Instruction {
+struct ComplexLoad final : DefaultCloneableInstruction<ComplexLoad> {
   Reg dst, base, offset;
   ShiftType shift_type;
   int shift;
@@ -683,7 +712,7 @@ struct ComplexLoad : Instruction {
   }
 };
 
-struct ComplexStore : Instruction {
+struct ComplexStore final : DefaultCloneableInstruction<ComplexStore> {
   Reg src, base, offset;
   ShiftType shift_type;
   int shift;
@@ -707,7 +736,8 @@ struct ComplexStore : Instruction {
 
 // sdiv dst, #1, src
 // 伪指令，在最后阶段展开
-struct PseudoOneDividedByReg : Instruction {
+struct PseudoOneDividedByReg final
+    : DefaultCloneableInstruction<PseudoOneDividedByReg> {
   Reg dst, src;
 
   PseudoOneDividedByReg(Reg dst, Reg src) : dst{dst}, src{src} {}
@@ -720,7 +750,7 @@ struct PseudoOneDividedByReg : Instruction {
 
 // dst = s1 mod s2
 // 伪指令，在 `fold_constants` 阶段提前展开
-struct PseudoModulo : Instruction {
+struct PseudoModulo final : DefaultCloneableInstruction<PseudoModulo> {
   Reg dst, s1, s2;
 
   PseudoModulo(Reg dst, Reg s1, Reg s2) : dst{dst}, s1{s1}, s2{s2} {
@@ -739,7 +769,7 @@ struct PseudoModulo : Instruction {
 
 // bfc dst, #lsb, #width
 // 清零 #lsb 开始的、宽 #width 的位
-struct BitFieldClear : Instruction {
+struct BitFieldClear final : DefaultCloneableInstruction<BitFieldClear> {
   Reg dst;
   int lsb, width;
 

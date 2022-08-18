@@ -1,6 +1,7 @@
 #include "backend/armv7/passes.hpp"
 #include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
+#include "backend/armv7/if_to_cond.hpp"
 #include "backend/armv7/instruction.hpp"
 #include "backend/armv7/merge_instr.hpp"
 
@@ -35,6 +36,7 @@ void backend_passes(Program &p) {
 
     f.emit_prologue_epilogue();
 
+    if_to_cond(f);
     sanitize_cfg(f);
 
     f.replace_pseudo_insns();
@@ -839,7 +841,7 @@ void propagate_constants(Function &f) {
         }
         if (int_vals.count(src))
           opt_imm = int_vals.at(src);
-        
+
         if (opt_imm) {
           int imm = *opt_imm;
           int_vals[dst] = imm;
