@@ -105,6 +105,9 @@ void algebra_simpilifacation(Function *func) {
           if(src1.second == -1 && src2.second == -1){
             removable = false;
           }
+          if(single_map.count(binary->src1) && single_map.count(binary->src2)){
+            removable = false;
+          }
           if(removable){
             binary->remove_use_def();
             bool add_not = false;
@@ -198,7 +201,12 @@ void algebra_simpilifacation(Function *func) {
           continue;
         }
         bool removable = true;
-        if(src1.second == -1 && src2.second == -1){
+        for(auto &reg_cnt : each.second){
+          if(reg_cnt.second != 1 && reg_cnt.second != -1){
+            removable = false;
+          }
+        }
+        if(each.second.count(binary->src1) && each.second.count(binary->src2)){
           removable = false;
         }
         if(removable){
