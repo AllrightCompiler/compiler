@@ -99,6 +99,10 @@ int main(int argc, char *argv[]) {
       os << *ir_program;
       return 0;
     }
+    if (has_option(argc, argv, "--cfg")) {
+      ir::dump_cfg(os, *ir_program);
+      return 0;
+    }
 
     if (has_option(argc, argv, "--llvm")) {
       auto program = llvm::translate(*ir_program);
@@ -118,4 +122,5 @@ int main(int argc, char *argv[]) {
   } catch (const CompileError &e) {
     error(cerr) << e.what() << endl;
   }
+  return 0;
 }

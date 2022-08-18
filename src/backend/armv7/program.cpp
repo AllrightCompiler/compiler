@@ -956,7 +956,7 @@ void Function::resolve_stack_ops(int frame_size) {
             // Rd = loadimm #offset
             // ldr Rd, [sp, Rd]
             emit_load_imm(insns, it, dst, offset);
-            it->reset(new ComplexLoad{dst, reg_sp, dst});
+            it->reset(new ComplexLoad{dst, reg_sp, dst, false});
           }
         }
       }
@@ -1010,10 +1010,9 @@ void Function::replace_pseudo_insns() {
         auto cmov_true = new Move{dst, Operand2::from(1)};
         cmov_true->cond = cond;
         auto cmov_false = new Move{dst, Operand2::from(0)};
-        cmov_false->cond = logical_not(cond);
 
-        insns.emplace(it, pcmp->cmp.release());
         insns.emplace(it, cmov_false);
+        insns.emplace(it, pcmp->cmp.release());
         it->reset(cmov_true);
       }
       TypeCase(br, CmpBranch *, it->get()) {
@@ -1078,7 +1077,7 @@ void Function::replace_pseudo_insns() {
         insns.emplace(it, new LoadAddr{tmp, jt_name});
 
         jump_tables.emplace_back(dynamic_cast<Switch *>(it->release()));
-        it->reset(new ComplexLoad{Reg{General, pc}, tmp, val, LSL, 2});
+        it->reset(new ComplexLoad{Reg{General, pc}, tmp, val, LSL, 2, false});
       }
 
       if (remove)

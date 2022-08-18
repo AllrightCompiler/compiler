@@ -13,7 +13,7 @@ using std::unordered_set;
 using std::unordered_map;
 using std::vector;
 
-const int LONG_CALL_LEN = 256;
+const int LONG_CALL_LEN = 128;
 const int TOO_LONG_CALL_LEN = 1000;
 
 void inline_single_func(Function *caller, Program *prog, unordered_set<string> &cursive_or_long_calls){
@@ -56,11 +56,10 @@ void inline_single_func(Function *caller, Program *prog, unordered_set<string> &
       suc->prev.insert(ret_bb);
       for(auto &ins : suc->insns){
         TypeCase(phi, ir::insns::Phi *, ins.get()){
-          for(auto &[bb, reg] : phi->incoming){
-            if(bb == inst_bb){
-              phi->incoming.erase(bb);
-              phi->incoming[ret_bb] = reg;
-            }
+          if(phi->incoming.count(inst_bb)){
+            auto reg = phi->incoming.at(inst_bb);
+            phi->incoming.erase(inst_bb);
+            phi->incoming[ret_bb] = reg;
           }
         } else {
           break;

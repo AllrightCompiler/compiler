@@ -9,6 +9,7 @@ using namespace ir;
 using namespace ir::insns;
 
 void split_critical_edges(Function &f) {
+  auto &branch_freqs = f.branch_freqs;
   std::unordered_map<BasicBlock *, std::list<Phi *>> phi_info;
   std::unordered_set<BasicBlock *>
       incoming_bbs; // 只含与phi函数有关，且有多(>1)条出边的基本块
@@ -43,6 +44,14 @@ void split_critical_edges(Function &f) {
       BasicBlock::remove_edge(bb_in, bb);
       BasicBlock::add_edge(bb_in, bb_mid);
       BasicBlock::add_edge(bb_mid, bb);
+
+      auto it = branch_freqs.find({bb, bb_in});
+      if (it != branch_freqs.end()) {
+        auto freq = it->second;
+        branch_freqs[{bb_in, bb_mid}] = freq;
+        branch_freqs[{bb_mid, bb}] = freq;
+        branch_freqs.erase(it);
+      }
 
       // bb_in至少有2条出边
       auto last = bb_in->insns.back().get();

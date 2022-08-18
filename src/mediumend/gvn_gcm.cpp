@@ -114,7 +114,7 @@ static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
 static unordered_map<std::string, Reg> hashTable_loadaddr;
 static unordered_map<tuple<Type, Reg, vector<Reg> >, Reg> hashTable_gep;
 static unordered_map<tuple<std::string, vector<Reg> >, Reg> hashTable_call;
-static unordered_map<tuple<Reg, Reg>, Reg> hashTable_memuse;
+static unordered_map<tuple<Reg, Reg, bool>, Reg> hashTable_memuse;
 static unordered_map<Reg, ConstValue> constMap;
 static unordered_map<ConstValue, Reg> rConstMap;
 static unordered_map<Instruction *, Reg> hashTable;
@@ -204,11 +204,11 @@ Reg vn_get(Instruction *inst) {
       hashTable[inst] = call->dst;
     }
   } else TypeCase(memuse, ir::insns::MemUse *, inst) {
-    if (hashTable_memuse.count(std::make_tuple(memuse->dep, memuse->load_src))) {
-      hashTable[inst] = hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src)];
+    if (hashTable_memuse.count(std::make_tuple(memuse->dep, memuse->load_src, memuse->call_use))) {
+      hashTable[inst] = hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src, memuse->call_use)];
     } else {
       hashTable[inst] = memuse->dst;
-      hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src)] = memuse->dst;
+      hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src, memuse->call_use)] = memuse->dst;
     }
   } else TypeCase(other, ir::insns::Output *, inst) {
     hashTable[inst] = other->dst;
@@ -637,7 +637,7 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
 // possible, and then is as control dependent as possible.
 void schedule_late(unordered_set<ir::Instruction *> &visited,
                   unordered_map<ir::Instruction *, BasicBlock *> &placement,
-                  const CFG *cfg,
+                  const std::unique_ptr<CFG> &cfg,
                   list<unique_ptr<BasicBlock>> &bbs,
                   const unordered_map<Reg, unordered_set<Instruction *>> &use_list,
                   ir::Instruction *inst) {

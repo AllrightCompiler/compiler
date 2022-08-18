@@ -51,18 +51,18 @@ void Function::do_liveness_analysis(RegFilter filter) {
 }
 
 void Function::insert_def_use(OccurPoint const &pos, Instruction &instr) {
-  for (auto r : instr.def()) {
+  for (auto const r : instr.def()) {
     this->reg_def[r].insert(pos);
   }
-  for (auto r : instr.use()) {
+  for (auto const r : instr.use()) {
     this->reg_use[r].insert(pos);
   }
 }
 void Function::erase_def_use(OccurPoint const &pos, Instruction &instr) {
-  for (auto r : instr.def()) {
+  for (auto const r : instr.def()) {
     this->reg_def[r].erase(pos);
   }
-  for (auto r : instr.use()) {
+  for (auto const r : instr.use()) {
     this->reg_use[r].erase(pos);
   }
 }

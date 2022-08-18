@@ -8,12 +8,12 @@
 
 namespace mediumend {
 
-typedef void(*funcptr)(ir::Program*);
+using Pass = void (*)(ir::Program *);
 
 // IMPORTANT: if add new pass, modify PASS_MAP in optimizer.cpp
-extern const std::map<std::string, funcptr> PASS_MAP;
+extern const std::map<std::string, Pass> PASS_MAP;
 // define default passes in optimizer.cpp
-extern std::vector<funcptr> passes;
+extern std::vector<Pass> passes;
 
 void remove_unused_function(ir::Program *prog);
 void mem2reg(ir::Program *prog);
@@ -44,6 +44,8 @@ void loop_parallel(ir::Program *prog);
 void value_range_analysis(ir::Program *prog);
 void br2switch(ir::Program *prog);
 void loop_interchange(ir::Program *prog);
+void algebra_simpilifacation(ir::Program *prog);
+void estimate_exec_freq(ir::Program *prog);
 
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
@@ -52,10 +54,11 @@ void ir_validation(ir::Program *prog);
 bool in_array_ssa();
 
 inline void run_medium(ir::Program *prog, bool disable_gep_des) {
-  for (auto &func : prog->functions){
-    func.second.cfg = new CFG(&func.second);
-    func.second.cfg->build();
-    func.second.cfg->remove_unreachable_bb();
+  for (auto &[_, f] : prog->functions){
+    auto cfg = new CFG{&f};
+    cfg->build();
+    cfg->remove_unreachable_bb();
+    f.cfg = std::unique_ptr<CFG>(cfg);
   }
   compute_use_def_list(prog);
 
@@ -72,7 +75,6 @@ inline void run_medium(ir::Program *prog, bool disable_gep_des) {
   }
 
   for (int i = 0; i < passes.size(); i++) {
-    if (disable_gep_des && passes[i] == gep_destruction) continue;
     if (disable_gep_des && passes[i] == loop_parallel) continue;
     passes[i](prog);
   }

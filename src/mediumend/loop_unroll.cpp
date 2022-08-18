@@ -232,6 +232,7 @@ static Instruction *copy_inst(SimpleLoopInfo info, Instruction *inst, BasicBlock
     }
     return new_inst;
   } else assert(false);
+  __builtin_unreachable();
 }
 
 static void copy_bb(SimpleLoopInfo info, bool last_turn, BasicBlock *bb, BasicBlock *new_bb, BasicBlock *entry, BasicBlock *exit) {
