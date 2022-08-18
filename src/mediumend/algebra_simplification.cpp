@@ -194,6 +194,9 @@ void algebra_simpilifacation(Function *func) {
           continue;
         }
         auto binary = dynamic_cast<ir::insns::Binary*>(func->def_list.at(each.first));
+        if(!binary){
+          continue;
+        }
         bool removable = true;
         if(src1.second == -1 && src2.second == -1){
           removable = false;
