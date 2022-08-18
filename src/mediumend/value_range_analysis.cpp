@@ -300,6 +300,10 @@ int check_cond(BasicBlock *bb, Reg reg, BinaryOp op, Reg val) {
   ValueRange range = get_bound(bb, reg);
   // check true
   visited = range.get_regs(op);
+  if (op == BinaryOp::Neq) {
+    if (visited.count(val)) return 1;
+    else return -1;
+  }
   if (visited.count(val)) return 1;
   workset = visited;
   while (workset.size() > 0) {
@@ -314,7 +318,6 @@ int check_cond(BasicBlock *bb, Reg reg, BinaryOp op, Reg val) {
       }
     }
   }
-  if (op == BinaryOp::Neq) return -1;
   // check false
   switch (op) {
     case BinaryOp::Lt:
@@ -407,6 +410,8 @@ void value_range_analysis(ir::Function *func) {
                 case BinaryOp::Lt:
                   update_bound(BinaryOp::Lt, bb.get(), prev_bb, binary->src1, binary->src2);
                   update_bound(BinaryOp::Gt, bb.get(), prev_bb, binary->src2, binary->src1);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src1, binary->src2);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src2, binary->src1);
                   break;
                 case BinaryOp::Leq:
                   update_bound(BinaryOp::Leq, bb.get(), prev_bb, binary->src1, binary->src2);
@@ -415,6 +420,8 @@ void value_range_analysis(ir::Function *func) {
                 case BinaryOp::Gt:
                   update_bound(BinaryOp::Gt, bb.get(), prev_bb, binary->src1, binary->src2);
                   update_bound(BinaryOp::Lt, bb.get(), prev_bb, binary->src2, binary->src1);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src1, binary->src2);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src2, binary->src1);
                   break;
                 case BinaryOp::Geq:
                   update_bound(BinaryOp::Geq, bb.get(), prev_bb, binary->src1, binary->src2);
@@ -446,6 +453,8 @@ void value_range_analysis(ir::Function *func) {
                 case BinaryOp::Leq:
                   update_bound(BinaryOp::Gt, bb.get(), prev_bb, binary->src1, binary->src2);
                   update_bound(BinaryOp::Lt, bb.get(), prev_bb, binary->src2, binary->src1);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src1, binary->src2);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src2, binary->src1);
                   break;
                 case BinaryOp::Gt:
                   update_bound(BinaryOp::Leq, bb.get(), prev_bb, binary->src1, binary->src2);
@@ -454,6 +463,8 @@ void value_range_analysis(ir::Function *func) {
                 case BinaryOp::Geq:
                   update_bound(BinaryOp::Lt, bb.get(), prev_bb, binary->src1, binary->src2);
                   update_bound(BinaryOp::Gt, bb.get(), prev_bb, binary->src2, binary->src1);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src1, binary->src2);
+                  update_bound(BinaryOp::Neq, bb.get(), prev_bb, binary->src2, binary->src1);
                   break;
                 case BinaryOp::Neq:
                   update_bound(BinaryOp::Leq, bb.get(), prev_bb, binary->src1, binary->src2);
