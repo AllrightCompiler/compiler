@@ -47,8 +47,8 @@ void algebra_simpilifacation(Function *func) {
           }
         } else {
           bool add_zero = false;
-          if(!func->has_param(binary->src1)){
-            TypeCase(loadimm, ir::insns::LoadImm *, func->def_list.at(binary->src1)){
+          if(!func->has_param(binary->src2)){
+            TypeCase(loadimm, ir::insns::LoadImm *, func->def_list.at(binary->src2)){
               if(loadimm->imm.type == ScalarType::Int && loadimm->imm.iv == 0){
                 add_zero = true;
               }
