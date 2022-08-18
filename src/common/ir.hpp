@@ -7,19 +7,17 @@
 #include <functional>
 #include <ostream>
 
-namespace mediumend {
-class CFG;
-}
+#include "mediumend/cfg.hpp"
 
 namespace ir {
 
 using std::list;
+using std::map;
 using std::optional;
 using std::string;
 using std::unique_ptr;
 using std::unordered_map;
 using std::unordered_set;
-using std::map;
 using std::vector;
 
 struct Reg {
@@ -132,6 +130,7 @@ struct BasicBlock {
   bool visit;
   int domlevel;
   int rpo_num; // id in rpo, available after compute_rpo
+  double freq; // estimated execution frequency
 
   // modify use-def
   void push_back(Instruction *insn);
@@ -186,7 +185,7 @@ struct Function {
   FunctionSignature sig;
   int nr_regs;
 
-  mediumend::CFG *cfg = nullptr;
+  unique_ptr<mediumend::CFG> cfg;
   int pure = -1;
   int array_ssa_pure = -1;
   int only_load_param = -1;
@@ -196,10 +195,12 @@ struct Function {
   unordered_map<Reg, Instruction *> def_list;
   unordered_set<Reg> global_addr;
   vector<unique_ptr<Loop>> loops;
+  map<std::pair<BasicBlock *, BasicBlock *>, double> branch_probs;
+  map<std::pair<BasicBlock *, BasicBlock *>, double> branch_freqs;
 
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(int t) { return ir::Reg{t, ++nr_regs}; }
-  ~Function();
+
   bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
   bool is_pure() const { return pure == 1; }
   bool is_array_ssa_pure() const { return array_ssa_pure == 1; }
@@ -600,7 +601,6 @@ struct Switch : Terminator {
   Reg val;
   map<int, BasicBlock *> targets;
   BasicBlock *default_target;
-
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;

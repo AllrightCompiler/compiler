@@ -3,7 +3,7 @@
 namespace mediumend {
 
 // add pass here
-const std::map<std::string, funcptr> PASS_MAP = {
+const std::map<std::string, Pass> PASS_MAP = {
   {"remove_unused_function", remove_unused_function},
   {"mem2reg", mem2reg},
   {"constant_propagation", constant_propagation},
@@ -33,10 +33,11 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"br2switch", br2switch},
   {"loop_interchange", loop_interchange},
   {"algebra_simpilifacation", algebra_simpilifacation},
+  {"estimate_exec_freq", estimate_exec_freq},
 };
 
 // define default passes here
-std::vector<funcptr> passes = {
+std::vector<Pass> passes = {
   clean_useless_cf,
   main_global_var_to_local,
   mem2reg,
@@ -99,6 +100,7 @@ std::vector<funcptr> passes = {
   // operator_strength_reduction,
   gvn_cfg,
 
+  estimate_exec_freq,
   sort_basicblock,
 };
 
