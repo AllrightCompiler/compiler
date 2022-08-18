@@ -257,8 +257,7 @@ class ProgramTranslator {
           // bb->push(new Compare{src, Operand2::from(0)});
           // bb->push(ExCond::Eq, new Move{dst, Operand2::from(1)});
           // alternative: clz dst, src; lsr dst, dst, #5
-          bb->push(new CountLeadingZero{dst, src});
-          bb->push(new Move{dst, Operand2::from(LSR, dst, 5)});
+          bb->push(new PseudoNot{dst, src});
         } else {
           auto cmp = std::make_unique<Compare>(src, Operand2::from(0));
           bb->push(ExCond::Eq, new PseudoCompare(cmp.release(), dst));
@@ -1003,6 +1002,11 @@ void Function::replace_pseudo_insns() {
 
     for (auto it = insns.begin(); it != insns.end();) {
       bool remove = false;
+      TypeCase(pnot, PseudoNot *, it->get()) {
+        Reg dst = pnot->dst, src = pnot->src;
+        insns.emplace(it, new CountLeadingZero{dst, src});
+        it->reset(new Move{dst, Operand2::from(LSR, dst, 5)});
+      }
       TypeCase(pcmp, PseudoCompare *, it->get()) {
         auto cond = pcmp->cond;
         auto dst = pcmp->dst;
@@ -1010,9 +1014,10 @@ void Function::replace_pseudo_insns() {
         auto cmov_true = new Move{dst, Operand2::from(1)};
         cmov_true->cond = cond;
         auto cmov_false = new Move{dst, Operand2::from(0)};
+        cmov_false->cond = logical_not(cond);
 
-        insns.emplace(it, cmov_false);
         insns.emplace(it, pcmp->cmp.release());
+        insns.emplace(it, cmov_false);
         it->reset(cmov_true);
       }
       TypeCase(br, CmpBranch *, it->get()) {
