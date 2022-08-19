@@ -6,7 +6,7 @@
 
 namespace armv7 {
 
-constexpr auto MAX_COND_INSTR_COUNT = 5u;
+constexpr auto MAX_COND_INSTR_COUNT = 6u;
 
 static bool can_be_cond(BasicBlock const &bb) {
   for (auto const &instr : bb.insns) {
@@ -43,8 +43,8 @@ void if_to_cond(Function &func) {
     if (br == nullptr) {
       continue;
     }
-    if (br->true_target->insns.size() > MAX_COND_INSTR_COUNT ||
-        br->false_target->insns.size() > MAX_COND_INSTR_COUNT) {
+    if (br->true_target->insns.size() + br->false_target->insns.size() >
+        MAX_COND_INSTR_COUNT) {
       continue;
     }
     if (br->true_target->succ.size() > 1u ||
