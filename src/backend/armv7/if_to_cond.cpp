@@ -18,6 +18,19 @@ static bool can_be_cond(BasicBlock const &bb) {
         instr->is<Switch>() || instr->is<Call>()) {
       return false;
     }
+    if (instr->is<IType>() || instr->is<FullRType>() || instr->is<Move>() ||
+        instr->is<MovW>() || instr->is<MovT>() || instr->is<LoadAddr>() ||
+        instr->is<CountLeadingZero>() || instr->is<PseudoNot>() ||
+        instr->is<Convert>() || instr->is<Vneg>() ||
+        instr->is<BitFieldClear>()) {
+      continue;
+    }
+    TypeCase(r_instr, RType const *, instr.get()) {
+      if (r_instr->op == RType::Add || r_instr->op == RType::Sub) {
+        continue;
+      }
+    }
+    return false; // 避免条件执行代价过大
   }
   return true;
 }
