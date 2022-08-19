@@ -10,6 +10,7 @@ using std::unordered_set;
 using ir::Reg;
 using ir::Loop;
 using ir::BasicBlock;
+using ir::Instruction;
 
 static ir::Program* cur_prog = nullptr;
 
@@ -120,6 +121,34 @@ void check_inst(ir::Instruction *inst){
   assert(inst->bb);
 }
 
+
+unordered_set<Instruction *> get_effective_use(Instruction *inst,
+                                               ir::Function *func) {
+  unordered_set<Instruction *> ret;
+  unordered_set<Instruction *> visited;
+  vector<Instruction *> stack;
+  stack.push_back(inst);
+  while (stack.size()) {
+    inst = stack.back();
+    stack.pop_back();
+    if (visited.count(inst)) {
+      continue;
+    }
+    visited.insert(inst);
+    TypeCase(output, ir::insns::Output *, inst) {
+      auto uses = func->use_list[output->dst];
+      for (auto each : uses) {
+        stack.push_back(each);
+      }
+    }
+    TypeCase(memdef, ir::insns::MemDef *, inst) { ret.insert(memdef); }
+    TypeCase(call, ir::insns::Call *, inst) { ret.insert(call); }
+    TypeCase(memuse, ir::insns::MemUse *, inst) { ret.insert(memuse); }
+  }
+  return ret;
+}
+
+
 void remove_uneffective_inst(ir::Program *prog){
   unordered_set<ir::Instruction *> useful_inst;
   unordered_set<ir::Function *> func_stack;
@@ -191,6 +220,14 @@ void remove_uneffective_inst(ir::Program *prog){
       }
       TypeCase(call, ir::insns::Call *, inst){
         if(call->func == func->name){
+          auto used = get_effective_use(call, func);
+          if(used.size()){
+            if(!func->ret_used){
+              func->ret_used = true;
+              func_stack.insert(func);
+            }
+            func->ret_used = true;
+          }
           continue;
         }
         if(prog->functions.count(call->func)){
