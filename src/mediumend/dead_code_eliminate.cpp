@@ -122,7 +122,7 @@ void check_inst(ir::Instruction *inst){
 }
 
 
-unordered_set<Instruction *> get_effective_use(Instruction *inst,
+static unordered_set<Instruction *> get_effective_use(Instruction *inst,
                                                ir::Function *func) {
   unordered_set<Instruction *> ret;
   unordered_set<Instruction *> visited;
@@ -141,8 +141,13 @@ unordered_set<Instruction *> get_effective_use(Instruction *inst,
         stack.push_back(each);
       }
     }
+    TypeCase(store, ir::insns::Store *, inst) { ret.insert(store); }
     TypeCase(memdef, ir::insns::MemDef *, inst) { ret.insert(memdef); }
-    TypeCase(call, ir::insns::Call *, inst) { ret.insert(call); }
+    TypeCase(call, ir::insns::Call *, inst) { 
+      if(!cur_prog->functions.count(call->func) || !cur_prog->functions.at(call->func).is_pure()){
+        ret.insert(call);
+      } 
+    }
     TypeCase(memuse, ir::insns::MemUse *, inst) { ret.insert(memuse); }
   }
   return ret;
@@ -150,6 +155,7 @@ unordered_set<Instruction *> get_effective_use(Instruction *inst,
 
 
 void remove_uneffective_inst(ir::Program *prog){
+  cur_prog = prog;
   unordered_set<ir::Instruction *> useful_inst;
   unordered_set<ir::Function *> func_stack;
   unordered_set<std::string> visited_func;
