@@ -18,6 +18,9 @@ static bool can_be_cond(BasicBlock const &bb) {
         instr->is<Switch>() || instr->is<Call>()) {
       return false;
     }
+    if (instr->is<Branch>() || instr->is<Return>()) {
+      continue;
+    }
     if (instr->is<IType>() || instr->is<FullRType>() || instr->is<Move>() ||
         instr->is<MovW>() || instr->is<MovT>() || instr->is<LoadAddr>() ||
         instr->is<CountLeadingZero>() || instr->is<PseudoNot>() ||
