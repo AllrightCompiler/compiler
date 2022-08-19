@@ -25,6 +25,7 @@ struct ParallelLoopInfo {
   Reg start_reg; // reg start
   int step; // const step
   Reg end_reg; // reg end
+  BinaryOp bop;
   BasicBlock *into_entry;
   BasicBlock *entry;
   BasicBlock *exit_prev;
@@ -151,10 +152,11 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
           std::swap(br_cond->true_target, br_cond->false_target);
         }
       }
-      if (binary_cond->op != BinaryOp::Lt) return info; // TODO: only consider i < n now
+      if (binary_cond->op != BinaryOp::Lt && binary_cond->op != BinaryOp::Leq) return info;
       if (!binary_cond->bb->func->has_param(binary_cond->src2) && in_loop(binary_cond->bb->func->def_list.at(binary_cond->src2)->bb)) return info; // end_reg should be region constant
       info.end_reg = binary_cond->src2;
       info.cond_cmp = binary_cond;
+      info.bop = binary_cond->op;
       if (binary_cond->bb->func->has_param(binary_cond->src1)) return info;
       TypeCase(binary_update, ir::insns::Binary *, binary_cond->bb->func->def_list.at(binary_cond->src1)) { // i = i + c
         if (binary_update->dst.type != Int) return info;
@@ -300,8 +302,9 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     new_into_entry->prev.insert(into_entry);
     new_into_entry->succ.insert(parallel_entry);
     new_into_entry->succ.insert(entry);
-    Reg parallel_cond = func->new_reg(Int);
-    new_into_entry->push_back(new ir::insns::LoadImm(parallel_cond, ConstValue(1))); // TODO: check condition for parallel
+    Reg parallel_cond = func->new_reg(Int), imm_reg = func->new_reg(Int);
+    new_into_entry->push_back(new ir::insns::LoadImm(imm_reg, ConstValue(200)));
+    new_into_entry->push_back(new ir::insns::Binary(parallel_cond, BinaryOp::Geq, info.end_reg, imm_reg)); // check condition for parallel
     auto br = new ir::insns::Branch(parallel_cond, parallel_entry, entry);
     new_into_entry->push_back(br);
   }
@@ -385,9 +388,13 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     }
     bb_map[into_entry] = parallel_entries[tid];
     bb_map[exit] = parallel_exits[tid];
+    if (info.bop == BinaryOp::Leq) {
+      info.cond_cmp->op = (tid == THREAD_NUM - 1) ? BinaryOp::Leq : BinaryOp::Lt;
+    }
     for (auto bb : loop_bbs) {
       copy_bb(info, bb, bb_map.at(bb), bb_map, reg_map[tid]);
     }
+    info.cond_cmp->op = info.bop;
     // change back original loop's start & end
     info.entry_ind_phi->change_use(new_start, info.start_reg);
     info.cond_cmp->change_use(new_end, info.end_reg);

@@ -186,7 +186,7 @@ void main_global_var_to_local(ir::Program *prog){
 void mem2reg(ir::Program *prog) {
   for (auto &each : prog->functions) {
     Function *func = &each.second;
-    CFG *cfg = func->cfg;
+    auto &cfg = func->cfg;
     cfg->build();
     cfg->remove_unreachable_bb();
     cfg->compute_dom();

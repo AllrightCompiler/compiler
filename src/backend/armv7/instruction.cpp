@@ -157,12 +157,12 @@ ostream &operator<<(ostream &os, const Operand2 &opd) {
 }
 
 int get_padding_length(const char *op, ExCond cond, bool is_float,
-                       bool is_ldst) {
+                       bool is_ldst, bool is_push_pop) {
   int base_len = std::strlen(op);
   int cond_len = cond == ExCond::Always ? 0 : 2;
   base_len += cond_len;
 
-  if (is_float) {
+  if (is_float && !is_push_pop) {
     base_len += 4;
     if (!is_ldst)
       base_len++;
@@ -184,7 +184,7 @@ ostream &Instruction::write_op(std::ostream &os, const char *op, bool is_float,
     os << op << cond << ' ';
   }
 
-  int len = get_padding_length(op, cond, is_float, is_ldst);
+  int len = get_padding_length(op, cond, is_float, is_ldst, is_push_pop);
   while (len--)
     os << ' ';
   return os;
@@ -345,6 +345,10 @@ void Return::emit(std::ostream &os) const { write_op(os, "bx") << "lr"; }
 
 void CountLeadingZero::emit(std::ostream &os) const {
   write_op(os, "clz") << dst << ", " << src;
+}
+
+void PseudoNot::emit(std::ostream &os) const {
+  os << "*not " << dst << ", " << src; 
 }
 
 void PseudoCompare::emit(std::ostream &os) const {

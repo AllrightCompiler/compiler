@@ -40,7 +40,7 @@ bool is_cmp(ir::insns::Binary *binary) {
   }
 }
 
-unordered_set<Instruction *> get_effective_use(Instruction *inst,
+static unordered_set<Instruction *> get_effective_use(Instruction *inst,
                                                BasicBlock *bb) {
   unordered_set<Instruction *> ret;
   unordered_set<Instruction *> visited;
