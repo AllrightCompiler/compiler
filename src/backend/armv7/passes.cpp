@@ -36,6 +36,7 @@ void backend_passes(Program &p) {
 
     f.emit_prologue_epilogue();
 
+    sanitize_cfg(f);
     if_to_cond(f);
     sanitize_cfg(f);
 

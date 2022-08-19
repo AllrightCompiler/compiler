@@ -291,7 +291,8 @@ void RegBranch::emit(std::ostream &os) const {
 void CmpBranch::emit(std::ostream &os) const {
   cmp->emit(os);
   next_instruction(os);
-  os << "*b" << true_target->label << ", " << false_target->label;
+  os << "*b" << cond << ' ' << true_target->label << ", "
+     << false_target->label;
 }
 
 void Switch::emit(std::ostream &os) const {
