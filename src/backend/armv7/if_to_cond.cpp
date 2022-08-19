@@ -15,7 +15,7 @@ static bool can_be_cond(BasicBlock const &bb) {
     }
     if (instr->is<Compare>() || instr->is<PseudoCompare>() ||
         instr->is<PseudoOneDividedByReg>() || instr->is<CmpBranch>() ||
-        instr->is<Switch>()) {
+        instr->is<Switch>() || instr->is<Call>()) {
       return false;
     }
   }
@@ -24,6 +24,7 @@ static bool can_be_cond(BasicBlock const &bb) {
 
 static std::vector<std::unique_ptr<Instruction>>
 conditionalize(BasicBlock const &bb, ExCond const cond) {
+  assert(!bb.insns.empty());
   std::vector<std::unique_ptr<Instruction>> instrs;
   instrs.reserve(bb.insns.size());
   std::transform(bb.insns.cbegin(), bb.insns.cend(), std::back_inserter(instrs),
@@ -62,20 +63,26 @@ void if_to_cond(Function &func) {
     if (!can_be_cond(*br->true_target) || !can_be_cond(*br->false_target)) {
       continue;
     }
+    auto const cond = br->cond;
+    auto const true_target = br->true_target;
+    auto const false_target = br->false_target;
     bb->insns.back() = std::move(br->cmp);
-    auto then_instrs = conditionalize(*br->true_target, br->cond);
+    auto then_instrs = conditionalize(*true_target, cond);
     bb->insns.insert(bb->insns.cend(),
                      std::make_move_iterator(then_instrs.begin()),
-                     std::make_move_iterator(std::prev(then_instrs.end())));
-    auto otherwise_instrs =
-        conditionalize(*br->false_target, logical_not(br->cond));
-    bb->insns.insert(
-        bb->insns.cend(), std::make_move_iterator(otherwise_instrs.begin()),
-        std::make_move_iterator(std::prev(otherwise_instrs.end())));
-    bb->insns.push_back(std::make_unique<Branch>(then_next));
-    BasicBlock::remove_edge(bb.get(), br->true_target);
-    BasicBlock::remove_edge(bb.get(), br->false_target);
-    BasicBlock::add_edge(bb.get(), then_next);
+                     std::make_move_iterator(
+                         std::prev(then_instrs.end(), then_next != nullptr)));
+    auto otherwise_instrs = conditionalize(*false_target, logical_not(cond));
+    bb->insns.insert(bb->insns.cend(),
+                     std::make_move_iterator(otherwise_instrs.begin()),
+                     std::make_move_iterator(std::prev(
+                         otherwise_instrs.end(), otherwise_next != nullptr)));
+    BasicBlock::remove_edge(bb.get(), true_target);
+    BasicBlock::remove_edge(bb.get(), false_target);
+    if (then_next != nullptr) {
+      bb->insns.push_back(std::make_unique<Branch>(then_next));
+      BasicBlock::add_edge(bb.get(), then_next);
+    }
     debug(std::cerr) << "conditionalize " << bb->label << '\n';
   }
 }
