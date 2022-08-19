@@ -50,7 +50,7 @@ std::vector<Pass> passes = {
   remove_uneffective_inst,
   remove_unused_function,
 
-  // br2switch,
+  br2switch,
 
   gvn_no_cfg,
 
