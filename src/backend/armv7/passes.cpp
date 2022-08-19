@@ -812,6 +812,13 @@ void fold_constants(Function &f) {
           next = instr;
         }
       }
+      else TypeCase(pnot, PseudoNot *, insn.get()) {
+        auto const opt_imm = get_imm(pnot->src);
+        if (opt_imm) {
+          insn = std::make_unique<Move>(pnot->dst, Operand2::from(!*opt_imm));
+          next = instr;
+        }
+      }
       else TypeCase(_, PseudoOneDividedByReg *, insn.get()) {
         assert(false);
       }

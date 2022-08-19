@@ -614,6 +614,18 @@ struct CountLeadingZero final : DefaultCloneableInstruction<CountLeadingZero> {
   std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
 };
 
+// 伪逻辑非，需要展开
+struct PseudoNot : DefaultCloneableInstruction<PseudoNot> {
+  Reg dst, src;
+
+  PseudoNot(Reg dst, Reg src) : dst{dst}, src{src} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
+};
+
 // 伪二元比较，需要在最后阶段被展开
 // trick: 实际的op用的是本指令的条件码
 struct PseudoCompare final : DefaultCloneableInstruction<PseudoCompare> {
