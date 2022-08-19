@@ -2,6 +2,7 @@
 
 #include "backend/armv7/arch.hpp"
 
+#include "common/Display.hpp"
 #include "common/ir.hpp"
 #include "common/utils.hpp"
 
@@ -147,10 +148,11 @@ struct Operand2 {
   static Operand2 from(float imm) { return Operand2{.opd = imm}; }
 };
 
-struct Instruction {
+struct Instruction : Display {
   ExCond cond;
+  bool update_cpsr;
 
-  Instruction() : cond{ExCond::Always} {}
+  Instruction() : cond{ExCond::Always}, update_cpsr{false} {}
   virtual ~Instruction() = default;
 
   virtual void emit(std::ostream &os) const {}
@@ -173,6 +175,11 @@ struct Instruction {
   std::ostream &write_op(std::ostream &os, const char *op,
                          bool is_float = false, bool is_ldst = false,
                          bool is_push_pop = false, bool padding = true) const;
+
+  void print(std::ostream &out, unsigned indent) const final {
+    print_indent(out, indent);
+    this->emit(out);
+  }
 };
 
 template <typename Derived> struct DefaultCloneableInstruction : Instruction {
@@ -330,9 +337,10 @@ struct Compare final : DefaultCloneableInstruction<Compare> {
   Operand2 s2;
   bool neg;
 
-  Compare(Reg s1, Operand2 s2) : s1{s1}, s2{std::move(s2)}, neg{false} {}
-  Compare(Reg s1, Operand2 s2, bool neg)
-      : s1{s1}, s2{std::move(s2)}, neg{neg} {}
+  Compare(Reg s1, Operand2 s2) : Compare(s1, std::move(s2), false) {}
+  Compare(Reg s1, Operand2 s2, bool neg) : s1{s1}, s2{std::move(s2)}, neg{neg} {
+    this->update_cpsr = true;
+  }
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }
@@ -432,7 +440,9 @@ struct CmpBranch final : DefaultCloneableTerminator<CmpBranch> {
 
   CmpBranch(Compare *inner_cmp, BasicBlock *true_target,
             BasicBlock *false_target)
-      : cmp{inner_cmp}, true_target{true_target}, false_target{false_target} {}
+      : cmp{inner_cmp}, true_target{true_target}, false_target{false_target} {
+    this->update_cpsr = true;
+  }
   CmpBranch(CmpBranch const &other)
       : DefaultCloneableTerminator{other}, cmp{static_cast<Compare *>(
                                                other.cmp->clone().release())},
@@ -452,7 +462,9 @@ struct Switch final : DefaultCloneableTerminator<Switch> {
   Switch(Reg val, Reg tmp, BasicBlock *default_target,
          std::vector<std::pair<int, BasicBlock *>> targets)
       : val{val}, tmp{tmp}, default_target{default_target}, targets{std::move(
-                                                                targets)} {}
+                                                                targets)} {
+    this->update_cpsr = true;
+  }
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {tmp}; }
@@ -570,7 +582,9 @@ struct Call final : DefaultCloneableInstruction<Call> {
 
   Call(std::string func, int nr_gp_args, int nr_fp_args, int variadic_at = -1)
       : func{std::move(func)}, nr_gp_args{nr_gp_args}, nr_fp_args{nr_fp_args},
-        variadic_at{variadic_at} {}
+        variadic_at{variadic_at} {
+    this->update_cpsr = true;
+  }
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override {
@@ -632,7 +646,9 @@ struct PseudoCompare final : DefaultCloneableInstruction<PseudoCompare> {
   std::unique_ptr<Compare> cmp;
   Reg dst;
 
-  PseudoCompare(Compare *real_cmp, Reg dst) : cmp{real_cmp}, dst{dst} {}
+  PseudoCompare(Compare *real_cmp, Reg dst) : cmp{real_cmp}, dst{dst} {
+    this->update_cpsr = true;
+  }
   PseudoCompare(PseudoCompare const &other)
       : DefaultCloneableInstruction{other}, cmp{static_cast<Compare *>(
                                                 other.cmp->clone().release())},
@@ -752,7 +768,9 @@ struct PseudoOneDividedByReg final
     : DefaultCloneableInstruction<PseudoOneDividedByReg> {
   Reg dst, src;
 
-  PseudoOneDividedByReg(Reg dst, Reg src) : dst{dst}, src{src} {}
+  PseudoOneDividedByReg(Reg dst, Reg src) : dst{dst}, src{src} {
+    this->update_cpsr = true;
+  }
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {this->dst}; }

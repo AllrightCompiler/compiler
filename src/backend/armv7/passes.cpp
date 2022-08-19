@@ -2,6 +2,7 @@
 #include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
 #include "backend/armv7/if_to_cond.hpp"
+#include "backend/armv7/implicit_compare_zero.hpp"
 #include "backend/armv7/instruction.hpp"
 #include "backend/armv7/merge_instr.hpp"
 
@@ -41,6 +42,8 @@ void backend_passes(Program &p) {
     sanitize_cfg(f);
 
     f.replace_pseudo_insns();
+
+    implicit_compare_zero(f);
   }
 }
 

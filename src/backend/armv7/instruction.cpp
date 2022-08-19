@@ -201,6 +201,9 @@ void RType::emit(std::ostream &os) const {
   if (op == Div && !dst.is_float()) {
     op_name = 's' + op_name;
   }
+  if (this->update_cpsr) {
+    op_name += 's';
+  }
   write_op(os, op_name.c_str(), dst.is_float())
       << dst << ", " << s1 << ", " << s2;
 }
@@ -210,7 +213,11 @@ void IType::emit(std::ostream &os) const {
       [Add] = "add", [Sub] = "sub", [RevSub] = "rsb",
       [Eor] = "eor", [Bic] = "bic", [And] = "and",
   };
-  write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", #" << imm;
+  std::string op_name = OP_NAMES[op];
+  if (this->update_cpsr) {
+    op_name += 's';
+  }
+  write_op(os, op_name.c_str()) << dst << ", " << s1 << ", #" << imm;
 }
 
 void FullRType::emit(std::ostream &os) const {
@@ -219,12 +226,19 @@ void FullRType::emit(std::ostream &os) const {
       [Sub] = "sub",
       [RevSub] = "rsb",
   };
-  write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", " << s2;
+  std::string op_name = OP_NAMES[op];
+  if (this->update_cpsr) {
+    op_name += 's';
+  }
+  write_op(os, op_name.c_str()) << dst << ", " << s1 << ", " << s2;
 }
 
 void Move::emit(std::ostream &os) const {
-  auto op = flip ? "mvn" : "mov";
-  write_op(os, op,
+  std::string op = flip ? "mvn" : "mov";
+  if (this->update_cpsr) {
+    op += 's';
+  }
+  write_op(os, op.c_str(),
            dst.is_float() ||
                src.is_imm_shift() && src.get<RegImmShift>().r.is_float())
       << dst << ", " << src;
@@ -275,7 +289,11 @@ void Store::emit(std::ostream &os) const {
 void FusedMul::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
       [Add] = "mla", [Sub] = "mls", [SMAdd] = "smmla"};
-  write_op(os, OP_NAMES[op], dst.is_float())
+  std::string op_name = OP_NAMES[op];
+  if (this->update_cpsr) {
+    op_name += 's';
+  }
+  write_op(os, op_name.c_str(), dst.is_float())
       << dst << ", " << s1 << ", " << s2 << ", " << s3;
 }
 
