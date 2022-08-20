@@ -311,6 +311,12 @@ class ProgramTranslator {
         cmp.rhs = s2;
         break;
       }
+      case BinaryOp::Shr: // contract: s1 / (1 << s2)
+        bb->push(new PseudoDivPowerTwo(dst, s1, s2));
+        break;
+      case BinaryOp::Shl:
+        bb->push(new Move(dst, Operand2::from(ShiftType::LSL, s1, s2)));
+        break;
       default:
         __builtin_unreachable();
       }
@@ -1004,8 +1010,11 @@ void Function::replace_pseudo_insns() {
       bool remove = false;
       TypeCase(pnot, PseudoNot *, it->get()) {
         Reg dst = pnot->dst, src = pnot->src;
-        insns.emplace(it, new CountLeadingZero{dst, src});
-        it->reset(new Move{dst, Operand2::from(LSR, dst, 5)});
+        auto instr = std::make_unique<CountLeadingZero>(dst, src);
+        instr->cond = pnot->cond;
+        insns.insert(it, std::move(instr));
+        *it = std::make_unique<Move>(dst, Operand2::from(LSR, dst, 5));
+        it->get()->cond = pnot->cond;
       }
       TypeCase(pcmp, PseudoCompare *, it->get()) {
         auto cond = pcmp->cond;
