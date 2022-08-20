@@ -61,6 +61,7 @@ std::vector<Pass> passes = {
     loop_fusion,
     gvn_no_cfg,
     duplicate_load_store_elimination,
+    if_combine,
   array_ssa_destruction,
 
   loop_interchange,

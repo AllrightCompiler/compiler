@@ -310,7 +310,7 @@ void fuse_loops(Loop *to, Loop *from, LoopCond cond_1, LoopCond cond_2) {
   }
 }
 
-bool check_common_var(BasicBlock *b1, BasicBlock *b2, BasicBlock *mid_bb) {
+static bool check_common_var(BasicBlock *b1, BasicBlock *b2, BasicBlock *mid_bb) {
   unordered_map<Reg, Reg> common_map;
   unordered_map<Reg, Reg> used_map;
   unordered_set<Reg> common_set;
