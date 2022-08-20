@@ -119,8 +119,10 @@ int main(int argc, char *argv[]) {
     }
   } catch (const ParseCancellationException &e) {
     error(cerr) << e.what() << endl;
+    return 1;
   } catch (const CompileError &e) {
     error(cerr) << e.what() << endl;
+    return 2;
   }
   return 0;
 }
