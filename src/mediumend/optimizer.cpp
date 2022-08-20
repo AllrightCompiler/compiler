@@ -54,54 +54,54 @@ std::vector<Pass> passes = {
 
   gvn_no_cfg,
 
-  // array_mem2reg,
-  //   gvn_no_cfg,
-  //   clean_useless_cf, // for loop fusion
-  //   loop_fusion,
-  //   gvn_no_cfg,
-  //   duplicate_load_store_elimination,
-  // array_ssa_destruction,
+  array_mem2reg,
+    gvn_no_cfg,
+    clean_useless_cf, // for loop fusion
+    loop_fusion,
+    gvn_no_cfg,
+    duplicate_load_store_elimination,
+  array_ssa_destruction,
 
-  // loop_interchange,
+  loop_interchange,
   
-  // remove_recursive_tail_call,
+  remove_recursive_tail_call,
 
-  // gvn_cfg,
+  gvn_cfg,
 
-  // loop_parallel,
+  loop_parallel,
 
-  // function_inline,
-  // remove_unused_function,
-  // main_global_var_to_local,
-  // mem2reg,
+  function_inline,
+  remove_unused_function,
+  main_global_var_to_local,
+  mem2reg,
 
-  // loop_unroll,
+  loop_unroll,
 
-  // array_mem2reg,
-  //   gvn_cfg,
-  //   duplicate_load_store_elimination,
-  // array_ssa_destruction,
+  array_mem2reg,
+    gvn_cfg,
+    duplicate_load_store_elimination,
+  array_ssa_destruction,
 
-  // value_range_analysis,
+  value_range_analysis,
   
-  // algebra_simpilifacation,
+  algebra_simpilifacation,
 
-  // gvn_cfg,
-  // gvn_cfg,
-  // loop_unroll,
+  gvn_cfg,
+  gvn_cfg,
+  loop_unroll,
 
-  // gvn_cfg,
-  // remove_useless_loop,
-  // gvn_cfg,
+  gvn_cfg,
+  remove_useless_loop,
+  gvn_cfg,
 
-  // gep_destruction,
-  // gvn_no_cfg,
+  gep_destruction,
+  gvn_no_cfg,
 
-  // // operator_strength_reduction,
-  // gvn_cfg,
+  // operator_strength_reduction,
+  gvn_cfg,
 
-  // estimate_exec_freq,
-  // sort_basicblock,
+  estimate_exec_freq,
+  sort_basicblock,
 };
 
 // without modify cfg
