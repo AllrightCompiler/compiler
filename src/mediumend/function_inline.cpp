@@ -212,7 +212,7 @@ void function_inline(ir::Program *prog) {
       }
     }
     if(length > LONG_CALL_LEN && length < TOO_LONG_CALL_LEN){
-      cursive_or_long_calls.insert(func.first);
+      // cursive_or_long_calls.insert(func.first);
     }
   }
   vector<string> stack;
