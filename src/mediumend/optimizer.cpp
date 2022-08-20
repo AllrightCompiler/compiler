@@ -70,7 +70,7 @@ std::vector<Pass> passes = {
 
   loop_parallel,
 
-  function_inline,
+  // function_inline,
   remove_unused_function,
   main_global_var_to_local,
   mem2reg,
