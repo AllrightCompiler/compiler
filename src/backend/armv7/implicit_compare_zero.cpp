@@ -37,7 +37,7 @@ static bool can_update_cpsr(Instruction const &instr) {
     return !mov->dst.is_float() && !mov->is_transfer_vmov();
   }
   TypeCase(fused_mul, FusedMul const *, &instr) {
-    return fused_mul->op != FusedMul::SMAdd;
+    return fused_mul->op != FusedMul::Sub && fused_mul->op != FusedMul::SMAdd;
   }
   return false;
 }
@@ -49,7 +49,10 @@ void implicit_compare_zero(Function &func) {
            cmp != bb->insns.end()) {
       debug(std::cerr) << "find compare 0: " << **cmp << '\n';
       auto instr = cmp;
-      while (instr != bb->insns.begin()) {
+      while (true) {
+        if (instr == bb->insns.begin()) {
+          goto continue_;
+        }
         instr = std::prev(instr);
         if (involve_cpsr(**instr)) {
           goto continue_;
