@@ -68,7 +68,7 @@ std::vector<Pass> passes = {
 
   gvn_cfg,
 
-  // loop_parallel,
+  loop_parallel,
 
   function_inline,
   remove_unused_function,
