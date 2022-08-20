@@ -98,6 +98,8 @@ std::vector<Pass> passes = {
   gvn_cfg,
 
   gep_destruction,
+
+  operator_strength_reduction,
   gvn_no_cfg,
 
   gvn_cfg,
