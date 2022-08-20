@@ -79,29 +79,29 @@ struct TightlyNestedLoopInfo {
             if (gep->indices[0] == reg_j && gep->indices[1] == reg_i) reverse_found = true;
           }
           // 2. gep(i * n + j)
-          if (gep->indices.size() == 1) {
-            if (!gep->bb->func->has_param(gep->indices[0])) {
-              TypeCase(binary_sum, ir::insns::Binary *, gep->bb->func->def_list.at(gep->indices[0])) {
-                if (binary_sum->op == BinaryOp::Add) {
-                  if (binary_sum->src1 == reg_i || binary_sum->src1 == reg_j) {
-                    std::swap(binary_sum->src1, binary_sum->src2);
-                  }
-                  if (!binary_sum->bb->func->has_param(binary_sum->src1)) {
-                    TypeCase(binary_mul, ir::insns::Binary *, binary_sum->bb->func->def_list.at(binary_sum->src1)) {
-                      if (binary_mul->op == BinaryOp::Mul) {
-                        if (binary_sum->src2 == reg_i) { // j * n + i
-                          if (binary_mul->src1 == reg_j || binary_mul->src2 == reg_j) reverse_found = true;
-                        }
-                        if (binary_sum->src2 == reg_j) { // i * n + j
-                          if (binary_mul->src1 == reg_i || binary_mul->src2 == reg_i) order_found = true;
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
+          // if (gep->indices.size() == 1) {
+          //   if (!gep->bb->func->has_param(gep->indices[0])) {
+              // TypeCase(binary_sum, ir::insns::Binary *, gep->bb->func->def_list.at(gep->indices[0])) {
+                // if (binary_sum->op == BinaryOp::Add) {
+                  // if (binary_sum->src1 == reg_i || binary_sum->src1 == reg_j) {
+                  //   std::swap(binary_sum->src1, binary_sum->src2);
+                  // }
+                  // if (!binary_sum->bb->func->has_param(binary_sum->src1)) {
+                  //   TypeCase(binary_mul, ir::insns::Binary *, binary_sum->bb->func->def_list.at(binary_sum->src1)) {
+                  //     if (binary_mul->op == BinaryOp::Mul) {
+                  //       if (binary_sum->src2 == reg_i) { // j * n + i
+                  //         if (binary_mul->src1 == reg_j || binary_mul->src2 == reg_j) reverse_found = true;
+                  //       }
+                  //       if (binary_sum->src2 == reg_j) { // i * n + j
+                  //         if (binary_mul->src1 == reg_i || binary_mul->src2 == reg_i) order_found = true;
+                  //       }
+                  //     }
+                  //   }
+                  // }
+                // }
+              // }
+          //   }
+          // }
         }
       }
     }
@@ -162,6 +162,7 @@ InterchangeLoopInfo get_interchange_info(Loop *loop) {
       TypeCase(binary_update, ir::insns::Binary *, binary_cond->bb->func->def_list.at(binary_cond->src1)) {
         info.ind_upd = binary_update;
         if (binary_update->dst.type != Int) return info;
+        if (binary_update->bb->func->use_list.at(binary_update->dst).size() > 2) return info; // updated i only used in cond_cmp & phi
         Reg reg_i = binary_update->src1, reg_c = binary_update->src2;
         if (binary_update->bb->func->has_param(reg_i) || binary_update->bb->func->has_param(reg_c)) return info;
         TypeCase(dummy, ir::insns::LoadImm *, binary_update->bb->func->def_list.at(reg_i)) {
