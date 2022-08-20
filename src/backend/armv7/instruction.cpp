@@ -171,22 +171,24 @@ int get_padding_length(const char *op, ExCond cond, bool is_float, bool is_ldst,
 }
 
 ostream &Instruction::write_op(std::ostream &os, const char *op, bool is_float,
-                               bool is_ldst, bool is_push_pop) const {
+                               bool is_ldst, bool is_push_pop,
+                               bool padding) const {
   if (is_float) {
     os << 'v' << op << cond;
     if (!is_push_pop) {
       os << '.';
       if (!is_ldst)
         os << 'f';
-      os << "32 ";
+      os << "32";
     }
   } else {
-    os << op << cond << ' ';
+    os << op << cond;
   }
-
-  int len = get_padding_length(op, cond, is_float, is_ldst, is_push_pop);
-  while (len--)
-    os << ' ';
+  if (padding) {
+    int len = get_padding_length(op, cond, is_float, is_ldst, is_push_pop) + 1;
+    while (len--)
+      os << ' ';
+  }
   return os;
 }
 
@@ -199,6 +201,9 @@ void RType::emit(std::ostream &os) const {
   if (op == Div && !dst.is_float()) {
     op_name = 's' + op_name;
   }
+  if (this->update_cpsr) {
+    op_name += 's';
+  }
   write_op(os, op_name.c_str(), dst.is_float())
       << dst << ", " << s1 << ", " << s2;
 }
@@ -208,7 +213,11 @@ void IType::emit(std::ostream &os) const {
       [Add] = "add", [Sub] = "sub", [RevSub] = "rsb",
       [Eor] = "eor", [Bic] = "bic", [And] = "and",
   };
-  write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", #" << imm;
+  std::string op_name = OP_NAMES[op];
+  if (this->update_cpsr) {
+    op_name += 's';
+  }
+  write_op(os, op_name.c_str()) << dst << ", " << s1 << ", #" << imm;
 }
 
 void FullRType::emit(std::ostream &os) const {
@@ -217,12 +226,19 @@ void FullRType::emit(std::ostream &os) const {
       [Sub] = "sub",
       [RevSub] = "rsb",
   };
-  write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", " << s2;
+  std::string op_name = OP_NAMES[op];
+  if (this->update_cpsr) {
+    op_name += 's';
+  }
+  write_op(os, op_name.c_str()) << dst << ", " << s1 << ", " << s2;
 }
 
 void Move::emit(std::ostream &os) const {
-  auto op = flip ? "mvn" : "mov";
-  write_op(os, op,
+  std::string op = flip ? "mvn" : "mov";
+  if (this->update_cpsr) {
+    op += 's';
+  }
+  write_op(os, op.c_str(),
            dst.is_float() ||
                src.is_imm_shift() && src.get<RegImmShift>().r.is_float())
       << dst << ", " << src;
@@ -273,7 +289,11 @@ void Store::emit(std::ostream &os) const {
 void FusedMul::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
       [Add] = "mla", [Sub] = "mls", [SMAdd] = "smmla"};
-  write_op(os, OP_NAMES[op], dst.is_float())
+  std::string op_name = OP_NAMES[op];
+  if (this->update_cpsr) {
+    op_name += 's';
+  }
+  write_op(os, op_name.c_str(), dst.is_float())
       << dst << ", " << s1 << ", " << s2 << ", " << s3;
 }
 
@@ -289,7 +309,8 @@ void RegBranch::emit(std::ostream &os) const {
 void CmpBranch::emit(std::ostream &os) const {
   cmp->emit(os);
   next_instruction(os);
-  write_op(os, "*b") << true_target->label << ", " << false_target->label;
+  os << "*b" << cond << ' ' << true_target->label << ", "
+     << false_target->label;
 }
 
 void Switch::emit(std::ostream &os) const {
@@ -348,7 +369,7 @@ void CountLeadingZero::emit(std::ostream &os) const {
 }
 
 void PseudoNot::emit(std::ostream &os) const {
-  os << "*not " << dst << ", " << src;
+  os << "*not" << cond << ' ' << dst << ", " << src;
 }
 
 void PseudoCompare::emit(std::ostream &os) const {
@@ -358,15 +379,19 @@ void PseudoCompare::emit(std::ostream &os) const {
 
 void Convert::emit(std::ostream &os) const {
   std::string op = "vcvt";
+  write_op(os, "vcvt", false, false, false, false);
   switch (this->type) {
   case ConvertType::Float2Int:
-    op += ".s32.f32";
+    os << ".s32.f32";
     break;
   case ConvertType::Int2Float:
-    op += ".f32.s32";
+    os << ".f32.s32";
     break;
   }
-  write_op(os, op.c_str()) << this->dst << ", " << this->src;
+  int len = get_padding_length(op.c_str(), cond, true, false, false) + 1;
+  while (len--)
+    os << ' ';
+  os << this->dst << ", " << this->src;
 }
 
 void Phi::emit(std::ostream &os) const {
@@ -376,7 +401,7 @@ void Phi::emit(std::ostream &os) const {
 }
 
 void Vneg::emit(std::ostream &os) const {
-  write_op(os, "vneg.f32") << this->dst << ", " << this->src;
+  write_op(os, "neg", true) << this->dst << ", " << this->src;
 }
 
 void ComplexLoad::emit(std::ostream &os) const {
