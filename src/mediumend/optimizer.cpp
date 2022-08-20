@@ -62,7 +62,7 @@ std::vector<Pass> passes = {
 
   loop_interchange,
   
-  remove_recursive_tail_call,
+  // remove_recursive_tail_call,
 
   gvn_cfg,
 
