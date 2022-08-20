@@ -1,6 +1,8 @@
 #include "backend/armv7/passes.hpp"
 #include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
+#include "backend/armv7/if_to_cond.hpp"
+#include "backend/armv7/implicit_compare_zero.hpp"
 #include "backend/armv7/instruction.hpp"
 #include "backend/armv7/merge_instr.hpp"
 
@@ -36,8 +38,12 @@ void backend_passes(Program &p) {
     f.emit_prologue_epilogue();
 
     sanitize_cfg(f);
+    if_to_cond(f);
+    sanitize_cfg(f);
 
     f.replace_pseudo_insns();
+
+    implicit_compare_zero(f);
   }
 }
 
@@ -809,6 +815,13 @@ void fold_constants(Function &f) {
           next = instr;
         }
       }
+      else TypeCase(pnot, PseudoNot *, insn.get()) {
+        auto const opt_imm = get_imm(pnot->src);
+        if (opt_imm) {
+          insn = std::make_unique<Move>(pnot->dst, Operand2::from(!*opt_imm));
+          next = instr;
+        }
+      }
       else TypeCase(_, PseudoOneDividedByReg *, insn.get()) {
         assert(false);
       }
@@ -839,7 +852,7 @@ void propagate_constants(Function &f) {
         }
         if (int_vals.count(src))
           opt_imm = int_vals.at(src);
-        
+
         if (opt_imm) {
           int imm = *opt_imm;
           int_vals[dst] = imm;
