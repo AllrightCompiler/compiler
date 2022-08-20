@@ -50,17 +50,15 @@ std::vector<Pass> passes = {
   remove_uneffective_inst,
   remove_unused_function,
 
-  // br2switch,
-
   gvn_no_cfg,
 
-  // array_mem2reg,
-  //   gvn_no_cfg,
-  //   clean_useless_cf, // for loop fusion
-  //   loop_fusion,
-  //   gvn_no_cfg,
-  //   duplicate_load_store_elimination,
-  // array_ssa_destruction,
+  array_mem2reg,
+    gvn_no_cfg,
+    clean_useless_cf, // for loop fusion
+    loop_fusion,
+    gvn_no_cfg,
+    duplicate_load_store_elimination,
+  array_ssa_destruction,
 
   // loop_interchange,
   
