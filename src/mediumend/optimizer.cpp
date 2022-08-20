@@ -60,20 +60,20 @@ std::vector<Pass> passes = {
     duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  // loop_interchange,
+  loop_interchange,
   
-  // remove_recursive_tail_call,
+  remove_recursive_tail_call,
 
-  // gvn_cfg,
+  gvn_cfg,
 
-  // loop_parallel,
+  loop_parallel,
 
-  // function_inline,
-  // remove_unused_function,
-  // main_global_var_to_local,
-  // mem2reg,
+  function_inline,
+  remove_unused_function,
+  main_global_var_to_local,
+  mem2reg,
 
-  // loop_unroll,
+  loop_unroll,
 
   // array_mem2reg,
   //   gvn_cfg,
