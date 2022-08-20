@@ -88,7 +88,7 @@ struct ParallelLoopInfo {
         // i only used for array index
       } else return false;
     }
-    return true;
+    return false;
   }
 };
 
@@ -411,23 +411,25 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
       }
       auto syscall = new ir::insns::Call(func->new_reg(Int), "__join_threads", {imm_tid});
       parallel_exits[tid]->push_back(syscall);
-      Reg reduce_sum = func->new_reg(info.reduce_reg.type);
-      if (info.reduce_reg.type == Int) {
-        parallel_exits[tid]->push_back(new ir::insns::LoadImm(reduce_sum, ConstValue(0)));
-      } else {
-        parallel_exits[tid]->push_back(new ir::insns::LoadImm(reduce_sum, ConstValue(0.0f)));
-      }
-      for (int i = 0; i < THREAD_NUM; i++) {
-        Reg gep_reg = func->new_reg(Int), imm_reg = func->new_reg(Int);
-        auto imm_i = new ir::insns::LoadImm(imm_reg, ConstValue(i));
-        auto gep = new ir::insns::GetElementPtr(gep_reg, Type(info.reduce_reg.type, std::vector<int>{4}), reduce_array_addr, {imm_reg});
-        parallel_exits[tid]->push_back(imm_i);
-        parallel_exits[tid]->push_back(gep);
-        Reg partial_reduce_sum = func->new_reg(info.reduce_reg.type);
-        parallel_exits[tid]->push_back(new ir::insns::Load(partial_reduce_sum, gep_reg));
-        new_reduce_sum[tid] = func->new_reg(info.reduce_reg.type);
-        parallel_exits[tid]->push_back(new ir::insns::Binary(new_reduce_sum[tid], BinaryOp::Add, reduce_sum, partial_reduce_sum));
-        reduce_sum = new_reduce_sum[tid];
+      if (info.reduce_reg.id != -1) {
+        Reg reduce_sum = func->new_reg(info.reduce_reg.type);
+        if (info.reduce_reg.type == Int) {
+          parallel_exits[tid]->push_back(new ir::insns::LoadImm(reduce_sum, ConstValue(0)));
+        } else {
+          parallel_exits[tid]->push_back(new ir::insns::LoadImm(reduce_sum, ConstValue(0.0f)));
+        }
+        for (int i = 0; i < THREAD_NUM; i++) {
+          Reg gep_reg = func->new_reg(Int), imm_reg = func->new_reg(Int);
+          auto imm_i = new ir::insns::LoadImm(imm_reg, ConstValue(i));
+          auto gep = new ir::insns::GetElementPtr(gep_reg, Type(info.reduce_reg.type, std::vector<int>{4}), reduce_array_addr, {imm_reg});
+          parallel_exits[tid]->push_back(imm_i);
+          parallel_exits[tid]->push_back(gep);
+          Reg partial_reduce_sum = func->new_reg(info.reduce_reg.type);
+          parallel_exits[tid]->push_back(new ir::insns::Load(partial_reduce_sum, gep_reg));
+          new_reduce_sum[tid] = func->new_reg(info.reduce_reg.type);
+          parallel_exits[tid]->push_back(new ir::insns::Binary(new_reduce_sum[tid], BinaryOp::Add, reduce_sum, partial_reduce_sum));
+          reduce_sum = new_reduce_sum[tid];
+        }
       }
       auto jmp = new ir::insns::Jump(exit);
       parallel_exits[tid]->push_back(jmp);
