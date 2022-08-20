@@ -34,6 +34,7 @@ const std::map<std::string, Pass> PASS_MAP = {
   {"loop_interchange", loop_interchange},
   {"algebra_simpilifacation", algebra_simpilifacation},
   {"estimate_exec_freq", estimate_exec_freq},
+  {"if_combine", if_combine},
 };
 
 // define default passes here
