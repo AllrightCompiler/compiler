@@ -27,7 +27,8 @@ static bool involve_cpsr(Instruction const &instr) {
 
 static bool can_update_cpsr(Instruction const &instr) {
   TypeCase(r_instr, RType const *, &instr) {
-    return r_instr->op != RType::SMMul && !r_instr->dst.is_float();
+    return r_instr->op != RType::Div && r_instr->op != RType::SMMul &&
+           !r_instr->dst.is_float();
   }
   TypeCase(i_instr, IType const *, &instr) { return !i_instr->dst.is_float(); }
   TypeCase(fr_instr, FullRType const *, &instr) {
