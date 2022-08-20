@@ -82,7 +82,7 @@ std::vector<Pass> passes = {
     duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  // value_range_analysis,
+  value_range_analysis,
   
   algebra_simpilifacation,
 
