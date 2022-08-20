@@ -34,7 +34,7 @@ struct ComputeLoopInfo {
       } else TypeCase(binary, ir::insns::Binary *, insn.get()) {
         if (binary == cond_cmp) continue;
         if (binary->op != BinaryOp::Add && binary->op != BinaryOp::Sub && binary->op != BinaryOp::Shl && binary->op != BinaryOp::Shr) return false;
-        if (entry->func->has_param(binary->src2) && entry->func->def_list.at(binary->src2)->bb == entry) return false;
+        if (!entry->func->has_param(binary->src2) && entry->func->def_list.at(binary->src2)->bb == entry) return false;
         if (entry->func->has_param(binary->src1)) return false;
         TypeCase(phi, ir::insns::Phi *, entry->func->def_list.at(binary->src1)) {
           if (phi->bb != entry) return false;
