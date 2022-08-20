@@ -57,7 +57,7 @@ std::vector<Pass> passes = {
   array_mem2reg,
     gvn_no_cfg,
     clean_useless_cf, // for loop fusion
-    // loop_fusion,
+    loop_fusion,
     gvn_no_cfg,
     duplicate_load_store_elimination,
   array_ssa_destruction,
