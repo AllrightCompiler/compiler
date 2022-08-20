@@ -1007,8 +1007,9 @@ void Function::replace_pseudo_insns() {
         auto instr = std::make_unique<CountLeadingZero>(dst, src);
         instr->cond = pnot->cond;
         insns.insert(it, std::move(instr));
-        *it = std::make_unique<Move>(dst, Operand2::from(LSR, dst, 5));
-        it->get()->cond = pnot->cond;
+        auto cmov = new Move{dst, Operand2::from(LSR, dst, 5)};
+        cmov->cond = pnot->cond;
+        it->reset(cmov);
       }
       TypeCase(pcmp, PseudoCompare *, it->get()) {
         auto cond = pcmp->cond;
