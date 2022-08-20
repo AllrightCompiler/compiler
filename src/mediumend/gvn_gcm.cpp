@@ -298,6 +298,12 @@ void gvn(Function *f) {
           copy_propagation(f->use_list, unary->dst, new_reg);
         }
       }
+      TypeCase(convert, ir::insns::Convert *, insn.get()) {
+        Reg new_reg = vn_get(convert);
+        if (new_reg != convert->dst) {
+          copy_propagation(f->use_list, convert->dst, new_reg);
+        }
+      }
       TypeCase(gep, ir::insns::GetElementPtr *, insn.get()) {
         Reg new_base = gep->base;
         if (!f->has_param(gep->base)) {
@@ -571,7 +577,7 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     }
   } else TypeCase(convert, ir::insns::Convert *, inst) {
     placement[convert] = root_bb;
-        BasicBlock *place;
+    BasicBlock *place;
     if (inst->bb->func->has_param(convert->src)) { // is function param
       place = inst->bb->func->bbs.front().get();
     } else {
@@ -764,6 +770,7 @@ void gvn_gcm(ir::Program *prog) {
     hashTable_binary.clear();
     hashTable_loadaddr.clear();
     hashTable_unary.clear();
+    hashTable_convert.clear();
     hashTable_gep.clear();
     hashTable_call.clear();
     hashTable_memuse.clear();
