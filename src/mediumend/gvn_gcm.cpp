@@ -764,6 +764,7 @@ void gvn_gcm(ir::Program *prog) {
     hashTable_binary.clear();
     hashTable_loadaddr.clear();
     hashTable_unary.clear();
+    hashTable_convert.clear();
     hashTable_gep.clear();
     hashTable_call.clear();
     hashTable_memuse.clear();
