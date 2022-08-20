@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <limits>
 #include <ostream>
 #include <utility>
 
@@ -39,6 +40,12 @@ inline void print_indent(std::ostream &os, int indent) {
 inline std::size_t hash_combine(std::size_t seed, std::size_t const value) {
   seed ^= value + 0x9e3779b9 + (seed << 6) + (seed >> 2);
   return seed;
+}
+
+inline int countl_zero(unsigned const x) { return __builtin_clz(x); }
+
+inline int bit_width(unsigned const x) {
+  return std::numeric_limits<decltype(x)>::digits - countl_zero(x);
 }
 
 namespace std {

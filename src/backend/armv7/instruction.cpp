@@ -24,7 +24,11 @@ ExCond logical_not(ExCond cond) {
     return ExCond::Gt;
   case ExCond::Lt:
     return ExCond::Ge;
-  default:
+  case ExCond::Cs:
+    return ExCond::Cc;
+  case ExCond::Cc:
+    return ExCond::Cs;
+  case ExCond::Always:
     __builtin_unreachable();
   }
 }
@@ -110,7 +114,8 @@ constexpr const char *COND_NAME[] = {
     [int(ExCond::Always)] = "", [int(ExCond::Eq)] = "eq",
     [int(ExCond::Ne)] = "ne",   [int(ExCond::Ge)] = "ge",
     [int(ExCond::Gt)] = "gt",   [int(ExCond::Le)] = "le",
-    [int(ExCond::Lt)] = "lt",
+    [int(ExCond::Lt)] = "lt",   [int(ExCond::Cs)] = "cs",
+    [int(ExCond::Cc)] = "cc",
 };
 
 ostream &operator<<(ostream &os, ExCond c) { return os << COND_NAME[int(c)]; }
@@ -152,12 +157,12 @@ ostream &operator<<(ostream &os, const Operand2 &opd) {
 }
 
 int get_padding_length(const char *op, ExCond cond, bool is_float,
-                       bool is_ldst) {
+                       bool is_ldst, bool is_push_pop) {
   int base_len = std::strlen(op);
   int cond_len = cond == ExCond::Always ? 0 : 2;
   base_len += cond_len;
 
-  if (is_float) {
+  if (is_float && !is_push_pop) {
     base_len += 4;
     if (!is_ldst)
       base_len++;
@@ -179,7 +184,7 @@ ostream &Instruction::write_op(std::ostream &os, const char *op, bool is_float,
     os << op << cond << ' ';
   }
 
-  int len = get_padding_length(op, cond, is_float, is_ldst);
+  int len = get_padding_length(op, cond, is_float, is_ldst, is_push_pop);
   while (len--)
     os << ' ';
   return os;
@@ -187,10 +192,8 @@ ostream &Instruction::write_op(std::ostream &os, const char *op, bool is_float,
 
 void RType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add",
-      [Sub] = "sub",
-      [Mul] = "mul",
-      [Div] = "div",
+      [Add] = "add", [Sub] = "sub",     [Mul] = "mul",
+      [Div] = "div", [SMMul] = "smmul",
   };
   std::string op_name = OP_NAMES[op];
   if (op == Div && !dst.is_float()) {
@@ -202,13 +205,18 @@ void RType::emit(std::ostream &os) const {
 
 void IType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb"};
+      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb",
+      [Eor] = "eor", [Bic] = "bic", [And] = "and",
+  };
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", #" << imm;
 }
 
 void FullRType::emit(std::ostream &os) const {
   constexpr const char *OP_NAMES[] = {
-      [Add] = "add", [Sub] = "sub", [RevSub] = "rsb"};
+      [Add] = "add",
+      [Sub] = "sub",
+      [RevSub] = "rsb",
+  };
   write_op(os, OP_NAMES[op]) << dst << ", " << s1 << ", " << s2;
 }
 
@@ -263,8 +271,9 @@ void Store::emit(std::ostream &os) const {
 }
 
 void FusedMul::emit(std::ostream &os) const {
-  auto op = sub ? "mls" : "mla";
-  write_op(os, op, dst.is_float())
+  constexpr const char *OP_NAMES[] = {
+      [Add] = "mla", [Sub] = "mls", [SMAdd] = "smmla"};
+  write_op(os, OP_NAMES[op], dst.is_float())
       << dst << ", " << s1 << ", " << s2 << ", " << s3;
 }
 
@@ -281,6 +290,14 @@ void CmpBranch::emit(std::ostream &os) const {
   cmp->emit(os);
   next_instruction(os);
   write_op(os, "*b") << true_target->label << ", " << false_target->label;
+}
+
+void Switch::emit(std::ostream &os) const {
+  os << "*switch " << val << ", " << default_target->label;
+  for (auto &[v, target] : targets) {
+    next_instruction(os);
+    os << "    " << v << " -> " << target->label;
+  }
 }
 
 void LoadStack::emit(std::ostream &os) const {
@@ -330,8 +347,12 @@ void CountLeadingZero::emit(std::ostream &os) const {
   write_op(os, "clz") << dst << ", " << src;
 }
 
+void PseudoNot::emit(std::ostream &os) const {
+  os << "*not " << dst << ", " << src; 
+}
+
 void PseudoCompare::emit(std::ostream &os) const {
-  os << "*compare-" << cond << ' ' << dst << ' ';
+  os << "*set" << cond << ' ' << dst << ' ';
   cmp->emit(os);
 }
 
@@ -360,7 +381,7 @@ void Vneg::emit(std::ostream &os) const {
 
 void ComplexLoad::emit(std::ostream &os) const {
   write_op(os, "ldr") << this->dst << ", [" << this->base << ", "
-                      << this->offset;
+                      << "+-"[this->neg] << this->offset;
   if (this->shift != 0) {
     os << ", " << this->shift_type << " #" << this->shift;
   }
@@ -369,11 +390,25 @@ void ComplexLoad::emit(std::ostream &os) const {
 
 void ComplexStore::emit(std::ostream &os) const {
   write_op(os, "str") << this->src << ", [" << this->base << ", "
-                      << this->offset;
+                      << "+-"[this->neg] << this->offset;
   if (this->shift != 0) {
     os << ", " << this->shift_type << " #" << this->shift;
   }
   os << ']';
+}
+
+void PseudoOneDividedByReg::emit(std::ostream &os) const {
+  os << "*div-" << this->cond << ' ' << this->dst << ", #1, " << this->src;
+}
+
+void PseudoModulo::emit(std::ostream &os) const {
+  os << "*mod-" << this->cond << ' ' << this->dst << ", " << this->s1 << ", "
+     << this->s2;
+}
+
+void BitFieldClear::emit(std::ostream &os) const {
+  write_op(os, "bfc") << this->dst << ", #" << this->lsb << ", #"
+                      << this->width;
 }
 
 } // namespace armv7

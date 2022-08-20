@@ -7,13 +7,12 @@
 #include <functional>
 #include <ostream>
 
-namespace mediumend {
-class CFG;
-}
+#include "mediumend/cfg.hpp"
 
 namespace ir {
 
 using std::list;
+using std::map;
 using std::optional;
 using std::string;
 using std::unique_ptr;
@@ -61,7 +60,7 @@ struct Storage {
 struct BasicBlock;
 struct Function;
 
-enum InstType{
+enum InstType {
   ALLOCA,
   LOAD,
   LOADADDR,
@@ -78,6 +77,7 @@ enum InstType{
   RETURN,
   JUMP,
   BRANCH,
+  SWITCH,
   OUTPUT,
   TERMINATOR,
 };
@@ -130,6 +130,7 @@ struct BasicBlock {
   bool visit;
   int domlevel;
   int rpo_num; // id in rpo, available after compute_rpo
+  double freq; // estimated execution frequency
 
   // modify use-def
   void push_back(Instruction *insn);
@@ -140,7 +141,8 @@ struct BasicBlock {
   // modify use-def
   void insert_at(list<unique_ptr<Instruction>>::iterator it, Instruction *insn);
   // modify use-def
-  list<unique_ptr<Instruction>>::iterator remove_at(list<unique_ptr<Instruction>>::iterator it);
+  list<unique_ptr<Instruction>>::iterator
+  remove_at(list<unique_ptr<Instruction>>::iterator it);
   void pop_back();
   // not modify use-def
   void insert_at_pos(int pos, Instruction *insn);
@@ -168,6 +170,7 @@ struct BasicBlock {
   }
   void change_succ(BasicBlock *old_bb, BasicBlock *new_bb);
   void change_prev(BasicBlock *old_bb, BasicBlock *new_bb);
+  void remove_prev(BasicBlock *bb);
 };
 
 void calc_loop_level(Loop *loop);
@@ -182,21 +185,27 @@ struct Function {
   FunctionSignature sig;
   int nr_regs;
 
-  mediumend::CFG *cfg = nullptr;
+  unique_ptr<mediumend::CFG> cfg;
   int pure = -1;
   int array_ssa_pure = -1;
+  int only_load_param = -1;
+  bool ret_used = false;
 
   unordered_map<Reg, unordered_set<Instruction *>> use_list;
   unordered_map<Reg, Instruction *> def_list;
   unordered_set<Reg> global_addr;
   vector<unique_ptr<Loop>> loops;
+  map<std::pair<BasicBlock *, BasicBlock *>, double> branch_probs;
+  map<std::pair<BasicBlock *, BasicBlock *>, double> branch_freqs;
 
   list<unique_ptr<BasicBlock>> bbs;
   Reg new_reg(int t) { return ir::Reg{t, ++nr_regs}; }
-  ~Function();
+
   bool has_param(Reg r) { return r.id <= sig.param_types.size(); }
   bool is_pure() const { return pure == 1; }
   bool is_array_ssa_pure() const { return array_ssa_pure == 1; }
+  bool is_only_load_param() const { return only_load_param == 1; }
+  bool is_ret_used() const { return ret_used; }
   void clear_visit();
   void clear_graph();
   void clear_dom();
@@ -219,6 +228,8 @@ struct Program {
 std::ostream &operator<<(std::ostream &os, const Program &);
 std::ostream &operator<<(std::ostream &os, const ConstValue &);
 void emit_global_var(std::ostream &os, const std::string &name, Var *var);
+
+std::ostream &dump_cfg(std::ostream &os, const Program &);
 
 void set_print_context(const Program &);
 const Program *get_print_context();
@@ -323,7 +334,8 @@ struct Load : Output {
 struct LoadAddr : Output {
   string var_name;
 
-  LoadAddr(Reg dst, string name) : var_name{std::move(name)}, Output{dst, LOADADDR} {}
+  LoadAddr(Reg dst, string name)
+      : var_name{std::move(name)}, Output{dst, LOADADDR} {}
 
   virtual void emit(std::ostream &os) const override;
 };
@@ -331,7 +343,8 @@ struct LoadAddr : Output {
 struct LoadImm : Output {
   ConstValue imm;
 
-  LoadImm(Reg dst, ConstValue immediate) : imm{immediate}, Output{dst, LOADIMM} {}
+  LoadImm(Reg dst, ConstValue immediate)
+      : imm{immediate}, Output{dst, LOADIMM} {}
 
   virtual void emit(std::ostream &os) const override;
 };
@@ -461,9 +474,11 @@ struct Phi : Output {
   std::unordered_set<Reg> use_before_def;
   bool array_ssa;
 
-  Phi(Reg dst, bool array_ssa = false) : Output{dst, PHI}, array_ssa(array_ssa) {}
+  Phi(Reg dst, bool array_ssa = false)
+      : Output{dst, PHI}, array_ssa(array_ssa) {}
 
-  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs) : Output{dst, PHI}, array_ssa(false) {
+  Phi(Reg dst, vector<BasicBlock *> bbs, vector<Reg> regs)
+      : Output{dst, PHI}, array_ssa(false) {
     for (size_t i = 0; i < bbs.size(); i++) {
       incoming[bbs[i]] = regs[i];
     }
@@ -486,7 +501,7 @@ struct Phi : Output {
     for (auto each : incoming) {
       ret.insert(each.second);
     }
-    for(auto each : use_before_def){
+    for (auto each : use_before_def) {
       ret.insert(each);
     }
     return ret;
@@ -518,7 +533,8 @@ struct MemDef : Output {
   MemDef(Reg dst, Reg dep, Reg store_dst, Reg store_val, bool call_def,
          unordered_set<Reg> uses_before_def)
       : dep(dep), store_dst{store_dst}, store_val{store_val},
-        call_def(call_def), uses_before_def(uses_before_def), Output{dst, MEMDEF} {}
+        call_def(call_def),
+        uses_before_def(uses_before_def), Output{dst, MEMDEF} {}
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
   virtual void remove_use_def() override;
@@ -570,7 +586,8 @@ struct Branch : Terminator {
   Reg val;
 
   Branch(Reg src, BasicBlock *true_dst, BasicBlock *false_dst)
-      : Terminator(BRANCH), val{src}, true_target{true_dst}, false_target{false_dst} {}
+      : Terminator(BRANCH), val{src}, true_target{true_dst}, false_target{
+                                                                 false_dst} {}
 
   virtual void emit(std::ostream &os) const override;
   virtual void add_use_def() override;
@@ -578,6 +595,24 @@ struct Branch : Terminator {
   virtual void change_use(Reg old_reg, Reg new_reg) override;
   virtual std::vector<Reg *> reg_ptrs() override { return {&val}; }
   unordered_set<Reg> use() const override { return {val}; }
+};
+
+struct Switch : Terminator {
+  Reg val;
+  map<int, BasicBlock *> targets;
+  BasicBlock *default_target;
+
+  virtual void emit(std::ostream &os) const override;
+  virtual void add_use_def() override;
+  virtual void remove_use_def() override;
+  virtual void change_use(Reg old_reg, Reg new_reg) override;
+  virtual std::vector<Reg *> reg_ptrs() override { return {&val}; }
+  unordered_set<Reg> use() const override { return {val}; }
+
+  Switch() : Terminator(SWITCH) {}
+  Switch(Reg val, map<int, BasicBlock *> targets, BasicBlock *default_target)
+      : Terminator(SWITCH), targets(std::move(targets)), val(val),
+        default_target(default_target) {}
 };
 
 } // namespace insns

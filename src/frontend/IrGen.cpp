@@ -45,6 +45,9 @@ IrGen::IrGen() : program{new Program} {
   lib["__builtin_array_init"].sig = {
       .ret_type = std::nullopt,
       .param_types = {Type{Int, std::vector<int>{0}}, Type{Int}}};
+  lib["__create_threads"].sig = {.ret_type = Int, .param_types = {}};
+  lib["__join_threads"].sig = {.ret_type = std::nullopt,
+                               .param_types = {Type{Int}}};
 }
 
 BasicBlock *IrGen::new_bb() {
@@ -344,7 +347,8 @@ void IrGen::visit_statement(const ast::Statement &node) {
 
 // 如果求值类型为数组，返回的寄存器中持有数组的首地址；
 // 如果求值类型为标量，当`return_addr_when_scalar`为真时返回该元素的地址，否则为值
-Reg IrGen::visit_lvalue(const ast::LValue &node, bool return_addr_when_scalar) {
+Reg IrGen::visit_lvalue(const ast::LValue &node, bool return_addr_when_scalar,
+                        bool flatten) {
   auto &var = node.var;
   auto &name = node.ident().name();
   auto &storage = mem_vars.find(var.get())->second;
@@ -357,10 +361,18 @@ Reg IrGen::visit_lvalue(const ast::LValue &node, bool return_addr_when_scalar) {
 
   std::vector<Reg> index_regs;
   auto &indices = node.indices();
-  if (!indices.empty()) {
-    for (auto &index : indices) {
-      index_regs.push_back(scalar_cast(visit_arith_expr(index), Int));
-    }
+  for (auto &index : indices)
+    index_regs.push_back(scalar_cast(visit_arith_expr(index), Int));
+
+  if (flatten && indices.size() < var->type.nr_dims()) {
+    assert(var->type.dims[0] > 0);
+    Reg zero = new_reg(Int);
+    emit(new insns::LoadImm{zero, ConstValue{0}});
+    int nr_padding = var->type.nr_dims() - indices.size();
+    while (nr_padding--)
+      index_regs.push_back(zero);
+  }
+  if (!index_regs.empty()) {
     addr = new_reg(String);
     emit(
         new insns::GetElementPtr{addr, var->type, base, std::move(index_regs)});
@@ -407,8 +419,19 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
         if (arg.index() == 0) { // expression
           auto &arg_expr = std::get<std::unique_ptr<ast::Expression>>(arg);
           Reg reg = visit_arith_expr(arg_expr);
-          if (i < nr_params && !sig->param_types[i].is_array())
-            reg = scalar_cast(reg, sig->param_types[i].base_type);
+          if (i < nr_params) {
+            if (!sig->param_types[i].is_array())
+              reg = scalar_cast(reg, sig->param_types[i].base_type);
+            else {
+              if (sig->param_types[i].is_pointer_to_scalar()) {
+                if (auto lval = dynamic_cast<ast::LValue *>(arg_expr.get())) {
+                  auto &tp = lval->var->type;
+                  if (tp.nr_dims() > 1)
+                    reg = visit_lvalue(*lval, false, true);
+                }
+              }
+            }
+          }
           arg_regs.push_back(reg);
         } else { // string literal
           auto &str_literal = std::get<ast::StringLiteral>(arg);

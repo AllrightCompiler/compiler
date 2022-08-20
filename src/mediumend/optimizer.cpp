@@ -3,7 +3,7 @@
 namespace mediumend {
 
 // add pass here
-const std::map<std::string, funcptr> PASS_MAP = {
+const std::map<std::string, Pass> PASS_MAP = {
   {"remove_unused_function", remove_unused_function},
   {"mem2reg", mem2reg},
   {"constant_propagation", constant_propagation},
@@ -28,73 +28,98 @@ const std::map<std::string, funcptr> PASS_MAP = {
   {"sort_basicblock", sort_basicblock},
   {"gep_destruction", gep_destruction},
   {"remove_recursive_tail_call", remove_recursive_tail_call},
+  {"loop_parallel", loop_parallel},
+  {"value_range_analysis", value_range_analysis},
+  {"br2switch", br2switch},
+  {"loop_interchange", loop_interchange},
+  {"algebra_simpilifacation", algebra_simpilifacation},
+  {"estimate_exec_freq", estimate_exec_freq},
 };
 
 // define default passes here
-std::vector<funcptr> passes = {
+std::vector<Pass> passes = {
   clean_useless_cf,
   main_global_var_to_local,
   mem2reg,
+  mark_pure_func,
   remove_uneffective_inst,
   remove_unused_function,
   main_global_var_to_local,
   remove_uneffective_inst, // important! must done before mark_pure_func
   mark_pure_func,
+  remove_uneffective_inst,
+  remove_unused_function,
+
+  // br2switch,
 
   gvn_no_cfg,
-  // remove_recursive_tail_call,
 
-  // array_mem2reg,
-  //   gvn_no_cfg,
-  //   clean_useless_cf, // for loop fusion
-  //   loop_fusion,
-  //   gvn_no_cfg,
-  //   duplicate_load_store_elimination,
-  // array_ssa_destruction,
+  array_mem2reg,
+    gvn_no_cfg,
+    clean_useless_cf, // for loop fusion
+    loop_fusion,
+    gvn_no_cfg,
+    duplicate_load_store_elimination,
+  array_ssa_destruction,
+
+  // loop_interchange,
+  
+  remove_recursive_tail_call,
+
+  gvn_cfg,
+
+  loop_parallel,
 
   function_inline,
   remove_unused_function,
   main_global_var_to_local,
   mem2reg,
 
-  // loop_unroll,
+  loop_unroll,
 
   array_mem2reg,
     gvn_cfg,
     duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  // gvn_cfg,
-  // loop_unroll,
+  // value_range_analysis,
+  
+  algebra_simpilifacation,
 
-  // gvn_cfg,
-  // remove_useless_loop,
-  // gvn_cfg,
+  gvn_cfg,
+  gvn_cfg,
+  loop_unroll,
+
+  gvn_cfg,
+  remove_useless_loop,
+  gvn_cfg,
 
   gep_destruction,
   gvn_no_cfg,
 
-  // gep_destruction,
-  // gvn_no_cfg,
-
   // operator_strength_reduction,
-  // gvn_cfg,
+  gvn_cfg,
 
-  // sort_basicblock,
+  estimate_exec_freq,
+  sort_basicblock,
 };
 
 // without modify cfg
 void gvn_no_cfg(ir::Program *prog) {
+  remove_uneffective_inst(prog);
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
+  algebra_simpilifacation(prog);
   remove_unused_function(prog);
   operator_strength_promotion(prog);
 }
 
 // modify cfg
 void gvn_cfg(ir::Program *prog) {
+  remove_uneffective_inst(prog);
   gvn_gcm(prog);
   remove_uneffective_inst(prog);
+  algebra_simpilifacation(prog);
   remove_unused_function(prog);
   operator_strength_promotion(prog);
   constant_propagation(prog);

@@ -12,22 +12,6 @@
 
 namespace armv7 {
 
-template <typename Container = std::list<std::unique_ptr<Instruction>>>
-void emit_load_imm(Container &cont, typename Container::iterator it, Reg dst,
-                   int imm) {
-  if (is_imm8m(imm))
-    cont.emplace(it, new Move{dst, Operand2::from(imm)});
-  else if (is_imm8m(~imm))
-    cont.emplace(it, new Move{dst, Operand2::from(~imm), true});
-  else {
-    uint32_t x = uint32_t(imm);
-    auto lo = x & 0xffff, hi = x >> 16;
-    cont.emplace(it, new MovW(dst, lo));
-    if (hi > 0)
-      cont.emplace(it, new MovT(dst, hi));
-  }
-}
-
 void emit_load_imm(BasicBlock *bb, Reg dst, int imm) {
   emit_load_imm(bb->insns, bb->insns.end(), dst, imm);
 }
@@ -142,7 +126,9 @@ class ProgramTranslator {
         next_bb = std::next(dst_it)->get();
 
       auto bb = dst_it->get();
+      auto loop = (*src_it)->loop;
       bb->label = dst.new_label();
+      bb->loop_level = loop ? loop->level : 0;
       for (auto &ir_insn : (*src_it)->insns)
         translate_instruction(dst_fn, bb, ir_insn.get(), next_bb);
     }
@@ -217,7 +203,7 @@ class ProgramTranslator {
         } else {
           Reg imm_reg = fn.new_reg(General);
           fn.emit_imm(bb, imm_reg, dim);
-          bb->push(new FusedMul{t, index_reg, imm_reg, s});
+          bb->push(new FusedMul{FusedMul::Add, t, index_reg, imm_reg, s});
         }
         index_reg = t;
       }
@@ -271,8 +257,7 @@ class ProgramTranslator {
           // bb->push(new Compare{src, Operand2::from(0)});
           // bb->push(ExCond::Eq, new Move{dst, Operand2::from(1)});
           // alternative: clz dst, src; lsr dst, dst, #5
-          bb->push(new CountLeadingZero{dst, src});
-          bb->push(new Move{dst, Operand2::from(LSR, dst, 5)});
+          bb->push(new PseudoNot{dst, src});
         } else {
           auto cmp = std::make_unique<Compare>(src, Operand2::from(0));
           bb->push(ExCond::Eq, new PseudoCompare(cmp.release(), dst));
@@ -307,13 +292,9 @@ class ProgramTranslator {
       case BinaryOp::Div:
         bb->push(new RType{RType::from(binary->op), dst, s1, s2});
         break;
-      case BinaryOp::Mod: {
-        // TODO: 确认负数取模的行为
-        Reg t = fn.new_reg(General);
-        bb->push(new RType{RType::Op::Div, t, s1, s2});
-        bb->push(new FusedMul{dst, t, s2, s1, true});
+      case BinaryOp::Mod:
+        bb->push(new PseudoModulo{dst, s1, s2});
         break;
-      }
       case BinaryOp::Eq:
       case BinaryOp::Neq:
       case BinaryOp::Geq:
@@ -474,6 +455,21 @@ class ProgramTranslator {
         srcs.emplace_back(bb_map.at(ir_bb), Reg::from(reg));
       bb->push(new Phi{Reg::from(phi->dst), std::move(srcs)});
     }
+    else TypeCase(sw, ii::Switch *, ins) {
+      Reg val = Reg::from(sw->val);
+      Reg tmp = fn.new_reg(General);
+      auto default_target = bb_map.at(sw->default_target);
+      BasicBlock::add_edge(bb, default_target);
+
+      std::vector<std::pair<int, BasicBlock *>> targets;
+      for (auto &[v, ir_bb] : sw->targets) {
+        auto target = bb_map.at(ir_bb);
+        targets.push_back({v, target});
+        BasicBlock::add_edge(bb, target);
+      }
+      assert(!targets.empty());
+      bb->push(new Switch{val, tmp, default_target, std::move(targets)});
+    }
   }
 
 public:
@@ -496,16 +492,15 @@ std::unique_ptr<Program> translate(const ir::Program &ir_program) {
 }
 
 void Function::emit(std::ostream &os) {
+  os << ".section .text\n";
+  os << ".align\n";
   os << name << ":\n";
   for (auto &bb : bbs) {
-    // if (bb->insns.empty())
-    //   continue;
-
     os << bb->label << ':';
-    if (bb->insns.empty()) {
-      next_instruction(os);
-      os << "nop";
-    }
+    // if (bb->insns.empty()) {
+    //   next_instruction(os);
+    //   os << "nop";
+    // }
 
     for (auto &insn : bb->insns) {
       next_instruction(os);
@@ -513,7 +508,55 @@ void Function::emit(std::ostream &os) {
     }
     os << "\n\n";
   }
+  emit_jump_tables(os);
 }
+
+void Function::emit_jump_tables(std::ostream &os) {
+  if (!jump_tables.empty())
+    os << ".section .text\n";
+  for (size_t i = 0; i < jump_tables.size(); ++i) {
+    auto jt_name = "JT" + std::to_string(i) + "$" + name;
+    auto &sw = jump_tables[i];
+    // 这里为方便起见，进行了稠密化处理
+    int first = std::min(sw->targets.front().first, 0);
+    int last = std::max(sw->targets.back().first, 0);
+    int len = last - first + 1;
+    std::vector<BasicBlock *> dense_targets(len, sw->default_target);
+    for (auto [v, target] : sw->targets)
+      dense_targets[v - first] = target;
+
+    for (int j = first; j <= last; ++j) {
+      if (j == 0)
+        os << jt_name << ":\n";
+      os << "    .word " << dense_targets[j]->label << '\n';
+    }
+    os << '\n';
+  }
+}
+
+/*
+modified from
+https://github.com/kobayashi-compiler/kobayashi-compiler/blob/main/runtime/armv7/thread.S
+
+int __create_threads() {
+    for (int i = 0; i < 3; ++i) {
+        int pid = clone(CLONE_VM | SIGCHLD, sp, 0, 0, 0);
+        if (pid != 0) {
+            return i;
+        }
+    }
+    return n;
+}
+
+void __join_threads(int i) {
+    if (i != 3) {
+        waitid(P_ALL, 0, NULL, WEXITED);
+    }
+    if (i != 0) {
+        _exit(0);
+    }
+}
+*/
 
 Program::Program() : labels_used{0} {
   auto p = [this](const char *s) { builtin_code.emplace_back(s); };
@@ -526,6 +569,62 @@ Program::Program() : labels_used{0} {
   p("    cmp r0, r1");
   p("    blt 1b");
   p("    bx  lr");
+  p("");
+  p("SYS_clone = 120");
+  p("CLONE_VM = 256");
+  p("SIGCHLD = 17");
+  p("");
+  p("__create_threads:");
+  p("    push {r4, r5, r6, r7}");
+  p("    mov r5, #3");
+  p("    mov r7, #SYS_clone");
+  p("    mov r1, sp");
+  p("    mov r2, #0");
+  p("    mov r3, #0");
+  p("    mov r4, #0");
+  p("    mov r6, #0");
+  p(".LT0:");
+  p("    mov r0, #(CLONE_VM | SIGCHLD)");
+  p("    swi #0");
+  p("    cmp r0, #0");
+  p("    movne r0, r6");
+  p("    bne .LT1");
+  p("    add r6, r6, #1");
+  p("    cmp r6, r5");
+  p("    blt .LT0");
+  p("    mov r0, r5");
+  p(".LT1:");
+  p("    pop {r4, r5, r6, r7}");
+  p("    bx lr");
+  p("");
+  p("SYS_waitid = 280");
+  p("SYS_exit = 1");
+  p("P_ALL = 0");
+  p("WEXITED = 4");
+  p("");
+  p("__join_threads:");
+  p("    sub sp, sp, #16");
+  p("    cmp r0, #0");
+  p("    pusheq {r4, r7}");
+  p("    mov r4, r0");
+  p("    cmp r4, #3");
+  p("    beq .LT2");
+  p("    mov r0, #P_ALL");
+  p("    mov r1, #0");
+  p("    mov r2, #0");
+  p("    mov r3, #WEXITED");
+  p("    mov r7, #SYS_waitid");
+  p("    swi #0");
+  p(".LT2:");
+  p("    cmp r4, #0");
+  p("    bne .LT3");
+  p("    pop {r4, r7}");
+  p("    add sp, sp, #16");
+  p("    bx lr");
+  p(".LT3:");
+  p("    mov r0, #0");
+  p("    mov r7, #SYS_exit");
+  p("    swi #0");
 }
 
 void Program::emit(std::ostream &os) {
@@ -649,7 +748,7 @@ int round_up_to_imm8m(int x) {
   return (x + a - 1) & m;
 }
 
-void assign_offsets(const std::vector<StackObject *> &objs) {
+void assign_offsets(const std::deque<StackObject *> &objs) {
   int offset = 0;
   for (auto obj : objs) {
     obj->offset = offset;
@@ -856,7 +955,7 @@ void Function::resolve_stack_ops(int frame_size) {
             // Rd = loadimm #offset
             // ldr Rd, [sp, Rd]
             emit_load_imm(insns, it, dst, offset);
-            it->reset(new ComplexLoad{dst, reg_sp, dst});
+            it->reset(new ComplexLoad{dst, reg_sp, dst, false});
           }
         }
       }
@@ -897,12 +996,17 @@ void Function::replace_pseudo_insns() {
   for (auto bb_iter = bbs.begin(); bb_iter != bbs.end();) {
     auto bb = bb_iter->get();
     auto &insns = bb->insns;
-    
+
     ++bb_iter;
     auto next_bb = (bb_iter == bbs.end()) ? nullptr : bb_iter->get();
 
     for (auto it = insns.begin(); it != insns.end();) {
       bool remove = false;
+      TypeCase(pnot, PseudoNot *, it->get()) {
+        Reg dst = pnot->dst, src = pnot->src;
+        insns.emplace(it, new CountLeadingZero{dst, src});
+        it->reset(new Move{dst, Operand2::from(LSR, dst, 5)});
+      }
       TypeCase(pcmp, PseudoCompare *, it->get()) {
         auto cond = pcmp->cond;
         auto dst = pcmp->dst;
@@ -916,7 +1020,7 @@ void Function::replace_pseudo_insns() {
         insns.emplace(it, cmov_false);
         it->reset(cmov_true);
       }
-      else TypeCase(br, CmpBranch *, it->get()) {
+      TypeCase(br, CmpBranch *, it->get()) {
         auto cond = br->cond;
         auto true_target = br->true_target;
         auto false_target = br->false_target;
@@ -937,9 +1041,48 @@ void Function::replace_pseudo_insns() {
           it->reset(new Branch{false_target});
         }
       }
-      else TypeCase(br, Branch *, it->get()) {
+      TypeCase(br, Branch *, it->get()) {
         if (br->target == next_bb && br->cond == ExCond::Always)
           remove = true;
+      }
+      TypeCase(div, PseudoOneDividedByReg *, it->get()) {
+        insns.insert(
+            it, std::make_unique<IType>(IType::Add, div->dst, div->src, 1));
+        insns.insert(it,
+                     std::make_unique<Compare>(div->dst, Operand2::from(3)));
+        *it = std::make_unique<Move>(div->dst, Operand2::from(0));
+        it->get()->cond = ExCond::Cs;
+      }
+      TypeCase(sw, Switch *, it->get()) {
+        int lb = sw->targets.front().first;
+        int ub = sw->targets.back().first;
+        Reg val = sw->val, tmp = sw->tmp;
+
+        if (is_imm8m(lb))
+          insns.emplace(it, new Compare{val, Operand2::from(lb)});
+        else {
+          emit_load_imm(insns, it, tmp, lb);
+          insns.emplace(it, new Compare{val, Operand2::from(tmp)});
+        }
+        auto lbr = new Branch{sw->default_target};
+        lbr->cond = ExCond::Lt;
+        insns.emplace(it, lbr);
+
+        if (is_imm8m(ub))
+          insns.emplace(it, new Compare{val, Operand2::from(ub)});
+        else {
+          emit_load_imm(insns, it, tmp, ub);
+          insns.emplace(it, new Compare{val, Operand2::from(tmp)});
+        }
+        auto ubr = new Branch{sw->default_target};
+        ubr->cond = ExCond::Gt;
+        insns.emplace(it, ubr);
+
+        auto jt_name = "JT" + std::to_string(jump_tables.size()) + "$" + name;
+        insns.emplace(it, new LoadAddr{tmp, jt_name});
+
+        jump_tables.emplace_back(dynamic_cast<Switch *>(it->release()));
+        it->reset(new ComplexLoad{Reg{General, pc}, tmp, val, LSL, 2, false});
       }
 
       if (remove)

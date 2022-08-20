@@ -2,14 +2,14 @@
 #include "common/ir.hpp"
 
 #include <cassert>
-#include<iostream>
+#include <iostream>
 
 namespace mediumend {
 
 using std::vector;
 
-void compute_use_def_list(ir::Program *prog){
-  for(auto &each : prog->functions){
+void compute_use_def_list(ir::Program *prog) {
+  for (auto &each : prog->functions) {
     auto func = &each.second;
     func->def_list.clear();
     func->use_list.clear();
@@ -23,8 +23,8 @@ void compute_use_def_list(ir::Program *prog){
   }
 }
 
-void mark_global_addr_reg(ir::Program *prog){
-  for(auto &each : prog->functions){
+void mark_global_addr_reg(ir::Program *prog) {
+  for (auto &each : prog->functions) {
     auto func = &each.second;
     func->global_addr.clear();
     auto &bbs = func->bbs;
@@ -34,20 +34,19 @@ void mark_global_addr_reg(ir::Program *prog){
         TypeCase(loadaddr, ir::insns::LoadAddr *, inst.get()) {
           func->global_addr.insert(loadaddr->dst);
         }
-        TypeCase(get_ptr, ir::insns::GetElementPtr *, inst.get()){
-          if(func->global_addr.count(get_ptr->base)){
+        TypeCase(get_ptr, ir::insns::GetElementPtr *, inst.get()) {
+          if (func->global_addr.count(get_ptr->base)) {
             func->global_addr.insert(get_ptr->dst);
           }
         }
       }
     }
   }
-  
 }
 
 CFG::CFG(ir::Function *func) : func(func) {}
 
-void CFG::build(){
+void CFG::build() {
   for (auto &bb : func->bbs) {
     bb->succ = {};
     bb->prev = {};
@@ -59,6 +58,7 @@ void CFG::build(){
     ir::insns::Jump *jmp = dynamic_cast<ir::insns::Jump *>(ins.get());
     ir::insns::Branch *brh = dynamic_cast<ir::insns::Branch *>(ins.get());
     ir::insns::Return *ret = dynamic_cast<ir::insns::Return *>(ins.get());
+    ir::insns::Switch *swi = dynamic_cast<ir::insns::Switch *>(ins.get());
     auto &next = bb->succ;
     if (jmp) {
       next.insert(jmp->target);
@@ -69,6 +69,13 @@ void CFG::build(){
       brh->true_target->prev.insert(bb.get());
       brh->false_target->prev.insert(bb.get());
     } else if (ret) {
+    } else if (swi) {
+      for (auto each : swi->targets) {
+        next.insert(each.second);
+        each.second->prev.insert(bb.get());
+      }
+      next.insert(swi->default_target);
+      swi->default_target->prev.insert(bb.get());
     } else {
       assert(false);
     }
@@ -80,40 +87,41 @@ void CFG::remove_unreachable_bb() {
   func->clear_visit();
   vector<ir::BasicBlock *> stack;
   stack.push_back(entry);
-  while(stack.size()){
+  while (stack.size()) {
     ir::BasicBlock *bb = stack.back();
     stack.pop_back();
-    if(bb->visit){
+    if (bb->visit) {
       continue;
     }
     bb->visit = true;
-    for(auto suc : bb->succ){
-      if(!suc->visit){
+    for (auto suc : bb->succ) {
+      if (!suc->visit) {
         stack.push_back(suc);
       }
     }
   }
-  for(auto iter = func->bbs.begin(); iter != func->bbs.end();){
-    if(iter->get()->visit){
+  for (auto iter = func->bbs.begin(); iter != func->bbs.end();) {
+    if (iter->get()->visit) {
       iter++;
     } else {
       auto bb = iter->get();
-      for(auto &inst : bb->insns){
+      for (auto &inst : bb->insns) {
         inst->remove_use_def();
       }
-      for(auto suc : bb->succ){
+      for (auto suc : bb->succ) {
         suc->prev.erase(bb);
-        for(auto &inst : suc->insns){
-          TypeCase(phi, ir::insns::Phi *, inst.get()){
-            if(phi->incoming.count(bb)){
+        for (auto &inst : suc->insns) {
+          TypeCase(phi, ir::insns::Phi *, inst.get()) {
+            if (phi->incoming.count(bb)) {
               phi->remove_prev(bb);
             }
-          } else {
+          }
+          else {
             break;
           }
         }
       }
-      for(auto pre : bb->prev){
+      for (auto pre : bb->prev) {
         pre->succ.erase(bb);
       }
       iter = func->bbs.erase(iter);
@@ -170,15 +178,15 @@ void CFG::compute_dom() {
   }
 
   entry->idom = nullptr;
-  for (auto iter = ++func->bbs.begin(); iter != func->bbs.end(); iter++) {
+  for (auto iter = std::next(func->bbs.begin()); iter != func->bbs.end();
+       iter++) {
     auto bb = iter->get();
     auto &domby_bb = bb->domby;
     for (BasicBlock *d : domby_bb) {
       if (d != bb) {
         bool all_true = true;
         for (auto &pre : domby_bb) {
-          if (pre == bb || pre == d ||
-              pre->domby.find(d) == pre->domby.end()) {
+          if (pre == bb || pre == d || pre->domby.find(d) == pre->domby.end()) {
             continue;
           }
           all_true = false;
@@ -215,10 +223,96 @@ void CFG::compute_rpo() {
   func->clear_visit();
   rpo.clear();
   func->bbs.front()->rpo_dfs(rpo);
-  for (auto bb: rpo) {
+  for (auto bb : rpo) {
     bb->rpo_num = rpo.size() - bb->rpo_num; // reverse
   }
   std::reverse(rpo.begin(), rpo.end());
+}
+
+void PostDominatorTree::rpo_dfs(BasicBlock *bb, vector<BasicBlock *> &po,
+                                unordered_map<BasicBlock *, int> &rpo_num,
+                                unordered_set<BasicBlock *> &visited) const {
+  if (visited.count(bb))
+    return;
+  visited.insert(bb);
+  for (auto p : bb->prev)
+    rpo_dfs(p, po, rpo_num, visited);
+  po.push_back(bb);
+  rpo_num[bb] = f->bbs.size() - po.size();
+}
+
+BasicBlock *
+PostDominatorTree::intersect(const unordered_map<BasicBlock *, int> &rpo_num,
+                             BasicBlock *u, BasicBlock *v) const {
+  while (u != v) {
+    while (rpo_num.at(u) > rpo_num.at(v))
+      u = ipdom.at(u);
+    while (rpo_num.at(v) > rpo_num.at(u))
+      v = ipdom.at(v);
+  }
+  return u;
+}
+
+void PostDominatorTree::add_virtual_exit() {
+  auto vexit = new BasicBlock;
+  for (auto &bb : f->bbs)
+    if (bb->succ.empty())
+      BasicBlock::add_edge(bb.get(), vexit);
+  virt_exit.reset(vexit);
+}
+
+void PostDominatorTree::remove_virtual_exit() {
+  auto vexit = virt_exit.get();
+  for (auto exit : vexit->prev)
+    exit->succ.erase(vexit);
+}
+
+void PostDominatorTree::build() {
+  std::vector<BasicBlock *> po;
+  std::unordered_map<BasicBlock *, int> rpo_num;
+  std::unordered_set<BasicBlock *> visited;
+
+  auto vexit = virt_exit.get();
+  rpo_dfs(vexit, po, rpo_num, visited);
+
+  // for (auto &bb : f->bbs)
+  //   ipdom[bb.get()] = nullptr;
+  ipdom[vexit] = vexit;
+
+  bool changed = true;
+  while (changed) {
+    changed = false;
+    for (auto it = po.rbegin(); it != po.rend(); ++it) {
+      auto bb = *it;
+      if (bb == vexit)
+        continue;
+
+      BasicBlock *new_ipdom = nullptr;
+      for (auto s : bb->succ) {
+        if (ipdom.count(s)) {
+          if (!new_ipdom)
+            new_ipdom = s;
+          else
+            new_ipdom = intersect(rpo_num, new_ipdom, s);
+        }
+      }
+      if (ipdom[bb] != new_ipdom) { // nullptr default construct
+        ipdom[bb] = new_ipdom;
+        changed = true;
+      }
+    }
+  }
+}
+
+bool PostDominatorTree::pdoms(BasicBlock *a, BasicBlock *b) const {
+  BasicBlock *b_prev;
+  do {
+    if (b == a)
+      return true;
+    b_prev = b;
+    b = ipdom.at(b);
+  } while (b != b_prev);
+  return false;
 }
 
 } // namespace mediumend

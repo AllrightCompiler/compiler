@@ -114,7 +114,7 @@ static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
 static unordered_map<std::string, Reg> hashTable_loadaddr;
 static unordered_map<tuple<Type, Reg, vector<Reg> >, Reg> hashTable_gep;
 static unordered_map<tuple<std::string, vector<Reg> >, Reg> hashTable_call;
-static unordered_map<tuple<Reg, Reg>, Reg> hashTable_memuse;
+static unordered_map<tuple<Reg, Reg, bool>, Reg> hashTable_memuse;
 static unordered_map<Reg, ConstValue> constMap;
 static unordered_map<ConstValue, Reg> rConstMap;
 static unordered_map<Instruction *, Reg> hashTable;
@@ -204,11 +204,11 @@ Reg vn_get(Instruction *inst) {
       hashTable[inst] = call->dst;
     }
   } else TypeCase(memuse, ir::insns::MemUse *, inst) {
-    if (hashTable_memuse.count(std::make_tuple(memuse->dep, memuse->load_src))) {
-      hashTable[inst] = hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src)];
+    if (hashTable_memuse.count(std::make_tuple(memuse->dep, memuse->load_src, memuse->call_use))) {
+      hashTable[inst] = hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src, memuse->call_use)];
     } else {
       hashTable[inst] = memuse->dst;
-      hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src)] = memuse->dst;
+      hashTable_memuse[std::make_tuple(memuse->dep, memuse->load_src, memuse->call_use)] = memuse->dst;
     }
   } else TypeCase(other, ir::insns::Output *, inst) {
     hashTable[inst] = other->dst;
@@ -364,6 +364,20 @@ void gvn(Function *f) {
               }
             }
           }
+          // check (x * y) / y
+          bool flag2 = false;
+          if (!binary->bb->func->has_param(binary->src1)) {
+            auto i = binary->bb->func->def_list.at(binary->src1);
+            TypeCase(binary_i, ir::insns::Binary *, i) {
+              if (binary_i->op == BinaryOp::Mul && binary->op == BinaryOp::Div) {
+                if (binary_i->src2 == binary->src2) {
+                  copy_propagation(f->use_list, binary->dst, binary_i->src1);
+                  flag2 = true;
+                }
+              }
+            }
+          }
+          if (flag2) continue;
           if (flag) {
             binary->op = new_op;
             if (rConstMap.count(new_imm)) {
@@ -395,6 +409,9 @@ void gvn(Function *f) {
         Reg new_reg = vn_get(call);
         if (new_reg != call->dst) {
           copy_propagation(f->use_list, call->dst, new_reg);
+        }
+        if (!program->functions.count(call->func) || !program->functions.at(call->func).is_pure()) {
+          loadMap.clear();
         }
       }
       TypeCase(memuse, ir::insns::MemUse *, insn.get()) {
@@ -620,7 +637,7 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
 // possible, and then is as control dependent as possible.
 void schedule_late(unordered_set<ir::Instruction *> &visited,
                   unordered_map<ir::Instruction *, BasicBlock *> &placement,
-                  const CFG *cfg,
+                  const std::unique_ptr<CFG> &cfg,
                   list<unique_ptr<BasicBlock>> &bbs,
                   const unordered_map<Reg, unordered_set<Instruction *>> &use_list,
                   ir::Instruction *inst) {

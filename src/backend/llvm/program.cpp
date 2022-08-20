@@ -193,6 +193,14 @@ class ProgramTranslator {
         s_phi->srcs[bb_map.at(bb)] = reg;
       copy = s_phi;
     }
+    else TypeCase(switch_inst, Switch *, insn) {
+      map<int, BasicBlock*> targets;
+      for(auto each : switch_inst->targets){
+        targets[each.first] = bb_map.at(each.second);
+      }
+      copy = new SimpleSwitch{switch_inst->val, targets,
+                        bb_map.at(switch_inst->default_target)};
+    } 
     else {
       assert(false);
     }

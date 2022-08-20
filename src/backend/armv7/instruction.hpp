@@ -65,6 +65,8 @@ enum class ExCond {
   Gt,
   Le,
   Lt,
+  Cs,
+  Cc,
 };
 
 ExCond logical_not(ExCond cond);
@@ -110,6 +112,10 @@ struct Operand2 {
   bool is_fpimm() const { return opd.index() == 3; }
 
   template <typename T> auto &get() const { return std::get<T>(opd); }
+
+  bool is_reg() const {
+    return this->is_imm_shift() && this->get<RegImmShift>().s == 0;
+  }
 
   std::set<Reg> get_use() const {
     if (is_imm_shift())
@@ -171,7 +177,7 @@ void next_instruction(std::ostream &os);
 
 // 形如 op Rd, Rm, Rn 的指令
 struct RType : Instruction {
-  enum Op { Add, Sub, Mul, Div } op;
+  enum Op { Add, Sub, Mul, Div, SMMul } op;
   Reg dst, s1, s2;
 
   RType(Op op, Reg dst, Reg s1, Reg s2) : op{op}, dst{dst}, s1{s1}, s2{s2} {}
@@ -188,7 +194,7 @@ struct RType : Instruction {
 // 大部分的imm都是取自Operand2的imm8m
 // 但Thumb-2的add和sub支持12位无符号立即数
 struct IType : Instruction {
-  enum Op { Add, Sub, RevSub } op;
+  enum Op { Add, Sub, RevSub, Eor, Bic, And } op;
   Reg dst, s1;
   int imm;
 
@@ -238,7 +244,10 @@ struct Move : Instruction {
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
-  std::set<Reg> use() const override { return src.get_use(); }
+  std::set<Reg> use() const override {
+    auto u = src.get_use();
+    return u;
+  }
   std::vector<Reg *> reg_ptrs() override {
     auto ptrs = src.get_reg_ptrs();
     ptrs.push_back(&dst);
@@ -358,14 +367,13 @@ struct Store : Instruction {
 
 // MLA Rd, Rm, Rs, Rn: Rd := Rn + Rm * Rs
 // MLS Rd, Rm, Rs, Rn: Rd := Rn - Rm * Rs
+// SMMLA Rd, Rm, Rs, Rn: Rd := high(Rn + Rm * Rs)
 struct FusedMul : Instruction {
+  enum Op { Add, Sub, SMAdd } op;
   Reg dst, s1, s2, s3;
-  bool sub;
 
-  FusedMul(Reg dst, Reg s1, Reg s2, Reg s3)
-      : dst{dst}, s1{s1}, s2{s2}, s3{s3}, sub{false} {}
-  FusedMul(Reg dst, Reg s1, Reg s2, Reg s3, bool sub)
-      : dst{dst}, s1{s1}, s2{s2}, s3{s3}, sub{sub} {}
+  FusedMul(Op op, Reg dst, Reg s1, Reg s2, Reg s3)
+      : op{op}, dst{dst}, s1{s1}, s2{s2}, s3{s3} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
@@ -415,6 +423,22 @@ struct CmpBranch : Terminator {
   std::set<Reg> def() const override { return {}; }
   std::set<Reg> use() const override { return cmp->use(); }
   std::vector<Reg *> reg_ptrs() override { return cmp->reg_ptrs(); }
+};
+
+struct Switch : Terminator {
+  Reg val, tmp;
+  std::vector<std::pair<int, BasicBlock *>> targets;
+  BasicBlock *default_target;
+
+  Switch(Reg val, Reg tmp, BasicBlock *default_target,
+         std::vector<std::pair<int, BasicBlock *>> targets)
+      : val{val}, tmp{tmp}, default_target{default_target}, targets{std::move(
+                                                                targets)} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {tmp}; }
+  std::set<Reg> use() const override { return {val, tmp}; }
+  std::vector<Reg *> reg_ptrs() override { return {&val, &tmp}; }
 };
 
 // 下面是与栈指针sp相关的指令
@@ -565,6 +589,18 @@ struct CountLeadingZero : Instruction {
   std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
 };
 
+// 伪逻辑非，需要展开
+struct PseudoNot : Instruction {
+  Reg dst, src;
+
+  PseudoNot(Reg dst, Reg src) : dst{dst}, src{src} {}
+  
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {dst}; }
+  std::set<Reg> use() const override { return {src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&dst, &src}; }
+};
+
 // 伪二元比较，需要在最后阶段被展开
 // trick: 实际的op用的是本指令的条件码
 struct PseudoCompare : Instruction {
@@ -643,11 +679,13 @@ struct ComplexLoad : Instruction {
   Reg dst, base, offset;
   ShiftType shift_type;
   int shift;
-  ComplexLoad(Reg dst, Reg base, Reg offset)
-      : ComplexLoad(dst, base, offset, ShiftType::LSL, 0) {}
-  ComplexLoad(Reg dst, Reg base, Reg offset, ShiftType shift_type, int shift)
+  bool neg;
+  ComplexLoad(Reg dst, Reg base, Reg offset, bool neg)
+      : ComplexLoad(dst, base, offset, ShiftType::LSL, 0, neg) {}
+  ComplexLoad(Reg dst, Reg base, Reg offset, ShiftType shift_type, int shift,
+              bool neg)
       : dst{dst}, base{base}, offset{offset},
-        shift_type{shift_type}, shift{shift} {}
+        shift_type{shift_type}, shift{shift}, neg{neg} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {this->dst}; }
@@ -661,11 +699,13 @@ struct ComplexStore : Instruction {
   Reg src, base, offset;
   ShiftType shift_type;
   int shift;
-  ComplexStore(Reg src, Reg base, Reg offset)
-      : ComplexStore(src, base, offset, ShiftType::LSL, 0) {}
-  ComplexStore(Reg src, Reg base, Reg offset, ShiftType shift_type, int shift)
+  bool neg;
+  ComplexStore(Reg src, Reg base, Reg offset, bool neg)
+      : ComplexStore(src, base, offset, ShiftType::LSL, 0, neg) {}
+  ComplexStore(Reg src, Reg base, Reg offset, ShiftType shift_type, int shift,
+               bool neg)
       : src{src}, base{base}, offset{offset},
-        shift_type{shift_type}, shift{shift} {}
+        shift_type{shift_type}, shift{shift}, neg{neg} {}
 
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {}; }
@@ -675,6 +715,57 @@ struct ComplexStore : Instruction {
   std::vector<Reg *> reg_ptrs() override {
     return {&this->src, &this->base, &this->offset};
   }
+};
+
+// sdiv dst, #1, src
+// 伪指令，在最后阶段展开
+struct PseudoOneDividedByReg : Instruction {
+  Reg dst, src;
+
+  PseudoOneDividedByReg(Reg dst, Reg src) : dst{dst}, src{src} {}
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->src}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst, &this->src}; }
+};
+
+// dst = s1 mod s2
+// 伪指令，在 `fold_constants` 阶段提前展开
+struct PseudoModulo : Instruction {
+  Reg dst, s1, s2;
+
+  PseudoModulo(Reg dst, Reg s1, Reg s2) : dst{dst}, s1{s1}, s2{s2} {
+    assert(!this->dst.is_float());
+    assert(!this->s1.is_float());
+    assert(!this->s2.is_float());
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->s1, this->s2}; }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->dst, &this->s1, &this->s2};
+  }
+};
+
+// bfc dst, #lsb, #width
+// 清零 #lsb 开始的、宽 #width 的位
+struct BitFieldClear : Instruction {
+  Reg dst;
+  int lsb, width;
+
+  BitFieldClear(Reg dst, int lsb, int width)
+      : dst{dst}, lsb{lsb}, width{width} {
+    assert(lsb >= 0);
+    assert(width > 0);
+    assert(width + lsb < 32);
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->dst}; }
+  std::vector<Reg *> reg_ptrs() override { return {&this->dst}; }
 };
 
 } // namespace armv7

@@ -9,6 +9,7 @@ using namespace ir;
 using namespace ir::insns;
 
 void split_critical_edges(Function &f) {
+  auto &branch_freqs = f.branch_freqs;
   std::unordered_map<BasicBlock *, std::list<Phi *>> phi_info;
   std::unordered_set<BasicBlock *>
       incoming_bbs; // 只含与phi函数有关，且有多(>1)条出边的基本块
@@ -44,13 +45,32 @@ void split_critical_edges(Function &f) {
       BasicBlock::add_edge(bb_in, bb_mid);
       BasicBlock::add_edge(bb_mid, bb);
 
-      // bb_in至少有2条出边，其中一定含有条件分支指令
-      auto last_br = dynamic_cast<Branch *>(bb_in->insns.back().get());
-      assert(last_br != nullptr);
-      if (last_br->true_target == bb)
-        last_br->true_target = bb_mid;
-      else
-        last_br->false_target = bb_mid;
+      auto it = branch_freqs.find({bb, bb_in});
+      if (it != branch_freqs.end()) {
+        auto freq = it->second;
+        branch_freqs[{bb_in, bb_mid}] = freq;
+        branch_freqs[{bb_mid, bb}] = freq;
+        branch_freqs.erase(it);
+      }
+
+      // bb_in至少有2条出边
+      auto last = bb_in->insns.back().get();
+      TypeCase(br, Branch *, last) {
+        if (br->true_target == bb)
+          br->true_target = bb_mid;
+        else
+          br->false_target = bb_mid;
+      }
+      else TypeCase(sw, Switch *, last) {
+        if (sw->default_target == bb)
+          sw->default_target = bb_mid;
+        for (auto &[v, target] : sw->targets)
+          if (target == bb)
+            sw->targets[v] = bb_mid;
+      }
+      else {
+        assert(false);
+      }
 
       bb_mid->insns.emplace_back(new Jump{bb});
 

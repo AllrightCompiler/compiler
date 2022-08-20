@@ -61,7 +61,8 @@ class IrGen {
   void visit_if(const ast::IfElse &);
   void visit_while(const ast::While &);
 
-  ir::Reg visit_lvalue(const ast::LValue &, bool return_addr_when_scalar);
+  ir::Reg visit_lvalue(const ast::LValue &, bool return_addr_when_scalar,
+                       bool flatten = false);
 
   ir::Reg visit_arith_expr(const ast::Expression *);
   BranchTargets visit_logical_expr(const ast::Expression *);

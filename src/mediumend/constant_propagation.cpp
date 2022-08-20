@@ -90,9 +90,12 @@ void constant_propagation(ir::Program *prog) {
             auto reg_use = output->use();
             for (auto &use : reg_use) {
               if(!func->has_param(use)){
-                auto def = func->def_list.at(use);
-                stack.insert(def->bb);
-                checkbb(def->bb);
+                if(func->def_list.count(use)){
+                  auto def = func->def_list.at(use);
+                  stack.insert(def->bb);
+                  checkbb(def->bb);
+                }
+
               }
             }
             output->remove_use_def();
@@ -325,7 +328,6 @@ void constant_propagation(ir::Program *prog) {
         iter++;
       }
     }
-    remove_unused_phi(func);
     func->cfg->remove_unreachable_bb();
   }
 }

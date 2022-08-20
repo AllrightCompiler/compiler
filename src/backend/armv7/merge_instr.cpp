@@ -3,6 +3,7 @@
 #include "common/common.hpp"
 
 #include <functional>
+#include <iostream>
 
 namespace armv7 {
 
@@ -27,8 +28,7 @@ static void merge_instr(
       continue;
     }
     int max_use_instr_index = -1;
-    std::vector<std::pair<OccurPoint const *, std::unique_ptr<Instruction>>>
-        new_instrs;
+    std::vector<std::pair<OccurPoint, std::unique_ptr<Instruction>>> new_instrs;
     auto const &uses = func.reg_use[r];
     for (auto const &use : uses) {
       auto new_instr = transform_use_instr(r, **def.instr, **use.instr);
@@ -36,7 +36,7 @@ static void merge_instr(
         goto continue_;
       }
       new_instr->cond = use.instr->get()->cond;
-      new_instrs.emplace_back(&use, std::move(new_instr));
+      new_instrs.emplace_back(use, std::move(new_instr));
       if (use.bb == def.bb) {
         max_use_instr_index = std::max(use.index, max_use_instr_index);
       }
@@ -50,9 +50,9 @@ static void merge_instr(
       }
     }
     for (auto &[use, new_instr] : new_instrs) {
-      func.erase_def_use(*use, **use->instr);
-      *use->instr = std::move(new_instr);
-      func.insert_def_use(*use, **use->instr);
+      func.erase_def_use(use, **use.instr);
+      *use.instr = std::move(new_instr);
+      func.insert_def_use(use, **use.instr);
     }
   continue_:
     continue;
@@ -62,7 +62,7 @@ static void merge_instr(
 void merge_shift_with_binary_op(Function &func) {
   auto const check_def_instr = [](Instruction const &def) -> bool {
     TypeCase(instr, Move const *, &def) {
-      return instr->is_reg_mov() && instr->src.get<RegImmShift>().s != 0;
+      return instr->src.is_imm_shift() && instr->src.get<RegImmShift>().s != 0;
     }
     else {
       return false;
@@ -72,7 +72,7 @@ void merge_shift_with_binary_op(Function &func) {
       [](Reg r, Instruction const &def,
          Instruction const &use) -> std::unique_ptr<Instruction> {
     auto &instr = dynamic_cast<Move const &>(def);
-    assert(instr.is_reg_mov());
+    assert(instr.src.is_imm_shift());
     assert(instr.dst == r);
     auto &shift = instr.src.get<RegImmShift>();
     TypeCase(r_instr, RType const *, &use) {
@@ -132,7 +132,7 @@ void merge_shift_with_binary_op(Function &func) {
                   combine_shift({shift.type, shift.s}, {s2.type, s2.s})) {
             return std::make_unique<FullRType>(
                 fr_instr->op, fr_instr->dst, fr_instr->s1,
-                Operand2::from(new_shift->first, r, new_shift->second));
+                Operand2::from(new_shift->first, shift.r, new_shift->second));
           }
         }
       }
@@ -143,13 +143,15 @@ void merge_shift_with_binary_op(Function &func) {
         if (load->base == r) {
           if (load->shift == 0) {
             return std::make_unique<ComplexLoad>(load->dst, load->offset,
-                                                 shift.r, shift.type, shift.s);
+                                                 shift.r, shift.type, shift.s,
+                                                 load->neg);
           }
         } else { // load->offset == r
           if (auto const new_shift = combine_shift(
                   {shift.type, shift.s}, {load->shift_type, load->shift})) {
-            return std::make_unique<ComplexLoad>(
-                load->dst, load->base, r, new_shift->first, new_shift->second);
+            return std::make_unique<ComplexLoad>(load->dst, load->base, shift.r,
+                                                 new_shift->first,
+                                                 new_shift->second, load->neg);
           }
         }
       }
@@ -160,14 +162,15 @@ void merge_shift_with_binary_op(Function &func) {
         if (store->base == r) {
           if (store->shift == 0) {
             return std::make_unique<ComplexStore>(store->src, store->offset,
-                                                  shift.r, shift.type, shift.s);
+                                                  shift.r, shift.type, shift.s,
+                                                  store->neg);
           }
-        } else { // load->offset == r
+        } else { // store->offset == r
           if (auto const new_shift = combine_shift(
                   {shift.type, shift.s}, {store->shift_type, store->shift})) {
-            return std::make_unique<ComplexStore>(store->src, store->base, r,
-                                                  new_shift->first,
-                                                  new_shift->second);
+            return std::make_unique<ComplexStore>(
+                store->src, store->base, shift.r, new_shift->first,
+                new_shift->second, store->neg);
           }
         }
       }
@@ -178,7 +181,9 @@ void merge_shift_with_binary_op(Function &func) {
 }
 void merge_add_with_load_or_store(Function &func) {
   auto const check_def_instr = [](Instruction const &def) -> bool {
-    TypeCase(instr, RType const *, &def) { return instr->op == RType::Add; }
+    TypeCase(instr, RType const *, &def) {
+      return instr->op == RType::Add || instr->op == RType::Sub;
+    }
     TypeCase(instr, IType const *, &def) {
       return instr->op == IType::Add || instr->op == IType::Sub;
     }
@@ -186,7 +191,8 @@ void merge_add_with_load_or_store(Function &func) {
       if (instr->s2.is_imm8m()) {
         return instr->op == FullRType::Add || instr->op == FullRType::Sub;
       } else if (instr->s2.is_imm_shift()) {
-        return instr->op == FullRType::Add;
+        return instr->op == FullRType::Add || instr->op == FullRType::Sub ||
+               instr->op == FullRType::RevSub && instr->s2.is_reg();
       }
     }
     return false;
@@ -196,20 +202,23 @@ void merge_add_with_load_or_store(Function &func) {
          Instruction const &use) -> std::unique_ptr<Instruction> {
     TypeCase(instr, RType const *, &def) {
       assert(instr->dst == r);
+      assert(instr->op == RType::Add || instr->op == RType::Sub);
       TypeCase(load, Load const *, &use) {
         if (!load->dst.is_float() && load->offset == 0 && load->base == r) {
-          return std::make_unique<ComplexLoad>(load->dst, instr->s1, instr->s2);
+          return std::make_unique<ComplexLoad>(load->dst, instr->s1, instr->s2,
+                                               instr->op == RType::Sub);
         }
       }
       TypeCase(store, Store const *, &use) {
         if (!store->src.is_float() && store->offset == 0 && store->base == r) {
-          return std::make_unique<ComplexStore>(store->src, instr->s1,
-                                                instr->s2);
+          return std::make_unique<ComplexStore>(
+              store->src, instr->s1, instr->s2, instr->op == RType::Sub);
         }
       }
     }
     TypeCase(instr, IType const *, &def) {
       assert(instr->dst == r);
+      assert(instr->op == IType::Add || instr->op == IType::Sub);
       int offset = instr->imm;
       if (instr->op == IType::Sub) {
         offset = -offset;
@@ -232,6 +241,7 @@ void merge_add_with_load_or_store(Function &func) {
     TypeCase(instr, FullRType const *, &def) {
       assert(instr->dst == r);
       if (instr->s2.is_imm8m()) {
+        assert(instr->op == FullRType::Add || instr->op == FullRType::Sub);
         int offset = instr->s2.get<int>();
         if (instr->op == FullRType::Sub) {
           offset = -offset;
@@ -251,20 +261,116 @@ void merge_add_with_load_or_store(Function &func) {
           }
         }
       } else if (instr->s2.is_imm_shift()) {
+        assert(instr->op == FullRType::Add || instr->op == FullRType::Sub ||
+               instr->op == FullRType::RevSub && instr->s2.is_reg());
         auto &s2 = instr->s2.get<RegImmShift>();
         TypeCase(load, Load const *, &use) {
           if (!load->dst.is_float() && load->offset == 0 && load->base == r) {
-            return std::make_unique<ComplexLoad>(load->dst, instr->s1, s2.r,
-                                                 s2.type, s2.s);
+            switch (instr->op) {
+            case FullRType::Add:
+              return std::make_unique<ComplexLoad>(load->dst, instr->s1, s2.r,
+                                                   s2.type, s2.s, false);
+            case FullRType::Sub:
+              return std::make_unique<ComplexLoad>(load->dst, instr->s1, s2.r,
+                                                   s2.type, s2.s, true);
+            case FullRType::RevSub:
+              return std::make_unique<ComplexLoad>(load->dst, s2.r, instr->s1,
+                                                   true);
+            }
           }
         }
         TypeCase(store, Store const *, &use) {
           if (!store->src.is_float() && store->offset == 0 &&
               store->base == r) {
-            return std::make_unique<ComplexStore>(store->src, instr->s1, s2.r,
-                                                  s2.type, s2.s);
+            switch (instr->op) {
+            case FullRType::Add:
+              return std::make_unique<ComplexStore>(store->src, instr->s1, s2.r,
+                                                    s2.type, s2.s, false);
+            case FullRType::Sub:
+              return std::make_unique<ComplexStore>(store->src, instr->s1, s2.r,
+                                                    s2.type, s2.s, true);
+            case FullRType::RevSub:
+              return std::make_unique<ComplexStore>(store->src, s2.r, instr->s1,
+                                                    true);
+            }
           }
         }
+      }
+    }
+    return {};
+  };
+  merge_instr(func, check_def_instr, transform_use_instr);
+}
+void merge_mul_with_add_or_sub(Function &func) {
+  auto const check_def_instr = [](Instruction const &def) -> bool {
+    TypeCase(instr, RType const *, &def) {
+      return instr->op == RType::Mul && !instr->dst.is_float();
+    }
+    else {
+      return false;
+    }
+  };
+  auto const transform_use_instr =
+      [](Reg r, Instruction const &def,
+         Instruction const &use) -> std::unique_ptr<Instruction> {
+    auto &instr = dynamic_cast<RType const &>(def);
+    assert(instr.dst == r);
+    TypeCase(r_instr, RType const *, &use) {
+      if (r_instr->s1 == r_instr->s2) {
+        return {};
+      }
+      switch (r_instr->op) {
+      case RType::Add: {
+        Reg other;
+        if (r_instr->s1 == r) {
+          other = r_instr->s2;
+        } else {
+          other = r_instr->s1;
+        }
+        return std::make_unique<FusedMul>(FusedMul::Add, r_instr->dst, instr.s1,
+                                          instr.s2, other);
+      } break;
+      case RType::Sub: {
+        if (r_instr->s2 == r) {
+          return std::make_unique<FusedMul>(FusedMul::Sub, r_instr->dst,
+                                            instr.s1, instr.s2, r_instr->s1);
+        }
+      } break;
+      default:
+        return {};
+      }
+    }
+    TypeCase(fr_instr, FullRType const *, &use) {
+      if (!fr_instr->s2.is_reg()) {
+        return {};
+      }
+      auto const s2 = fr_instr->s2.get<RegImmShift>().r;
+      if (fr_instr->s1 == s2) {
+        return {};
+      }
+      switch (fr_instr->op) {
+      case FullRType::Add: {
+        Reg other;
+        if (fr_instr->s1 == r) {
+          other = s2;
+        } else {
+          other = fr_instr->s1;
+        }
+        return std::make_unique<FusedMul>(FusedMul::Add, fr_instr->dst,
+                                          instr.s1, instr.s2, other);
+      } break;
+      case FullRType::Sub: {
+        if (s2 == r) {
+          return std::make_unique<FusedMul>(FusedMul::Sub, fr_instr->dst,
+                                            instr.s1, instr.s2, fr_instr->s1);
+        }
+      } break;
+      case FullRType::RevSub: {
+        if (fr_instr->s1 == r) {
+          return std::make_unique<FusedMul>(FusedMul::Sub, fr_instr->dst,
+                                            instr.s1, instr.s2, s2);
+        }
+      } break;
       }
     }
     return {};
