@@ -44,6 +44,10 @@ inline std::string op_string(BinaryOp op, int t) {
     return f ? "fmul" : "mul";
   case BinaryOp::Div:
     return f ? "fdiv" : "sdiv";
+  case BinaryOp::Shl:
+    return "shl";
+  case BinaryOp::Shr:
+    return "shr";
   case BinaryOp::Mod:
     return "srem";
   case BinaryOp::Eq:

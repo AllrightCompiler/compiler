@@ -421,6 +421,36 @@ void gvn(Function *f) {
               binary->change_use(binary->src2, new_loadimm->dst);
             }
           }
+          if (constMap.count(binary->src2) && (binary->op == BinaryOp::Mul || binary->op == BinaryOp::Div)) {
+            ConstValue c = constMap.at(binary->src2);
+            if (c.type == Int && ((c.iv & (c.iv - 1)) == 0)) { // c is power of 2
+              assert(c.iv != 0);
+              int p = 0, x = c.iv >> 1;
+              while (x) {
+                x >>= 1;
+                p++;
+              }
+              // x == 1 << p
+              if (binary->op == BinaryOp::Mul) {
+                binary->op = BinaryOp::Shl;
+              }
+              if (binary->op == BinaryOp::Div) {
+                binary->op = BinaryOp::Shr;
+              }
+              ConstValue cv_p = ConstValue(p);
+              if (rConstMap.count(cv_p)) {
+                binary->change_use(binary->src2, rConstMap.at(cv_p));
+              } else {
+                auto new_loadimm = new ir::insns::LoadImm(f->new_reg(cv_p.type), cv_p);
+                binary->bb->push_front(new_loadimm);
+                hashTable[new_loadimm] = new_loadimm->dst;
+                hashTable_loadimm[cv_p] = new_loadimm->dst;
+                constMap[new_loadimm->dst] = cv_p;
+                rConstMap[cv_p] = new_loadimm->dst;
+                binary->change_use(binary->src2, new_loadimm->dst);
+              }
+            }
+          }
           Reg new_reg = vn_get(binary); // guarantee right order of insts be visited
           if (new_reg != binary->dst) {
             copy_propagation(f->use_list, binary->dst, new_reg);

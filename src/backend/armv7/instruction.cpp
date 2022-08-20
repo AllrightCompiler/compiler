@@ -431,6 +431,11 @@ void PseudoModulo::emit(std::ostream &os) const {
      << this->s2;
 }
 
+void PseudoDivPowerTwo::emit(std::ostream &os) const {
+  os << "*div-" << this->cond << ' ' << this->dst << ", " << this->s1
+     << ", #1 LSL " << this->s2;
+}
+
 void BitFieldClear::emit(std::ostream &os) const {
   write_op(os, "bfc") << this->dst << ", #" << this->lsb << ", #"
                       << this->width;
