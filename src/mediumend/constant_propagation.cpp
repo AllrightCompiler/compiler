@@ -8,17 +8,17 @@ namespace mediumend {
 
 using ir::Reg;
 
-void checkbb(BasicBlock* bb){
-  #ifdef FRW_DEBUG
+void checkbb(BasicBlock *bb) {
+#ifdef FRW_DEBUG
   assert(bb->label[0]);
   int a = bb->visit;
-  for(auto each : bb->succ){
+  for (auto each : bb->succ) {
     assert(each);
   }
-  for(auto each : bb->prev){
+  for (auto each : bb->prev) {
     assert(each);
   }
-  #endif
+#endif
 }
 
 void constant_propagation(ir::Program *prog) {
@@ -35,15 +35,13 @@ void constant_propagation(ir::Program *prog) {
           const_map[loadimm->dst] = loadimm->imm;
           stack.insert(bb.get());
           auto use_list = func->use_list[loadimm->dst];
-          for(auto &use : use_list){
+          for (auto &use : use_list) {
             stack.insert(use->bb);
           }
         }
-        TypeCase(phi, ir::insns::Phi *, ins.get()){
-          stack.insert(bb.get());
-        }
-        TypeCase(output, ir::insns::Output *, ins.get()){
-          if(func->use_list[output->dst].empty()){
+        TypeCase(phi, ir::insns::Phi *, ins.get()) { stack.insert(bb.get()); }
+        TypeCase(output, ir::insns::Output *, ins.get()) {
+          if (func->use_list[output->dst].empty()) {
             stack.insert(bb.get());
           }
         }
@@ -61,11 +59,12 @@ void constant_propagation(ir::Program *prog) {
           suc->prev.erase(bb);
         }
         stack.insert(bb->succ.begin(), bb->succ.end());
-        for(auto each : bb->succ){
+        for (auto each : bb->succ) {
           checkbb(each);
         }
         bb->succ.clear();
-        bb->visit = true;;
+        bb->visit = true;
+        ;
         for (auto &inst : bb->insns) {
           inst->remove_use_def();
         }
@@ -81,21 +80,22 @@ void constant_propagation(ir::Program *prog) {
             TypeCase(call, ir::insns::Call *, output) {
               auto func_iter = prog->functions.find(call->func);
               if (func_iter == prog->functions.end() ||
-                  !func_iter->second.is_pure()) {
+                  (in_array_ssa() && !func_iter->second.is_array_ssa_pure()) ||
+                  (!in_array_ssa() && !func_iter->second.is_pure())) {
                 continue;
               }
-            } else TypeCase(memdef, ir::insns::MemDef *, ins.get()){
+            }
+            else TypeCase(memdef, ir::insns::MemDef *, ins.get()) {
               continue;
             }
             auto reg_use = output->use();
             for (auto &use : reg_use) {
-              if(!func->has_param(use)){
-                if(func->def_list.count(use)){
+              if (!func->has_param(use)) {
+                if (func->def_list.count(use)) {
                   auto def = func->def_list.at(use);
                   stack.insert(def->bb);
                   checkbb(def->bb);
                 }
-
               }
             }
             output->remove_use_def();
@@ -112,7 +112,7 @@ void constant_propagation(ir::Program *prog) {
                 stack.insert(uses->bb);
                 checkbb(uses->bb);
               }
-              if(!func->has_param(unary->src)){
+              if (!func->has_param(unary->src)) {
                 auto def = func->def_list.at(unary->src);
                 stack.insert(def->bb);
                 checkbb(def->bb);
@@ -137,12 +137,12 @@ void constant_propagation(ir::Program *prog) {
                 stack.insert(uses->bb);
                 checkbb(uses->bb);
               }
-              if(!func->has_param(binary->src1)){
+              if (!func->has_param(binary->src1)) {
                 auto def = func->def_list.at(binary->src1);
                 stack.insert(def->bb);
                 checkbb(def->bb);
               }
-              if(!func->has_param(binary->src2)){
+              if (!func->has_param(binary->src2)) {
                 auto def = func->def_list.at(binary->src2);
                 stack.insert(def->bb);
                 checkbb(def->bb);
@@ -167,7 +167,7 @@ void constant_propagation(ir::Program *prog) {
                 stack.insert(uses->bb);
                 checkbb(uses->bb);
               }
-              if(!func->has_param(convey->src)){
+              if (!func->has_param(convey->src)) {
                 auto def = func->def_list.at(convey->src);
                 stack.insert(def->bb);
                 checkbb(def->bb);
@@ -191,11 +191,11 @@ void constant_propagation(ir::Program *prog) {
             bool use_same_reg = true;
             bool set_reg = false;
             Reg use_reg;
-            if(func->use_list[phi->dst].size() == 1){
-              if(*func->use_list[phi->dst].begin() == phi){
+            if (func->use_list[phi->dst].size() == 1) {
+              if (*func->use_list[phi->dst].begin() == phi) {
                 auto reg_use = phi->use();
                 for (auto &use : reg_use) {
-                  if(!func->has_param(use) && use != phi->dst){
+                  if (!func->has_param(use) && use != phi->dst) {
                     auto def = func->def_list.at(use);
                     stack.insert(def->bb);
                     checkbb(def->bb);
@@ -206,10 +206,12 @@ void constant_propagation(ir::Program *prog) {
                 continue;
               }
             }
-            for (auto iter = phi->incoming.begin(); iter != phi->incoming.end();) {
+            for (auto iter = phi->incoming.begin();
+                 iter != phi->incoming.end();) {
               if (!bb->prev.count(iter->first)) {
                 func->use_list.at(iter->second).erase(phi);
-                if(!func->has_param(iter->second) && func->def_list.count(iter->second)){
+                if (!func->has_param(iter->second) &&
+                    func->def_list.count(iter->second)) {
                   auto def = func->def_list.at(iter->second);
                   stack.insert(def->bb);
                   checkbb(def->bb);
@@ -246,7 +248,7 @@ void constant_propagation(ir::Program *prog) {
             if (phi_const) {
               Reg reg = phi->dst;
               for (auto &in : phi->incoming) {
-                if(!func->has_param(in.second)){
+                if (!func->has_param(in.second)) {
                   auto def = func->def_list.at(in.second);
                   stack.insert(def->bb);
                   checkbb(def->bb);
@@ -276,7 +278,7 @@ void constant_propagation(ir::Program *prog) {
         }
         TypeCase(br, ir::insns::Branch *, ins.get()) {
           if (const_map.find(br->val) != const_map.end()) {
-            if(!func->has_param(br->val)) {
+            if (!func->has_param(br->val)) {
               auto def = func->def_list.at(br->val);
               stack.insert(def->bb);
               checkbb(def->bb);
@@ -284,7 +286,7 @@ void constant_propagation(ir::Program *prog) {
             ir::BasicBlock *target;
             if (const_map.at(br->val).iv) {
               target = br->true_target;
-              if(br->true_target != br->false_target){
+              if (br->true_target != br->false_target) {
                 bb->succ.erase(br->false_target);
                 br->false_target->prev.erase(bb);
                 stack.insert(br->false_target);
@@ -308,7 +310,7 @@ void constant_propagation(ir::Program *prog) {
       }
       if (add_res) {
         stack.insert(bb->succ.begin(), bb->succ.end());
-        for(auto each : bb->succ){
+        for (auto each : bb->succ) {
           checkbb(each);
         }
       }
