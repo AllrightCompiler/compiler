@@ -615,6 +615,7 @@ Type Typer::parse_type(const std::unique_ptr<ast::SysYType> &p) {
 }
 
 // 如果可以隐式转换或传参，返回true
+// 如果目标类型t1是扁平一维数组(int a[])且t2是高维数组，那么也是合法的
 bool type_compatible(const Type &t1, const Type &t2) {
   bool a1 = t1.is_array(), a2 = t2.is_array();
   if (!a1 && !a2) {
@@ -623,6 +624,8 @@ bool type_compatible(const Type &t1, const Type &t2) {
   }
   if (t1.base_type != t2.base_type)
     return false;
+  if (t1.is_pointer_to_scalar() && t2.nr_dims() > 1)
+    return true;
   if (t1.nr_dims() != t2.nr_dims())
     return false;
   // 数组第一维维度可以不同
