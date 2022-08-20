@@ -222,6 +222,8 @@ struct Program {
   std::unordered_map<string, LibFunction> lib_funcs;
   frontend::VarTable global_vars;
   vector<string> string_table;
+
+  bool may_alias = false;
 };
 
 // 指令输出相关

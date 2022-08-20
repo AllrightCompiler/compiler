@@ -426,8 +426,10 @@ Reg IrGen::visit_arith_expr(const ast::Expression *expr) {
               if (sig->param_types[i].is_pointer_to_scalar()) {
                 if (auto lval = dynamic_cast<ast::LValue *>(arg_expr.get())) {
                   auto &tp = lval->var->type;
-                  if (tp.nr_dims() > 1)
+                  if (tp.nr_dims() > 1) {
+                    program->may_alias = true;
                     reg = visit_lvalue(*lval, false, true);
+                  }
                 }
               }
             }
