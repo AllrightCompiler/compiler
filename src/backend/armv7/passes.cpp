@@ -1,6 +1,8 @@
 #include "backend/armv7/passes.hpp"
 #include "backend/armv7/ColoringRegAllocator.hpp"
 #include "backend/armv7/arch.hpp"
+#include "backend/armv7/if_to_cond.hpp"
+#include "backend/armv7/implicit_compare_zero.hpp"
 #include "backend/armv7/instruction.hpp"
 #include "backend/armv7/merge_instr.hpp"
 
@@ -36,8 +38,12 @@ void backend_passes(Program &p) {
     f.emit_prologue_epilogue();
 
     sanitize_cfg(f);
+    if_to_cond(f);
+    sanitize_cfg(f);
 
     f.replace_pseudo_insns();
+
+    implicit_compare_zero(f);
   }
 }
 
@@ -134,7 +140,7 @@ void fold_constants(Function &f) {
       };
 
       auto eval_operand2 =
-          [&constants](const Operand2 &s2) -> std::optional<int> {
+          [&constants, &get_imm](const Operand2 &s2) -> std::optional<int> {
         int x;
         if (s2.is_imm_shift()) {
           // e.g. r1 LSL #2 转常数
@@ -145,9 +151,20 @@ void fold_constants(Function &f) {
         } else if (s2.is_reg_shift()) {
           // e.g. r1 LSL r2
           auto sh = s2.get<RegRegShift>();
-          if (!constants.count(sh.r1) || !constants.count(sh.r2))
-            return std::nullopt;
-          x = compute_shift(sh.type, constants[sh.r1].iv, constants[sh.r2].iv);
+          auto const opt_r1 = get_imm(sh.r1);
+          auto const opt_r2 = get_imm(sh.r2);
+          if (opt_r1 && opt_r2) {
+            return compute_shift(sh.type, *opt_r1, *opt_r2);
+          } else if (opt_r1 == 0) {
+            return 0;
+          } else if (opt_r2) {
+            if (sh.type == ShiftType::LSL || sh.type == ShiftType::LSR) {
+              if (*opt_r2 >= 32) {
+                return 0;
+              }
+            }
+          }
+          return std::nullopt;
         } else {
           x = s2.get<int>();
         }
@@ -666,6 +683,33 @@ void fold_constants(Function &f) {
             mov->flip = !mov->flip;
             next = instr;
           }
+        } else if (mov->src.is_reg_shift()) {
+          auto const &src = mov->src.get<RegRegShift>();
+          auto const opt_s = get_imm(src.r2);
+          if (opt_s) {
+            switch (src.type) {
+            case LSL: {
+              assert(*opt_s < 32);
+              insn = std::make_unique<Move>(
+                  mov->dst, Operand2::from(ShiftType::LSL, src.r1, *opt_s));
+            } break;
+            case LSR: {
+              assert(*opt_s < 32);
+              insn = std::make_unique<Move>(
+                  mov->dst, Operand2::from(ShiftType::LSR, src.r1, *opt_s));
+            } break;
+            case ASR: {
+              insn = std::make_unique<Move>(
+                  mov->dst,
+                  Operand2::from(ShiftType::ASR, src.r1, std::min(*opt_s, 32)));
+            } break;
+            case ROR: {
+              insn = std::make_unique<Move>(
+                  mov->dst,
+                  Operand2::from(ShiftType::ROR, src.r1, *opt_s % 32));
+            } break;
+            }
+          }
         }
       }
       else TypeCase(cmp, Compare *, insn.get()) {
@@ -766,6 +810,46 @@ void fold_constants(Function &f) {
         insn = std::make_unique<FusedMul>(FusedMul::Sub, mod->dst, tmp, mod->s2,
                                           mod->s1);
       }
+      else TypeCase(div, PseudoDivPowerTwo *, insn.get()) {
+        auto const opt_imm1 = get_imm(div->s1);
+        auto const opt_imm2 = get_imm(div->s2);
+        if (opt_imm1 && opt_imm2) {
+          assert(*opt_imm2 > 0);
+          int imm = *opt_imm1;
+          for (auto i = *opt_imm2; i && imm != 0; --i) {
+            imm /= 2;
+          }
+          next = emit_load_imm(bb->insns, instr, div->dst, imm);
+          bb->insns.erase(instr);
+        } else if (opt_imm1 == 0) {
+          insn = std::make_unique<Move>(div->dst, Operand2::from(0));
+          next = instr;
+        } else if (opt_imm2) {
+          assert(*opt_imm2 > 0);
+          if (*opt_imm2 >= 32) {
+            insn = std::make_unique<Move>(div->dst, Operand2::from(0));
+            next = instr;
+          } else if (*opt_imm2 == 31) { // int overflow
+            auto const tmp1 = f.new_reg(RegType::General);
+            next = bb->insns.insert(
+                instr,
+                std::make_unique<Move>(tmp1, Operand2::from(1 << *opt_imm2)));
+            auto const tmp2 = f.new_reg(RegType::General);
+            bb->insns.insert(instr, std::make_unique<RType>(RType::Div, tmp2,
+                                                            div->s1, tmp1));
+            insn = std::make_unique<IType>(IType::RevSub, div->dst, tmp2, 0);
+          } else { // *opt_imm2 < 31
+            auto const tmp = f.new_reg(RegType::General);
+            next = bb->insns.insert(
+                instr,
+                std::make_unique<Move>(tmp, Operand2::from(1 << *opt_imm2)));
+            insn = std::make_unique<RType>(RType::Div, div->dst, div->s1, tmp);
+          }
+        } else { // FIXME: 现在假装 div->s1 非负，负数舍入会有问题...
+          insn = std::make_unique<Move>(
+              div->dst, Operand2::from(ShiftType::LSR, div->s1, div->s2));
+        }
+      }
       else TypeCase(fused_mul, FusedMul *, insn.get()) {
         auto const opt_imm1 = get_imm(fused_mul->s1);
         auto const opt_imm2 = get_imm(fused_mul->s2);
@@ -809,6 +893,13 @@ void fold_constants(Function &f) {
           next = instr;
         }
       }
+      else TypeCase(pnot, PseudoNot *, insn.get()) {
+        auto const opt_imm = get_imm(pnot->src);
+        if (opt_imm) {
+          insn = std::make_unique<Move>(pnot->dst, Operand2::from(!*opt_imm));
+          next = instr;
+        }
+      }
       else TypeCase(_, PseudoOneDividedByReg *, insn.get()) {
         assert(false);
       }
@@ -839,7 +930,7 @@ void propagate_constants(Function &f) {
         }
         if (int_vals.count(src))
           opt_imm = int_vals.at(src);
-        
+
         if (opt_imm) {
           int imm = *opt_imm;
           int_vals[dst] = imm;
