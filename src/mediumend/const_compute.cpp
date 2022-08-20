@@ -88,6 +88,14 @@ ConstValue const_compute(ir::Instruction *inst, const ConstValue &op1, const Con
         if (binary->src1.type == ScalarType::Int) res.iv = (op1.iv >= op2.iv);
         else res.iv = (op1.fv >= op2.fv);
         break;
+      case BinaryOp::Shl:
+        assert(binary->dst.type == ScalarType::Int);
+        res.iv = op1.iv << op2.iv;
+        break;
+      case BinaryOp::Shr:
+        assert(binary->dst.type == ScalarType::Int);
+        res.iv = op1.iv >> op2.iv;
+        break;
       default:
         assert(false);
     }
