@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
     return 1;
   } catch (const CompileError &e) {
     error(cerr) << e.what() << endl;
-    return 1;
+    return 2;
   }
   return 0;
 }
