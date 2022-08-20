@@ -30,6 +30,8 @@ enum class BinaryOp {
   Geq,
   And,
   Or,
+  Shr,
+  Shl,
   NR_OPS
 };
 

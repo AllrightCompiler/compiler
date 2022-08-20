@@ -311,6 +311,12 @@ class ProgramTranslator {
         cmp.rhs = s2;
         break;
       }
+      case BinaryOp::Shr: // contract: s1 / (1 << s2)
+        bb->push(new PseudoDivPowerTwo(dst, s1, s2));
+        break;
+      case BinaryOp::Shl:
+        bb->push(new Move(dst, Operand2::from(ShiftType::LSL, s1, s2)));
+        break;
       default:
         __builtin_unreachable();
       }

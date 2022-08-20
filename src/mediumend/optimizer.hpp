@@ -46,6 +46,7 @@ void br2switch(ir::Program *prog);
 void loop_interchange(ir::Program *prog);
 void algebra_simpilifacation(ir::Program *prog);
 void estimate_exec_freq(ir::Program *prog);
+void loop_compute(ir::Program *prog);
 void if_combine(ir::Program *prog);
 
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);

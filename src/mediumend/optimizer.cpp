@@ -35,6 +35,7 @@ const std::map<std::string, Pass> PASS_MAP = {
   {"algebra_simpilifacation", algebra_simpilifacation},
   {"estimate_exec_freq", estimate_exec_freq},
   {"if_combine", if_combine},
+  {"loop_compute", loop_compute},
 };
 
 // define default passes here
@@ -62,13 +63,15 @@ std::vector<Pass> passes = {
     if_combine,
   array_ssa_destruction,
 
-  // loop_interchange,
-  
+  loop_interchange,
+
   remove_recursive_tail_call,
 
   gvn_cfg,
 
   loop_parallel,
+
+  loop_compute,
 
   function_inline,
   remove_unused_function,
