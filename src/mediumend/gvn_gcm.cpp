@@ -112,6 +112,8 @@ std::optional< std::variant<ConstValue, Reg> > simplifyBinary(const unordered_ma
 static unordered_map<ConstValue, Reg> hashTable_loadimm;
 static unordered_map<tuple<BinaryOp, Reg, Reg>, Reg> hashTable_binary;
 static unordered_map<std::string, Reg> hashTable_loadaddr;
+static unordered_map<std::pair<UnaryOp, Reg>, Reg> hashTable_unary;
+static unordered_map<Reg, Reg> hashTable_convert;
 static unordered_map<tuple<Type, Reg, vector<Reg> >, Reg> hashTable_gep;
 static unordered_map<tuple<std::string, vector<Reg> >, Reg> hashTable_call;
 static unordered_map<tuple<Reg, Reg, bool>, Reg> hashTable_memuse;
@@ -183,6 +185,21 @@ Reg vn_get(Instruction *inst) {
     } else {
       hashTable[inst] = loadaddr->dst;
       hashTable_loadaddr[loadaddr->var_name] = loadaddr->dst;
+    }
+  } else TypeCase(unary, ir::insns::Unary *, inst) {
+    auto u_pair = std::make_pair(unary->op, unary->src);
+    if (hashTable_unary.count(u_pair)) {
+      hashTable[inst] = hashTable_unary[u_pair];
+    } else {
+      hashTable[inst] = unary->dst;
+      hashTable_unary[u_pair] = unary->dst;
+    }
+  } else TypeCase(convert, ir::insns::Convert *, inst) {
+    if (hashTable_convert.count(convert->src)) {
+      hashTable[inst] = hashTable_convert[convert->src];
+    } else {
+      hashTable[inst] = convert->dst;
+      hashTable_convert[convert->src] = convert->dst;
     }
   } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
     if (hashTable_gep.count(std::make_tuple(gep->type, gep->base, gep->indices))) {
@@ -273,6 +290,12 @@ void gvn(Function *f) {
         Reg new_reg = vn_get(loadaddr);
         if (new_reg != loadaddr->dst) {
           copy_propagation(f->use_list, loadaddr->dst, new_reg);
+        }
+      }
+      TypeCase(unary, ir::insns::Unary *, insn.get()) {
+        Reg new_reg = vn_get(unary);
+        if (new_reg != unary->dst) {
+          copy_propagation(f->use_list, unary->dst, new_reg);
         }
       }
       TypeCase(gep, ir::insns::GetElementPtr *, insn.get()) {
@@ -533,6 +556,32 @@ void schedule_early(unordered_set<ir::Instruction *> &visited,
     placement[loadimm] = root_bb;
   } else TypeCase(loadaddr, ir::insns::LoadAddr *, inst) {
     placement[loadaddr] = root_bb;
+  } else TypeCase(unary, ir::insns::Unary *, inst) {
+    placement[unary] = root_bb;
+    BasicBlock *place;
+    if (inst->bb->func->has_param(unary->src)) { // is function param
+      place = inst->bb->func->bbs.front().get();
+    } else {
+      ir::Instruction *i1 = def_list.at(unary->src);
+      schedule_early(visited, placement, bbs, def_list, root_bb, i1);
+      place = placement[i1];
+    }
+    if (place->domlevel > placement[unary]->domlevel) {
+      placement[unary] = place;
+    }
+  } else TypeCase(convert, ir::insns::Convert *, inst) {
+    placement[convert] = root_bb;
+        BasicBlock *place;
+    if (inst->bb->func->has_param(convert->src)) { // is function param
+      place = inst->bb->func->bbs.front().get();
+    } else {
+      ir::Instruction *i1 = def_list.at(convert->src);
+      schedule_early(visited, placement, bbs, def_list, root_bb, i1);
+      place = placement[i1];
+    }
+    if (place->domlevel > placement[convert]->domlevel) {
+      placement[convert] = place;
+    }
   } else TypeCase(allo, ir::insns::Alloca *, inst) {
     placement[allo] = root_bb;
   } else TypeCase(gep, ir::insns::GetElementPtr *, inst) {
@@ -714,6 +763,7 @@ void gvn_gcm(ir::Program *prog) {
     hashTable_loadimm.clear();
     hashTable_binary.clear();
     hashTable_loadaddr.clear();
+    hashTable_unary.clear();
     hashTable_gep.clear();
     hashTable_call.clear();
     hashTable_memuse.clear();
