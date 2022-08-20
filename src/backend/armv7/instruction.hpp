@@ -144,6 +144,9 @@ struct Operand2 {
   static Operand2 from(ShiftType type, Reg r, int s) {
     return Operand2{.opd = RegImmShift{type, r, s}};
   }
+  static Operand2 from(ShiftType type, Reg r, Reg s) {
+    return Operand2{.opd = RegRegShift{type, r, s}};
+  }
   static Operand2 from(float imm) { return Operand2{.opd = imm}; }
 };
 
@@ -594,7 +597,7 @@ struct PseudoNot : Instruction {
   Reg dst, src;
 
   PseudoNot(Reg dst, Reg src) : dst{dst}, src{src} {}
-  
+
   void emit(std::ostream &os) const override;
   std::set<Reg> def() const override { return {dst}; }
   std::set<Reg> use() const override { return {src}; }
@@ -736,6 +739,25 @@ struct PseudoModulo : Instruction {
   Reg dst, s1, s2;
 
   PseudoModulo(Reg dst, Reg s1, Reg s2) : dst{dst}, s1{s1}, s2{s2} {
+    assert(!this->dst.is_float());
+    assert(!this->s1.is_float());
+    assert(!this->s2.is_float());
+  }
+
+  void emit(std::ostream &os) const override;
+  std::set<Reg> def() const override { return {this->dst}; }
+  std::set<Reg> use() const override { return {this->s1, this->s2}; }
+  std::vector<Reg *> reg_ptrs() override {
+    return {&this->dst, &this->s1, &this->s2};
+  }
+};
+
+// dst = s1 / (1 << s2)
+// 伪指令，在 `fold_constants` 阶段提前展开
+struct PseudoDivPowerTwo : Instruction {
+  Reg dst, s1, s2;
+
+  PseudoDivPowerTwo(Reg dst, Reg s1, Reg s2) : dst{dst}, s1{s1}, s2{s2} {
     assert(!this->dst.is_float());
     assert(!this->s1.is_float());
     assert(!this->s2.is_float());

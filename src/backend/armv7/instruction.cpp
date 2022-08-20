@@ -156,8 +156,8 @@ ostream &operator<<(ostream &os, const Operand2 &opd) {
   return os;
 }
 
-int get_padding_length(const char *op, ExCond cond, bool is_float,
-                       bool is_ldst, bool is_push_pop) {
+int get_padding_length(const char *op, ExCond cond, bool is_float, bool is_ldst,
+                       bool is_push_pop) {
   int base_len = std::strlen(op);
   int cond_len = cond == ExCond::Always ? 0 : 2;
   base_len += cond_len;
@@ -348,7 +348,7 @@ void CountLeadingZero::emit(std::ostream &os) const {
 }
 
 void PseudoNot::emit(std::ostream &os) const {
-  os << "*not " << dst << ", " << src; 
+  os << "*not " << dst << ", " << src;
 }
 
 void PseudoCompare::emit(std::ostream &os) const {
@@ -404,6 +404,11 @@ void PseudoOneDividedByReg::emit(std::ostream &os) const {
 void PseudoModulo::emit(std::ostream &os) const {
   os << "*mod-" << this->cond << ' ' << this->dst << ", " << this->s1 << ", "
      << this->s2;
+}
+
+void PseudoDivPowerTwo::emit(std::ostream &os) const {
+  os << "*div-" << this->cond << ' ' << this->dst << ", " << this->s1
+     << ", #1 LSL " << this->s2;
 }
 
 void BitFieldClear::emit(std::ostream &os) const {
