@@ -107,7 +107,7 @@ void ColoringRegAllocator::build() {
       auto def = filtered(ins->def());
       auto use = filtered(ins->use());
       TypeCase(mov, Move *, ins) {
-        if (mov->is_reg_mov() && !f->phi_moves.count(mov)) {
+        if (mov->is_reg_mov() /*&& !f->phi_moves.count(mov)*/) {
           auto consider = false;
           for (Reg u : use) {
             consider = true;

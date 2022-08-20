@@ -25,7 +25,7 @@ void backend_passes(Program &p) {
 
     f.resolve_phi();
 
-    // propagate_constants(f);
+    propagate_constants(f);
     remove_unused(f);
 
     f.do_reg_alloc(reg_allocator, false); // fp reg
