@@ -62,7 +62,7 @@ std::vector<Pass> passes = {
     duplicate_load_store_elimination,
   array_ssa_destruction,
 
-  // loop_interchange,
+  loop_interchange,
   
   remove_recursive_tail_call,
 
