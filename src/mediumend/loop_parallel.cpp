@@ -33,9 +33,10 @@ struct ParallelLoopInfo {
   ir::insns::Phi *entry_ind_phi;
   ir::insns::Binary *cond_cmp;
   ir::insns::Binary *binary_upd;
+  Reg reduce_reg;
 
   bool profitable(Loop *loop, const unordered_set<BasicBlock *> &loop_bbs) {
-    if (loop->no_inner) return false; // don't parallel single layer loop
+    // if (loop->no_inner) return false; // don't parallel single layer loop
     bool wr_perpendicular = true;
     unordered_set<Reg> write_set, read_set;
     for (auto bb : loop_bbs) {
@@ -125,7 +126,13 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
       cnt_phi++;
     } else break;
   }
-  if (cnt_phi > 1) return info; // multiple phi at entry
+  if (cnt_phi > 2) return info; // multiple phi at entry
+  if (cnt_phi == 2 && loop_bbs.size() > 1) {
+    return info;
+  } else if (cnt_phi == 2) {
+
+  }
+  info.reduce_reg = Reg(String, -1);
   for (auto &bb : loop_bbs) {
     for (auto &insn : bb->insns) {
       TypeCase(call, ir::insns::Call *, insn.get()) {
@@ -139,10 +146,17 @@ ParallelLoopInfo get_parallel_info(Loop *loop, const unordered_set<BasicBlock *>
             flag &= in_loop(use->bb);
           }
         }
-        if (!flag) return info;
+        if (!flag) {
+          if (info.reduce_reg.id == -1) {
+            info.reduce_reg = output->dst;
+          } else {
+            return info;
+          }
+        }
       }
     }
   }
+  if (cnt_phi == 2 && info.reduce_reg.id == -1) return info;
   TypeCase(br_cond, ir::insns::Branch *, info.exit_prev->insns.back().get()) { // br entry, exit
     TypeCase(binary_cond, ir::insns::Binary *, br_cond->bb->func->def_list.at(br_cond->val)) { // i < n
       if (binary_cond->dst.type != Int) return info;
@@ -308,11 +322,17 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     auto br = new ir::insns::Branch(parallel_cond, parallel_entry, entry);
     new_into_entry->push_back(br);
   }
+  Reg reduce_array_addr; // for reduce reg
   // setup parallel_entry
   {
     parallel_entry->prev.insert(new_into_entry);
     for (int i = 0; i < THREAD_NUM; i++) {
       parallel_entry->succ.insert(parallel_entries[i]);
+    }
+    if (info.reduce_reg.id != -1) {
+      reduce_array_addr = func->new_reg(Int);
+      auto alloca = new ir::insns::Alloca(reduce_array_addr, Type(info.reduce_reg.type, std::vector<int>{4}));
+      parallel_entry->push_back(alloca);
     }
     Reg tid = func->new_reg(Int);
     auto syscall = new ir::insns::Call(tid, "__create_threads", {});
@@ -326,6 +346,7 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
   }
   Reg new_start, new_end; // store the last
   unordered_map<Reg, Reg> reg_map[THREAD_NUM];
+  Reg new_reduce_sum[THREAD_NUM]; // for reduce sum
   for (int tid = 0; tid < THREAD_NUM; tid++) {
     unordered_map<BasicBlock *, BasicBlock *> bb_map;
     for (auto bb : loop_bbs) {
@@ -381,9 +402,34 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     {
       parallel_exits[tid]->prev.insert(bb_map.at(exit_prev));
       parallel_exits[tid]->succ.insert(exit);
+      if (info.reduce_reg.id != -1) {
+        Reg gep_reg = func->new_reg(Int);
+        auto gep = new ir::insns::GetElementPtr(gep_reg, Type(info.reduce_reg.type, std::vector<int>{4}), reduce_array_addr, {imm_tid});
+        parallel_exits[tid]->push_back(gep);
+        auto store = new ir::insns::Store(gep_reg, reg_map[tid].at(info.reduce_reg));
+        parallel_exits[tid]->push_back(store);
+      }
       auto syscall = new ir::insns::Call(func->new_reg(Int), "__join_threads", {imm_tid});
-      auto jmp = new ir::insns::Jump(exit);
       parallel_exits[tid]->push_back(syscall);
+      Reg reduce_sum = func->new_reg(info.reduce_reg.type);
+      if (info.reduce_reg.type == Int) {
+        parallel_exits[tid]->push_back(new ir::insns::LoadImm(reduce_sum, ConstValue(0)));
+      } else {
+        parallel_exits[tid]->push_back(new ir::insns::LoadImm(reduce_sum, ConstValue(0.0f)));
+      }
+      for (int i = 0; i < THREAD_NUM; i++) {
+        Reg gep_reg = func->new_reg(Int), imm_reg = func->new_reg(Int);
+        auto imm_i = new ir::insns::LoadImm(imm_reg, ConstValue(i));
+        auto gep = new ir::insns::GetElementPtr(gep_reg, Type(info.reduce_reg.type, std::vector<int>{4}), reduce_array_addr, {imm_reg});
+        parallel_exits[tid]->push_back(imm_i);
+        parallel_exits[tid]->push_back(gep);
+        Reg partial_reduce_sum = func->new_reg(info.reduce_reg.type);
+        parallel_exits[tid]->push_back(new ir::insns::Load(partial_reduce_sum, gep_reg));
+        new_reduce_sum[tid] = func->new_reg(info.reduce_reg.type);
+        parallel_exits[tid]->push_back(new ir::insns::Binary(new_reduce_sum[tid], BinaryOp::Add, reduce_sum, partial_reduce_sum));
+        reduce_sum = new_reduce_sum[tid];
+      }
+      auto jmp = new ir::insns::Jump(exit);
       parallel_exits[tid]->push_back(jmp);
     }
     bb_map[into_entry] = parallel_entries[tid];
@@ -435,9 +481,12 @@ void loop_parallel(ir::Function *func, ParallelLoopInfo &info, Loop *loop, const
     for (auto &insn : exit->insns) {
       TypeCase(phi, ir::insns::Phi *, insn.get()) {
         phi->remove_use_def();
-        Reg new_reg = phi->incoming.at(exit_prev);
         for (int i = 0; i < THREAD_NUM; i++) {
-          if (reg_map[i].count(new_reg)) new_reg = reg_map[i].at(new_reg);
+          Reg new_reg = phi->incoming.at(exit_prev);
+          if (new_reg == info.reduce_reg) new_reg = new_reduce_sum[i];
+          else {
+            if (reg_map[i].count(new_reg)) new_reg = reg_map[i].at(new_reg);
+          }
           phi->incoming[parallel_exits[i]] = new_reg;
         }
         phi->add_use_def();
