@@ -910,9 +910,15 @@ void remove_nop(Function &f) {
             mov->cond == ExCond::Always)
           remove = true;
       }
-      TypeCase(i_type, IType *, it->get()) {
+      else TypeCase(i_type, IType *, it->get()) {
         if (i_type->op == IType::Add || i_type->op == IType::Sub) {
           if (i_type->dst == i_type->s1 && i_type->imm == 0)
+            remove = true;
+        }
+      }
+      else TypeCase(fr, FullRType *, it->get()) {
+        if (fr->op == FullRType::Add || fr->op == FullRType::Sub) {
+          if (fr->dst == fr->s1 && fr->s2.is_imm8m() && fr->s2.get<int>() == 0)
             remove = true;
         }
       }
