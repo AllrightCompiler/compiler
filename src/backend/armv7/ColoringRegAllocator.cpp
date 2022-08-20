@@ -107,7 +107,6 @@ void ColoringRegAllocator::build() {
       auto def = filtered(ins->def());
       auto use = filtered(ins->use());
       TypeCase(mov, Move *, ins) {
-        // NOTE: phi函数解构产生的mov的源寄存器和目的寄存器不应被合并
         if (mov->is_reg_mov() /*&& !f->phi_moves.count(mov)*/) {
           auto consider = false;
           for (Reg u : use) {
@@ -449,7 +448,7 @@ void ColoringRegAllocator::add_spill_code(const std::set<Reg> &nodes) {
         obj = new StackObject;
         obj->size = 4;
         f->stack_objects.emplace_back(obj);
-        f->normal_objs.push_back(obj);
+        f->normal_objs.push_front(obj); // 让新spill的对象处于栈帧低地址处
       }
 
       for (auto &bb : f->bbs) {

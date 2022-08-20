@@ -261,17 +261,17 @@ AstVisitor::visitLValExpr(SysYParser::LValExprContext *const ctx) {
 
 antlrcpp::Any
 AstVisitor::visitDecIntConst(SysYParser::DecIntConstContext *const ctx) {
-  return int(std::stol(ctx->getText(), nullptr, 10));
+  return int(std::stoll(ctx->getText(), nullptr, 10));
 }
 
 antlrcpp::Any
 AstVisitor::visitOctIntConst(SysYParser::OctIntConstContext *const ctx) {
-  return int(std::stol(ctx->getText(), nullptr, 8));
+  return int(std::stoll(ctx->getText(), nullptr, 8));
 }
 
 antlrcpp::Any
 AstVisitor::visitHexIntConst(SysYParser::HexIntConstContext *const ctx) {
-  return int(std::stol(ctx->getText(), nullptr, 16));
+  return int(std::stoll(ctx->getText(), nullptr, 16));
 }
 
 antlrcpp::Any
