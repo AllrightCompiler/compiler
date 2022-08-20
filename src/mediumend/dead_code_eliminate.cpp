@@ -160,7 +160,7 @@ void remove_uneffective_inst(ir::Program *prog){
   unordered_set<ir::Function *> func_stack;
   unordered_set<std::string> visited_func;
   for(auto &each : prog->functions){
-    each.second.ret_used = true;
+    each.second.ret_used = false;
   }
   prog->functions.at("main").ret_used = true;
   func_stack.insert(&prog->functions.at("main"));
@@ -251,32 +251,32 @@ void remove_uneffective_inst(ir::Program *prog){
       }
     }
   }
-  // for(auto &each : prog->functions){
-  //   bool remove_ret = true;
-  //   if(each.second.ret_used || !each.second.sig.ret_type.has_value()){
-  //     remove_ret = false;
-  //   } else {
-  //     each.second.sig.ret_type.reset();
-  //   }
-  //   auto &bbs = each.second.bbs;
-  //   for(auto &bb : bbs){
-  //     for(auto &inst : bb->insns){
-  //       TypeCase(call, ir::insns::Call *, inst.get()){
-  //         if(prog->functions.count(call->func) && !prog->functions.at(call->func).is_ret_used()){
-  //           call->dst.type = ScalarType::String;
-  //         }
-  //       }
-  //     }
-  //     if(remove_ret){
-  //       auto ret = dynamic_cast<ir::insns::Return *>(bb->insns.back().get());
-  //       if(ret){
-  //         ret->remove_use_def();
-  //         ret->val.reset();
-  //         useful_inst.insert(ret);
-  //       }
-  //     }
-  //   }
-  // }
+  for(auto &each : prog->functions){
+    bool remove_ret = true;
+    if(each.second.ret_used || !each.second.sig.ret_type.has_value()){
+      remove_ret = false;
+    } else {
+      each.second.sig.ret_type.reset();
+    }
+    auto &bbs = each.second.bbs;
+    for(auto &bb : bbs){
+      for(auto &inst : bb->insns){
+        TypeCase(call, ir::insns::Call *, inst.get()){
+          if(prog->functions.count(call->func) && !prog->functions.at(call->func).is_ret_used()){
+            call->dst.type = ScalarType::String;
+          }
+        }
+      }
+      if(remove_ret){
+        auto ret = dynamic_cast<ir::insns::Return *>(bb->insns.back().get());
+        if(ret){
+          ret->remove_use_def();
+          ret->val.reset();
+          useful_inst.insert(ret);
+        }
+      }
+    }
+  }
   for(auto &each : prog->functions){
     auto &bbs = each.second.bbs;
     for(auto &bb : bbs){
