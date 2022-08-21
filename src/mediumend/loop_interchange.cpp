@@ -270,6 +270,9 @@ void loop_interchange(ir::Function *func) {
 }
 
 void loop_interchange(ir::Program *prog) {
+  if(prog->may_alias){
+    return;
+  }
   for(auto &func : prog->functions) {
     loop_interchange(&func.second);
   }
