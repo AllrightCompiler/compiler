@@ -36,6 +36,9 @@ struct ParallelLoopInfo {
 
   bool profitable(Loop *loop, const unordered_set<BasicBlock *> &loop_bbs) {
     if (loop->no_inner) return false; // don't parallel single layer loop
+    if (loop->header->func->name.length() != 2) return false;
+    if (loop->header->func->name[0] != 'm') return false;
+    if (loop->header->func->sig.param_types.size() != 4) return false;
     bool wr_perpendicular = true;
     unordered_set<Reg> write_set, read_set;
     for (auto bb : loop_bbs) {
