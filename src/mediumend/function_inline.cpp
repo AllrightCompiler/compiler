@@ -13,7 +13,7 @@ using std::unordered_set;
 using std::unordered_map;
 using std::vector;
 
-const int LONG_CALL_LEN = 80;
+const int LONG_CALL_LEN = 64;
 const int TOO_LONG_CALL_LEN = 1000000;
 
 void inline_single_func(Function *caller, Program *prog, unordered_set<string> &cursive_or_long_calls){
