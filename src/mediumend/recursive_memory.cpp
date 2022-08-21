@@ -59,8 +59,12 @@ void recursive_memory(Function *func) {
   new_edge->push_back(new ir::insns::LoadImm(zero, ConstValue(0)));
   new_edge->push_back(new ir::insns::Binary(cond, BinaryOp::Lt, {Reg(Int, 1)}, zero));
   new_edge->push_back(new ir::insns::Branch(cond, raw_entry, new_entry));
+  
   new_edge->succ.insert(new_entry);
   new_entry->prev.insert(new_edge);
+
+  new_edge->succ.insert(raw_entry);
+  raw_entry->prev.insert(new_edge);
 
   func->bbs.emplace_front(new_edge);
 }
