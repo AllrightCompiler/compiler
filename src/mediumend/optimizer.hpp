@@ -48,6 +48,7 @@ void algebra_simpilifacation(ir::Program *prog);
 void estimate_exec_freq(ir::Program *prog);
 void loop_compute(ir::Program *prog);
 void if_combine(ir::Program *prog);
+void hoist_load_store(ir::Program *prog);
 
 void copy_propagation(unordered_map<ir::Reg, std::unordered_set<ir::Instruction *> > &use_list, ir::Reg dst, ir::Reg src);
 ConstValue const_compute(ir::Instruction *inst, const ConstValue &oprand);
