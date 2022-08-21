@@ -582,7 +582,7 @@ Program::Program() : labels_used{0} {
   p("");
   p("__create_threads:");
   p("    push {r4, r5, r6, r7}");
-  p("    mov r5, #3");
+  p("    mov r5, #1");
   p("    mov r7, #SYS_clone");
   p("    mov r1, sp");
   p("    mov r2, #0");
@@ -613,7 +613,7 @@ Program::Program() : labels_used{0} {
   p("    cmp r0, #0");
   p("    pusheq {r4, r7}");
   p("    mov r4, r0");
-  p("    cmp r4, #3");
+  p("    cmp r4, #1");
   p("    beq .LT2");
   p("    mov r0, #P_ALL");
   p("    mov r1, #0");

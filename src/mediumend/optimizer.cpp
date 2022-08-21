@@ -52,9 +52,9 @@ std::vector<Pass> passes = {
   mark_pure_func,
   remove_uneffective_inst,
   remove_unused_function,
-
+  
   gvn_no_cfg,
-
+  recursive_memory,
   array_mem2reg,
     gvn_no_cfg,
     clean_useless_cf,
