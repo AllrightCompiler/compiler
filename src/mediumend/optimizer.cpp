@@ -89,6 +89,8 @@ std::vector<Pass> passes = {
   value_range_analysis,
   
   algebra_simpilifacation,
+  
+  gep_destruction,
 
   gvn_cfg,
   gvn_cfg,
@@ -98,7 +100,12 @@ std::vector<Pass> passes = {
   remove_useless_loop,
   gvn_cfg,
 
-  gep_destruction,
+
+  remove_useless_loop,
+  array_mem2reg,
+    gvn_cfg,
+    duplicate_load_store_elimination,
+  array_ssa_destruction,
 
   // operator_strength_reduction,
   gvn_no_cfg,

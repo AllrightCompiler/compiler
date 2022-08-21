@@ -14,7 +14,7 @@ static ir::Program *cur_prog = nullptr;
 void recursive_memory(Function *func) {
   auto mem_name = "mem_" + func->name;
   auto raw_entry = func->bbs.front().get();
-  auto type = Type{func->sig.ret_type.value(), std::vector<int>{1000}};
+  auto type = Type{func->sig.ret_type.value(), std::vector<int>{50000}};
   cur_prog->global_vars[mem_name] = std::make_shared<Var>(type);
   BasicBlock *new_entry = new BasicBlock();
   BasicBlock *ret_bb = new BasicBlock();
@@ -51,6 +51,18 @@ void recursive_memory(Function *func) {
 
   func->bbs.emplace_front(new_entry);
   func->bbs.emplace_back(ret_bb);
+  
+  BasicBlock *new_edge = new BasicBlock();
+  auto cond = func->new_reg(Int);
+  auto zero = func->new_reg(Int);
+  new_edge->func = func;
+  new_edge->push_back(new ir::insns::LoadImm(zero, ConstValue(0)));
+  new_edge->push_back(new ir::insns::Binary(cond, BinaryOp::Lt, {Reg(Int, 1)}, zero));
+  new_edge->push_back(new ir::insns::Branch(cond, raw_entry, new_entry));
+  new_edge->succ.insert(new_entry);
+  new_entry->prev.insert(new_edge);
+
+  func->bbs.emplace_front(new_edge);
 }
 
 void recursive_memory(ir::Program *prog) {
