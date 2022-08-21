@@ -33,12 +33,12 @@ void duplicate_load_store_elimination(Function *func) {
         if (func->def_list.count(memdef->dep)) {
           auto dep = func->def_list.at(memdef->dep);
           TypeCase(def, ir::insns::MemDef *, dep) {
-            if (memdef->uses_before_def.size() == 0 &&
+            if (memdef->uses_before_def.size() == 0 && def->bb == memdef->bb &&
                 memdef->store_dst == def->store_dst) {
               def->remove_use_def();
               removable_inst.insert(def);
             } else {
-              if(memdef->store_val == def->store_val){
+              if(def->bb == memdef->bb && memdef->store_val == def->store_val){
                 if(func->def_list.count(memdef->store_val)){
                   auto load = dynamic_cast<ir::insns::MemUse *>(func->def_list.at(memdef->store_val));
                   if(load && def->uses_before_def.count(load->dst)){

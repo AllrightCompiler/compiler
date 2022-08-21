@@ -36,7 +36,6 @@ const std::map<std::string, Pass> PASS_MAP = {
   {"estimate_exec_freq", estimate_exec_freq},
   {"if_combine", if_combine},
   {"loop_compute", loop_compute},
-  {"hoist_load_store", hoist_load_store},
 };
 
 // define default passes here
@@ -54,8 +53,6 @@ std::vector<Pass> passes = {
   remove_unused_function,
 
   gvn_no_cfg,
-  
-  hoist_load_store,
 
   array_mem2reg,
     gvn_no_cfg,
