@@ -36,6 +36,7 @@ const std::map<std::string, Pass> PASS_MAP = {
   {"estimate_exec_freq", estimate_exec_freq},
   {"if_combine", if_combine},
   {"loop_compute", loop_compute},
+  {"recursive_memory", recursive_memory},
 };
 
 // define default passes here
