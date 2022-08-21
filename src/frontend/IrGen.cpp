@@ -48,6 +48,7 @@ IrGen::IrGen() : program{new Program} {
   lib["__create_threads"].sig = {.ret_type = Int, .param_types = {}};
   lib["__join_threads"].sig = {.ret_type = std::nullopt,
                                .param_types = {Type{Int}}};
+  lib["__multiply"].sig = {.ret_type = Int, .param_types = {Type{Int}, Type{Int}}};
 }
 
 BasicBlock *IrGen::new_bb() {

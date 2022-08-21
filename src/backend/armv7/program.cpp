@@ -631,6 +631,16 @@ Program::Program() : labels_used{0} {
   p("    mov r0, #0");
   p("    mov r7, #SYS_exit");
   p("    swi #0");
+  p("");
+  p("__multiply:");
+  p("    push {r3, lr}");
+  p("    umull r0, r1, r0, r1");
+  p("    movs    r2, #1");
+  p("    movt    r2, 15232");
+  p("    movs    r3, #0");
+  p("    bl      __aeabi_uldivmod");
+  p("    mov     r0, r2");
+  p("    pop     {r3, pc}");
 }
 
 void Program::emit(std::ostream &os) {
