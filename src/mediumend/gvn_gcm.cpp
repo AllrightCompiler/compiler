@@ -465,6 +465,10 @@ void gvn(Function *f) {
           }
           if (new_arg != arg) call->change_use(arg, new_arg);
         }
+        if (call->func == "multiply" && program->functions.at(call->func).sig.param_types.size() == 2
+          && program->functions.at(call->func).sig.param_types[0] == Int && program->functions.at(call->func).sig.param_types[1] == Int) {
+          call->func = "__multiply";
+        }
         Reg new_reg = vn_get(call);
         if (new_reg != call->dst) {
           copy_propagation(f->use_list, call->dst, new_reg);
