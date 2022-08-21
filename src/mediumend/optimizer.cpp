@@ -99,7 +99,7 @@ std::vector<Pass> passes = {
 
   gep_destruction,
 
-  operator_strength_reduction,
+  // operator_strength_reduction,
   gvn_no_cfg,
 
   gvn_cfg,
