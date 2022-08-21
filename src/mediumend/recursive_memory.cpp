@@ -15,7 +15,9 @@ void recursive_memory(Function *func) {
   auto mem_name = "mem_" + func->name;
   auto raw_entry = func->bbs.front().get();
   auto type = Type{func->sig.ret_type.value(), std::vector<int>{50000}};
-  cur_prog->global_vars[mem_name] = std::make_shared<Var>(type);
+  cur_prog->global_vars[mem_name + "1"] = std::make_shared<Var>(type);
+  cur_prog->global_vars[mem_name + "2"] = std::make_shared<Var>(type);
+  cur_prog->global_vars[mem_name + "3"] = std::make_shared<Var>(type);
   BasicBlock *new_entry = new BasicBlock();
   BasicBlock *ret_bb = new BasicBlock();
   new_entry->func = func;
@@ -25,9 +27,13 @@ void recursive_memory(Function *func) {
   Reg addr_reg = func->new_reg(ScalarType::String);
   Reg gep_reg = func->new_reg(ScalarType::String);
   Reg val_reg = func->new_reg(func->sig.ret_type.value());
-  new_entry->push_back(new ir::insns::LoadAddr(addr_reg, mem_name));
+  Reg offset = func->new_reg(Int);
+  Reg offset_out = func->new_reg(Int);
+  new_entry->push_back(new ir::insns::LoadImm(offset, ConstValue(100)));
+  new_entry->push_back(new ir::insns::Binary(offset_out, BinaryOp::Add, offset, Reg(Int, 1)));
+  new_entry->push_back(new ir::insns::LoadAddr(addr_reg, mem_name + "2"));
   new_entry->push_back(
-      new ir::insns::GetElementPtr(gep_reg, type, addr_reg, {Reg(Int, 1)}));
+      new ir::insns::GetElementPtr(gep_reg, type, addr_reg, {offset_out}));
   new_entry->push_back(
       new ir::insns::Load(val_reg, gep_reg));
   new_entry->push_back(new ir::insns::Branch(val_reg, ret_bb, raw_entry));
@@ -51,22 +57,6 @@ void recursive_memory(Function *func) {
 
   func->bbs.emplace_front(new_entry);
   func->bbs.emplace_back(ret_bb);
-  
-  BasicBlock *new_edge = new BasicBlock();
-  auto cond = func->new_reg(Int);
-  auto zero = func->new_reg(Int);
-  new_edge->func = func;
-  new_edge->push_back(new ir::insns::LoadImm(zero, ConstValue(0)));
-  new_edge->push_back(new ir::insns::Binary(cond, BinaryOp::Lt, {Reg(Int, 1)}, zero));
-  new_edge->push_back(new ir::insns::Branch(cond, raw_entry, new_entry));
-  
-  new_edge->succ.insert(new_entry);
-  new_entry->prev.insert(new_edge);
-
-  new_edge->succ.insert(raw_entry);
-  raw_entry->prev.insert(new_edge);
-
-  func->bbs.emplace_front(new_edge);
 }
 
 void recursive_memory(ir::Program *prog) {

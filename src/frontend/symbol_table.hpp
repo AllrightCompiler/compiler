@@ -8,7 +8,7 @@
 namespace frontend {
 
 using std::string;
-using VarTable = std::unordered_map<string, std::shared_ptr<Var>>;
+using VarTable = std::map<string, std::shared_ptr<Var>>;
 
 inline Var *lookup_var(const VarTable &table, const string &name) {
   auto it = table.find(name);

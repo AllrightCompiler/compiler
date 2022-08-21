@@ -633,14 +633,27 @@ Program::Program() : labels_used{0} {
   p("    swi #0");
   p("");
   p("__multiply:");
-  p("    push {r3, lr}");
-  p("    umull r0, r1, r0, r1");
-  p("    movs    r2, #1");
-  p("    movt    r2, 15232");
-  p("    movs    r3, #0");
-  p("    bl      __aeabi_uldivmod");
-  p("    mov     r0, r2");
-  p("    pop     {r3, pc}");
+  p("        push    {r4, lr}");
+  p("        mov     r12, #0");
+  p("        mvn     lr, #998244352");
+  p("        mov     r2, #0");
+  p(".LBB0_1:");
+  p("        add     r3, r2, r0");
+  p("        lsr     r4, r1, #1");
+  p("        cmp     r3, #998244352");
+  p("        addhi   r3, r3, lr");
+  p("        tst     r1, #1");
+  p("        movne   r2, r3");
+  p("        lsl     r3, r0, #1");
+  p("        cmp     r3, #998244352");
+  p("        addhi   r3, lr, r0, lsl #1");
+  p("        cmp     r12, r1, lsr #1");
+  p("        mov     r1, r4");
+  p("        mov     r0, r3");
+  p("        bne     .LBB0_1");
+  p("        mov     r0, r2");
+  p("        pop     {r4, lr}");
+  p("        bx      lr");
 }
 
 void Program::emit(std::ostream &os) {
