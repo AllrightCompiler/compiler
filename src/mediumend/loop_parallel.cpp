@@ -9,7 +9,7 @@ using ir::Loop;
 using ir::BasicBlock;
 using ir::Instruction;
 
-static const int THREAD_NUM = 2;
+static const int THREAD_NUM = 4;
 static ir::Program *program;
 
 // Parallel loop:

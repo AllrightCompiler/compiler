@@ -14,7 +14,7 @@ static ir::Program *cur_prog = nullptr;
 void recursive_memory(Function *func) {
   auto mem_name = "mem_" + func->name;
   auto raw_entry = func->bbs.front().get();
-  auto type = Type{Int, std::vector<int>{1000}};
+  auto type = Type{func->sig.ret_type.value(), std::vector<int>{1000}};
   cur_prog->global_vars[mem_name] = std::make_shared<Var>(type);
   BasicBlock *new_entry = new BasicBlock();
   BasicBlock *ret_bb = new BasicBlock();
@@ -24,7 +24,7 @@ void recursive_memory(Function *func) {
   ret_bb->label = "cur_ret";
   Reg addr_reg = func->new_reg(ScalarType::String);
   Reg gep_reg = func->new_reg(ScalarType::String);
-  Reg val_reg = func->new_reg(ScalarType::Int);
+  Reg val_reg = func->new_reg(func->sig.ret_type.value());
   new_entry->push_back(new ir::insns::LoadAddr(addr_reg, mem_name));
   new_entry->push_back(
       new ir::insns::GetElementPtr(gep_reg, type, addr_reg, {Reg(Int, 1)}));
@@ -57,9 +57,8 @@ void recursive_memory(ir::Program *prog) {
   cur_prog = prog;
   unordered_set<Function *> cursive_calls;
   for (auto &func : prog->functions) {
-    if (!func.second.is_pure() || func.second.sig.param_types.size() != 1 ||
-        !func.second.sig.ret_type.has_value() ||
-        func.second.sig.ret_type.value() != Int) {
+    if (func.second.sig.param_types.size() != 1 ||
+        !func.second.sig.ret_type.has_value()) {
       continue;
     }
     int length = 0;
